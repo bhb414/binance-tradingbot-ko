@@ -1,0 +1,9 @@
+{
+  "name": "binance-tradingbot-ko",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone local Binance USDT futures bot workspace with a condition and order runtime",
+  "scripts": { "start": "node server.mjs", "dev": "node server.mjs", "test": "node --test tests/*.test.mjs", "update": "node tools/update.mjs", "update:check": "node tools/update.mjs --check" },
+  "engines": { "node": ">=20" }
+}

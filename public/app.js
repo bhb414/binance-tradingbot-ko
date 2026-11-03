@@ -1,0 +1,561 @@
+import { api } from './api.js';
+import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
+import {botPerformance} from './performance.js';
+import {botStatusMarkup} from './bot-status.js';
+import { installConnectionUI,renderConnection } from './connection-ui.js';
+import { SYMBOLS, makeBot, validateBot, describeRule, budgetUsage, BUDGET_MODES, effectiveBudget } from './core.js';
+import { upgradeBot, applyWholeTimeframe } from './formula.js';
+import {ruleIntervals,evaluateRuleFormula} from './formula-runtime.js';
+import {leverageCap,notionalCap} from './leverage.js';
+import {BUDGET_OPTIONS} from './budget.js';
+import {installSignatureHelp} from './formula-signature.js';
+import { heikinAshi } from './indicators.js';
+import { roomAvatar } from './room.js';
+import {RoomScene} from './room-motion.js';
+import {installRoomControls} from './room-controls.js';
+import {installPositionImportUI} from './position-import-ui.js';
+import { formulaEditorMarkup, formulaExamples } from './formula-editor.js';
+import {openChartModal} from './chart-modal.js';
+import {StudyRenderer} from './study-renderer.js';
+import {installStudyUI,openStudyLibrary} from './study-ui.js';
+import {MARKET_FILTERS,productLabel,instrumentName,matchesMarket,isTradfi} from './markets.js';
+import {marketKey} from './markets.js';
+import {FAVORITES_KEY,readFavorites,toggleFavorite} from './favorites.js';
+import {installManualUI} from './manual-ui.js';
+import {positionRows} from './positions-ui.js';
+import {appearanceCard,installAppearanceUI} from './appearance-ui.js';
+import {workroomPerformance} from './workroom-metrics.js';
+import {protectionEnabled,hasProtection,protectionSummary} from './protection.js';
+import { ACTIONS, isEntry, isStop, makeActionRule, upgradeActions } from './actions.js';
+
+$('#check-app-update').addEventListener('click',async()=>{
+ const button=$('#check-app-update'),status=$('#app-update-status');button.disabled=true;status.textContent='새 버전을 확인하는 중…';
+ try{const result=await api('/app/update');status.textContent='현재 '+result.version+' ('+result.revision+') · '+(result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
+ catch(error){status.textContent='확인하지 못했습니다: '+error.message;}finally{button.disabled=false;}
+});
+const $ = selector => document.querySelector(selector);
+const $$ = selector => [...document.querySelectorAll(selector)];
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (n, decimals = 2) => n==null||!Number.isFinite(Number(n))?'—':Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+const price = n => fmt(n,n>0&&n<1?Math.min(12,Math.max(5,-Math.floor(Math.log10(n))+2)):2);
+const signed = n => (n >= 0 ? '+' : '') + fmt(n);
+const time = value => new Date(value || Date.now()).toLocaleTimeString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+const ICONS = {
+  chart:'M3 3v18h18M7 14l4-4 4 3 6-8', bot:'M9 3h6M12 3v3M5 7h14v13H5zM2 11v5M22 11v5M9 16h6M9 11h.01M15 11h.01',
+  history:'M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2', settings:'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+  help:'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M9.5 9a2.5 2.5 0 1 1 4 2c-1 .5-1.5 1-1.5 2M12 17h.01',
+  flask:'M9 3h6M10 3v6L4 19a1 1 0 0 0 1 2h14a1 1 0 0 0 1-2L14 9V3M8 15h8', chevron:'M8 10l4 4 4-4',
+  list:'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01', indicator:'M3 17l4-6 4 3 4-9 6 5M3 21h18',
+  expand:'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M8 12h8M12 8v8', maximize:'M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5',
+  crosshair:'M12 2v4M12 18v4M2 12h4M18 12h4M18 12a6 6 0 1 1-12 0 6 6 0 0 1 12 0', horizontal:'M3 12h18M5 9v6M19 9v6',
+  trash:'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7', eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+  close:'M6 6l12 12M6 18L18 6', search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0', info:'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M12 11v6M12 7h.01',
+  plus:'M12 5v14M5 12h14', wallet:'M20 8V5H5a3 3 0 0 1 0-6M3 5v15h18V8H5a3 3 0 0 1 0-6h15M21 11h-6v5h6M17 13.5h.01',
+  shield:'M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6', download:'M12 3v12M7 10l5 5 5-5M4 16v5h16v-5',
+  check:'M5 12l4 4L20 5', play:'M7 4l14 8-14 8z', pause:'M7 4h3v16H7zM14 4h3v16h-3z', more:'M5 12h.01M12 12h.01M19 12h.01',
+  folder:'M3 7V4h6l3 3h9v13H3z', arrow:'M5 12h14M13 6l6 6-6 6', code:'M8 6l-6 6 6 6M16 6l6 6-6 6M14 3l-4 18'
+};
+function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name] || ICONS.info}"/></svg>`; }
+function icons(root = document) { root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); }); }
+
+let bots=[],logs=[],legacyBots=[];
+try{const saved=JSON.parse(localStorage.getItem('fw-bots-v1')||'null');if(Array.isArray(saved))legacyBots=saved.map(upgradeBot);}catch{}
+let positionInsights=null,positionInsightsKey='',positionInsightsAt=0,positionInsightsPending=null;
+let serverState=null,marketSnapshot=null,marketError=null,chartRequest=0,formulaRequest=0,syncing=false;
+let manualUI,appearanceUI,favorites;try{favorites=readFavorites(localStorage.getItem(FAVORITES_KEY));}catch{favorites=readFavorites(null);}
+for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='—';}
+
+let chartStorage;try{chartStorage=localStorage;}catch{}
+const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
+let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', draft=null, editorTab='basic', chart, candleSeries, homeStudies, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let toastTimer, selectedRuleId, symbolPickerTarget='home';
+let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
+const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
+const symbolName=symbol=>[SYMBOL_NAMES[symbol.symbol],symbol.name].filter(Boolean).join(' · ');
+const currentRule=()=>draft?.actionRules.find(rule=>rule.id===selectedRuleId);
+const rulePrefix=()=> 'actionRules.'+draft.actionRules.findIndex(rule=>rule.id===selectedRuleId);
+let selectedBotId=bots[0]?.id, mapZoom=.85, mapAutoFit=false, mapCameraReady=false, roomHasBots=false, candleType=savedChart.candleType;
+let chartRenderedKey='',chartRestoring=false,chartSaveTimer;
+const roomScene=new RoomScene($('#office-map'));
+const roomControls=installRoomControls({scene:roomScene,getBots:()=>bots,getState:()=>serverState,selectBot:id=>{selectedBotId=id;renderOffice();},openSettings:id=>openBot(id),connectionSettings:()=>goPage('settings'),refresh:syncWorkspace,api,notify:toast,icon});
+const positionImportUI=installPositionImportUI({api,getState:()=>serverState,refresh:syncWorkspace,connectionSettings:()=>goPage('settings'),notify:toast,onImported:id=>{if($('#bot-dialog').open)$('#bot-dialog').close();selectedBotId=id;goPage('bots');focusMapBot();openBot(id,'conditions');}});
+function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
+async function syncWorkspace(refreshMarket=false){
+  if(syncing)return;syncing=true;
+  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);renderRuntimeBanner();renderBots();loadPositionInsights();renderHomeTable();if($('#bot-dialog').open)renderEditorStatus();renderActivity();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
+  catch(error){marketError=error.message;renderRuntimeBanner();throw error;}
+  finally{syncing=false;}
+}
+async function loadSymbols(){
+  const data=await api('/symbols');
+  for(const row of data.symbols){if(!SYMBOLS.some(s=>s.symbol===row.symbol))SYMBOLS.push({symbol:row.symbol,short:row.baseAsset,name:row.baseAsset,color:'#8aa497',price:NaN,change:NaN,volume:'—'});}
+  for(const ticker of data.tickers){const symbol=SYMBOLS.find(s=>s.symbol===ticker.symbol);if(symbol){symbol.price=Number(ticker.lastPrice);symbol.change=Number(ticker.priceChangePercent);symbol.volume=Number(ticker.quoteVolume);}}
+  renderMarket();if($('#symbol-dialog').open)renderSymbolResults($('#symbol-search').value);
+}
+function renderRuntimeBanner(){
+  const environment=serverState?.environment==='live'?'실전':'테스트넷';
+  $('.demo-pill').innerHTML='<span></span>'+environment+' · '+(serverState?.connected?(serverState.tradingEnabled?'주문 허용':'조회 전용'):'계좌 미연결');
+  const error=serverState?.error||marketError;
+  $('.demo-banner').innerHTML='<span>'+icon(error?'info':'shield')+esc(error||('바이낸스 '+environment+' · '+(serverState?.connected?'계좌 연결됨':'공개 시세 조회 중 · 계좌 키는 설정에서 등록하세요.')))+'</span><span>'+(serverState?.tradingEnabled?'수동 주문·봇 주문 허용':'주문 실행 꺼짐')+'</span>';
+  $('#runtime-footer').textContent=environment+' · '+(serverState?.connected?'계좌 연결':'API 키 미등록');
+  $('.office-local-tag').textContent='BINANCE · '+environment;
+  $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(serverState?.tradingEnabled?'주문 실행 가능':'API 연결·주문 허용 필요');
+}
+
+function goPage(page) {
+  if (!['home','bots','activity','settings'].includes(page)) page='home';
+  if(currentPage==='home'&&page!=='home')persistChartView();
+  currentPage=page; $$('.page').forEach(el=>el.hidden=el.id!==`page-${page}`);
+  roomScene.setVisible(page==='bots');
+  if(page!=='bots')roomControls.close();
+  $$('[data-page]').forEach(el=>{el.classList.toggle('active',el.dataset.page===page); if(el.dataset.page===page) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current');});
+  $('#status-page').textContent=({home:'시장 조회',bots:'봇 작업실',activity:'활동 기록',settings:'설정'})[page];
+  if (location.hash!==`#${page}`) history.replaceState(null,'',`#${page}`);
+  if(page==='home') { renderHomeTable();if(serverState)updateChart(false); }
+  if(page==='bots') renderBots();
+  closeMarket();
+  window.scrollTo(0,0);
+}
+function coinGlyph(symbol) { return ({BTCUSDT:'₿',ETHUSDT:'Ξ',SOLUSDT:'◎',BNBUSDT:'B',XRPUSDT:'X',DOGEUSDT:'Ð'})[symbol] || '◈'; }
+function currentInstrument(){return marketInstruments.find(s=>s.market===currentMarket&&s.symbol===currentSymbol)||{market:currentMarket,symbol:currentSymbol,baseAsset:SYMBOLS.find(s=>s.symbol===currentSymbol)?.short||currentSymbol,quoteAsset:'USDT',marginAsset:'USDT',contractType:'PERPETUAL',price:SYMBOLS.find(s=>s.symbol===currentSymbol)?.price,change:SYMBOLS.find(s=>s.symbol===currentSymbol)?.change};}
+async function loadMarkets(){
+  const result=await api('/market-data/catalog');marketInstruments=result.symbols.map(item=>({...item,color:SYMBOLS.find(s=>s.short===item.baseAsset)?.color||'#8aa497'}));marketCatalogErrors=result.errors;marketCatalogReady=true;renderMarket();if($('#symbol-dialog').open)renderSymbolResults($('#symbol-search').value);
+}
+function renderMarket(){
+  const symbol=currentInstrument(),snapshot=marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null;
+  const last=snapshot?.ticker.lastPrice??symbol.price,change=snapshot?.ticker.priceChangePercent??symbol.change;
+  $('#main-symbol').textContent=symbol.symbol;$('#main-price').textContent=price(last);$('#main-change').textContent=change!=null&&Number.isFinite(Number(change))?signed(change)+'%':'—';$('#main-change').className=change>=0?'positive':'negative';
+  $('#main-coin').textContent=coinGlyph(symbol.symbol);$('#main-coin').style.color=symbol.color||'#8aa497';$('#main-coin').style.background=(symbol.color||'#8aa497')+'20';
+  $('#main-symbol').parentElement.querySelector('small').textContent=productLabel(symbol)+' · BINANCE 실전 공개 시세';
+  $('#stat-high').textContent=price(snapshot?.ticker.highPrice);$('#stat-low').textContent=price(snapshot?.ticker.lowPrice);
+  $('#stat-volume').textContent=snapshot?fmt(snapshot.ticker.quoteVolume??snapshot.ticker.baseVolume,0)+' '+(snapshot.ticker.quoteVolume!=null?symbol.quoteAsset:symbol.baseAsset):'—';
+  const funding=snapshot?.premium?.lastFundingRate,stat=$('.market-stats>div:last-child');stat.querySelector('small').textContent=funding!=null?'펀딩비율':'상품 유형';stat.querySelector('span').textContent=funding!=null?fmt(funding*100,4)+'%':productLabel(symbol);stat.querySelector('span').className=funding!=null?(funding>=0?'positive':'negative'):'';$('#book-price').textContent=price(last);
+  function bookRows(rows,side){let total=0;const computed=(rows||[]).slice(0,6).map(row=>({price:Number(row[0]),qty:Number(row[1]),total:total+=Number(row[1])}));const max=total||1;return (side==='ask'?computed.reverse():computed).map(row=>'<button type="button" class="book-row '+side+'" data-book-price="'+row.price+'" aria-label="'+row.price+' 가격 입력" style="--depth:'+Math.min(100,row.total/max*100)+'%"><span>'+price(row.price)+'</span><span>'+fmt(row.qty,3)+'</span><span>'+fmt(row.total,3)+'</span></button>').join('');}
+  $('#book-asks').innerHTML=bookRows(snapshot?.book.asks,'ask');$('#book-bids').innerHTML=bookRows(snapshot?.book.bids,'bid');$('.orderbook .panel-heading>.muted').textContent=symbol.quoteAsset;
+  const sum=rows=>(rows||[]).slice(0,6).reduce((total,row)=>total+Number(row[1]),0),bid=sum(snapshot?.book.bids),ask=sum(snapshot?.book.asks),ratio=(bid+ask)?bid/(bid+ask)*100:0;
+  $('.book-ratio').innerHTML='<span>매수 '+(snapshot?fmt(ratio,1)+'%':'—')+'</span><span>매도 '+(snapshot?fmt(100-ratio,1)+'%':'—')+'</span>';$('.ratio-bar>span').style.width=ratio+'%';
+  manualUI?.setState({instrument:symbol,state:serverState,quote:snapshot});
+}
+function selectSymbol(symbol,market='usdm') {if(!marketInstruments.some(s=>s.market===market&&s.symbol===symbol)&&!(market==='usdm'&&SYMBOLS.some(s=>s.symbol===symbol)))return;persistChartView();currentMarket=market;currentSymbol=symbol;chartWorkspace.select({market,symbol});renderMarket();updateChart();closeMarket();}
+function persistChartView(){
+  if(!chart||currentPage!=='home'||chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval)||!candles.length)return;
+  clearTimeout(chartSaveTimer);const paneList=chart.panes(),total=paneList.reduce((sum,p)=>sum+p.getHeight(),0)||1,panes={};
+  paneList.forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(id)panes[id]=pane.getHeight()/total;});
+  chartWorkspace.remember(currentMarket,currentSymbol,currentInterval,{range:chart.timeScale().getVisibleLogicalRange(),count:candles.length,panes,price:{autoScale:candleSeries.priceScale().options().autoScale,...(candleSeries.priceScale().getVisibleRange()||{})},lines:drawnLines.map(line=>line.options().price)});
+}
+function restoreChartLines(){
+  drawnLines.forEach(line=>candleSeries.removePriceLine(line));drawnLines=[];
+  for(const value of chartWorkspace.lines(currentMarket,currentSymbol))addChartLine(value);
+}
+function addChartLine(value){
+  if(drawnLines.length>=50){toast('수평선은 종목당 50개까지 저장합니다.',true);return;}
+  drawnLines.push(candleSeries.createPriceLine({price:value,color:'#d0b77d',lineWidth:1,lineStyle:window.LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'수평선'}));
+}
+function syncChartButtons(){
+  $('#candle-type').value=candleType;
+  $$('[data-interval]').forEach(button=>button.classList.toggle('active',button.dataset.interval===currentInterval));
+  $$('[data-range]').forEach(button=>button.classList.toggle('active',button.dataset.range===chartWorkspace.selection.range));
+}
+function applyChartRange(preset){
+  chartWorkspace.select({range:preset});syncChartButtons();if(!chart||!candles.length)return;
+  chart.timeScale().setVisibleLogicalRange(presetRange(candles.length,currentInterval,preset));persistChartView();
+}
+function initChart() {
+  if (!window.LightweightCharts) { $('#chart-fallback').hidden=false; return; }
+  const L=window.LightweightCharts;
+  chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7},localization:{locale:'en-US',timeFormatter:t=>new Date(t*1000).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}});
+  candleSeries=chart.addSeries(L.CandlestickSeries,{upColor:'#35c49a',downColor:'#df6879',borderUpColor:'#35c49a',borderDownColor:'#df6879',wickUpColor:'#35c49a',wickDownColor:'#df6879',priceLineColor:'#35c49a'});
+  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
+  chart.subscribeClick(param=> { if (!drawingMode || !param.point) return; const p=candleSeries.coordinateToPrice(param.point.y); if (!Number.isFinite(p)) return; addChartLine(p);persistChartView(); drawingMode=false; $$('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor')); toast('차트에 수평선을 추가했습니다.'); });
+  chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
+  $('.chart-container').addEventListener('pointerup',()=>requestAnimationFrame(persistChartView));
+  window.addEventListener('pagehide',persistChartView);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistChartView();});
+  updateChart();
+}
+async function updateChart(resetRange=true) {
+  if(!chart) return;
+  const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;
+  let snapshot;
+  try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
+  catch(error){if(request!==chartRequest)return;marketError=error.message;renderRuntimeBanner();return;}
+  const nextKey=chartViewKey(market,symbol,interval),changed=chartRenderedKey!==nextKey,previousRange=!changed?chart.timeScale().getVisibleLogicalRange():null;chartRestoring=true;
+  candles=snapshot.candles;
+  const displayed=candleType==='heikin'?heikinAshi(candles):candles;
+  const s=currentInstrument();const tick=Number(s.tickSize),parts=String(tick).split('e');const precision=tick>0?Math.max(0,Math.min(12,(parts[0].split('.')[1]||'').length-Number(parts[1]||0))):s.price<1?6:2;
+  candleSeries.applyOptions({priceFormat:{type:'price',precision,minMove:tick||10**-precision}});
+  candleSeries.setData(displayed.map(({time,open,high,low,close})=>({time,open,high,low,close})));homeStudies.update(candles,currentInterval,candleType);
+  $('#chart').setAttribute('aria-label',currentSymbol+' · '+currentInterval+' 바이낸스 가격 캔들 차트. 마우스 드래그로 이동하고 휠로 확대합니다.');
+  $('#chart-name').textContent=`${currentSymbol} · ${productLabel(currentInstrument())} · ${currentInterval} · ${candleType==='heikin'?'하이킨아시 · 합성가격':'일반 캔들'}`;
+  if(changed||resetRange){
+    const saved=chartWorkspace.view(market,symbol,interval),range=restoredRange(saved.offset,candles.length)||presetRange(candles.length,interval,chartWorkspace.selection.range);
+    chart.timeScale().setVisibleLogicalRange(range);restoreChartLines();
+    candleSeries.priceScale().applyOptions({autoScale:saved.price?.autoScale!==false});if(saved.price?.autoScale===false&&Number.isFinite(saved.price.from)&&Number.isFinite(saved.price.to))candleSeries.priceScale().setVisibleRange({from:saved.price.from,to:saved.price.to});
+    chart.panes().forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(saved.panes?.[id])pane.setStretchFactor(saved.panes[id]);});
+  }else if(previousRange)chart.timeScale().setVisibleLogicalRange(previousRange);
+  chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();
+  $('.chart-caption>.muted').textContent=time(snapshot.asOf)+' 수신';
+}
+function positionSymbolButton(symbol){
+  return '<button type="button" class="position-symbol-link '+(currentMarket==='usdm'&&symbol===currentSymbol?'active':'')+'" data-position-symbol="'+esc(symbol)+'" aria-label="'+esc(symbol)+' 차트 보기" title="'+esc(symbol)+' 차트 보기"><strong>'+esc(symbol)+'</strong>'+icon('chart')+'</button>';
+}
+function importPositionButton(position){
+  const direction=['LONG','SHORT'].includes(position.positionSide)?position.positionSide:position.quantity>0?'LONG':'SHORT';
+  const owner=bots.find(bot=>bot.symbol===position.symbol&&bot.quantity>0&&(!serverState?.positionMode||serverState.positionMode!=='HEDGE'||bot.positionDirection===direction));
+  return !owner||owner.runtime?.importPending?'<button type="button" class="home-import-button" data-import-position="'+esc(position.symbol+':'+direction)+'">'+icon('bot')+(owner?'가져온 정보 갱신':'봇에 맡기기')+'</button>':'';
+}
+async function showPositionChart(symbol){
+  try{if(!marketCatalogReady)await loadMarkets();const instrument=marketInstruments.find(s=>s.market==='usdm'&&s.symbol===symbol);if(!instrument){toast('해당 포지션 종목의 공개 시세를 찾을 수 없습니다.',true);return;}selectSymbol(symbol,'usdm');renderHomeTable();$('#symbol-picker').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}catch(error){toast(error.message,true);}
+}
+async function loadPositionInsights(){
+  const state=serverState,key=state?.connected?(state.connectionId||state.environment):'';
+  if(key!==positionInsightsKey){positionInsightsKey=key;positionInsights=null;positionInsightsAt=0;positionInsightsPending=null;}
+  if(!key||!state.connectionId||positionInsightsPending||Date.now()-positionInsightsAt<60000)return;
+  const request={key};positionInsightsPending=request;
+  try{const value=await api('/positions/insights');if(request.key!==positionInsightsKey||value.connectionId&&value.connectionId!==serverState?.connectionId)return;positionInsights=value;positionInsightsAt=Date.now();renderHomeTable();renderBots();if($('#bot-dialog').open)renderEditorStatus();}
+  catch{positionInsightsAt=Date.now()-45000;}
+  finally{if(positionInsightsPending===request)positionInsightsPending=null;}
+}
+async function preparePositionClose(key){
+  try{
+    const [symbol,direction]=key.split(':'),position=serverState?.account?.positions.find(p=>p.symbol===symbol&&(['LONG','SHORT'].includes(p.positionSide)?p.positionSide:p.quantity>0?'LONG':'SHORT')===direction);
+    if(!position){toast('현재 보유 포지션을 다시 확인해 주세요.',true);return;}
+    const known=()=>marketInstruments.some(item=>item.market==='usdm'&&item.symbol===symbol)||SYMBOLS.some(item=>item.symbol===symbol);if(!known()&&!marketCatalogReady)await loadMarkets();if(!known())throw new Error('해당 포지션의 주문 종목을 찾을 수 없습니다.');selectSymbol(symbol,'usdm');const owner=bots.find(b=>b.symbol===symbol&&b.quantity>0&&(serverState.positionMode!=='HEDGE'||b.positionDirection===direction));if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');manualUI.prepareClose(position,owner?.id||'');
+    if(matchMedia('(max-width:900px)').matches)openMarket();
+    $('#manual-order-ticket').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('#manual-amount').focus({preventScroll:true});
+  }catch(error){toast(error.message,true);}
+}
+function renderHomeTable(){
+  const account=serverState?.account,positions=account?.positions||[];$('#position-count').textContent=positions.length;document.querySelector('[data-home-tab="orders"]>span').textContent=(account?.orders?.length||0)+((serverState?.orders||[]).filter(o=>o.kind==='algo').length);
+  $('#home-table').classList.remove('has-mobile-positions');
+  if(!account){$('#home-table').innerHTML='<div class="empty-table">'+icon('wallet')+'계좌를 연결하면 잔고·포지션·주문을 조회할 수 있습니다.</div>';return;}
+  if(homeTab==='positions'){
+    if(!positions.length){$('#home-table').innerHTML='<div class="empty-table">'+icon('check')+'보유 포지션이 없습니다.</div>';return;}
+    const previousScroller=$('#home-table .position-table-scroll'),scrollLeft=previousScroller?.scrollLeft||0,restoreFocus=previousScroller&&document.activeElement===previousScroller;
+    $('#home-table').innerHTML=positionRows(positions,{bots,state:serverState,insights:positionInsights,symbolButton:positionSymbolButton,importButton:importPositionButton})+'<p class="position-data-note">매매손익·순손익은 최근 30일 종목 전체 기준(양방향 합산), 미실현 제외 · 비율은 현재 증거금 대비 참고율'+(!serverState.connectionId?' · 추가 조회 정보는 서버 갱신 후 표시됩니다.':'')+(positionInsights?.realized&&!positionInsights.realized.complete?' · 실현손익 조회 확인 필요':'')+'</p>';
+    const scroller=$('#home-table .position-table-scroll');scroller.scrollLeft=scrollLeft;if(restoreFocus)scroller.focus({preventScroll:true});
+  }else if(homeTab==='orders'){
+    const rows=[...(account.orders||[]),...(serverState.orders||[]).filter(o=>o.kind==='algo')];$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>종목</th><th>방향 / 유형</th><th>가격 / 조건가</th><th>수량</th><th>상태</th></tr></thead><tbody>'+rows.map(o=>'<tr><td>'+o.symbol+'</td><td>'+esc(o.side)+' · '+esc(o.type)+'</td><td>'+price(o.price)+'</td><td>'+fmt(o.quantity,6)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('check')+'미체결 주문이 없습니다.</div>';
+  }else{
+    const rows=(serverState.fills||[]).filter(f=>f.quantity);$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>시간</th><th>종목</th><th>방향</th><th>체결 수량</th><th>체결가</th></tr></thead><tbody>'+rows.map(f=>'<tr><td>'+time(f.at)+'</td><td>'+f.symbol+'</td><td>'+f.side+'</td><td>'+fmt(f.quantity,6)+'</td><td>'+price(f.price)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('history')+'이 앱의 체결 원장에 기록된 체결이 없습니다.</div>';
+  }
+}
+
+function pixelScene(bot,mini=false){return `<svg class="${mini?'pixel-mini':'pixel-scene'}" viewBox="0 0 260 165" role="img" aria-label="${esc(bot.name)} 사람 캐릭터"><rect x="25" y="130" width="210" height="3" fill="#dbe4d2"/>${roomAvatar(bot,130,84)}</svg>`;}
+function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
+function renderBots(){
+  const assigned=bots.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=bots.filter(b=>b.status==='running').length;
+  $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=bots.length;$('#running-count').textContent=running;$('#paused-count').textContent=bots.length-running;
+  $('.budget-summary>div:first-child strong').innerHTML=fmt(balance,2)+'<span>USDT</span>';
+  $('#total-assigned').innerHTML=fmt(assigned,0)+'<span>USDT</span>';$('#total-available').innerHTML=fmt(balance==null?null:balance-assigned,2)+'<span>USDT</span>';$('#allocated-bar').style.width=(balance?Math.min(100,assigned/balance*100):0)+'%';
+  const performance=workroomPerformance(bots),pnl=performance.pnl;$('#total-pnl').innerHTML=(serverState?.connected&&pnl!==null?signed(pnl):'—')+'<span>USDT</span>';$('#total-pnl').className=pnl>=0?'positive':'negative';
+  $('#total-roi').textContent=serverState?.connected&&performance.roi!==null?(performance.roi>=0?'+':'')+fmt(performance.roi,2)+'%':'—%';$('#total-roi').className='workroom-roi '+(pnl>=0?'positive':'negative');$('#total-roi').title='현재 등록된 봇의 (누적 실현손익 + 현재 미실현손익) ÷ 기준예산 합계 '+fmt(performance.baseBudget,2)+' USDT. 확인된 USDT 수수료 포함, 펀딩 제외.';
+  const performances=bots.map(b=>botPerformance(b,positionInsights,serverState?.fills)),gross=performances.every(p=>p.gross!==null)?performances.reduce((sum,p)=>sum+p.gross,0):null,net=performances.every(p=>p.net!==null)?performances.reduce((sum,p)=>sum+p.net,0):null,base=performance.baseBudget;
+  $('#total-pnl').innerHTML=(serverState?.connected?signed(gross):'—')+'<span>USDT</span>';$('#total-pnl').className=gross>=0?'positive':'negative';$('#total-roi').textContent=serverState?.connected&&gross!==null&&base>0?signed(gross/base*100)+'%':'—%';$('#total-roi').title='매매손익(비용 차감 전) ÷ 기준예산 합계';
+  $('#total-net-pnl').textContent=serverState?.connected&&net!==null?signed(net)+' USDT':'— USDT';$('#total-net-roi').textContent=serverState?.connected&&net!==null&&base>0?signed(net/base*100)+'%':'—%';$('#total-net-pnl').className=net>=0?'positive':'negative';$('#total-net-roi').className='workroom-roi '+(net>=0?'positive':'negative');
+  const visible=bots.filter(b=>botFilter==='all'||b.status===botFilter);if(!visible.some(b=>b.id===selectedBotId))selectedBotId=visible[0]?.id;renderOffice();
+}
+
+function renderOffice(){
+  if(bots.length&&!roomHasBots)mapCameraReady=false;roomHasBots=bots.length>0;
+  roomScene.update(bots,{selectedId:selectedBotId,filter:botFilter});
+  if(mapAutoFit)fitOfficeMap();else $('#office-map').style.setProperty('--map-zoom',mapZoom);
+  if(!mapCameraReady&&$('#office-map-viewport').clientWidth){mapCameraReady=true;requestAnimationFrame(()=>focusMapBot());}
+  $('.room-note').textContent=bots.length?'캐릭터에 마우스를 올려 시작·정지 또는 설정':'새 봇을 만들면 캐릭터가 이 맵에 나타나요.';
+  $('#map-focus-bot').disabled=!selectedBotId;
+  roomControls.sync();
+}
+
+function fitOfficeMap(){
+  const viewport=$('#office-map-viewport'),svg=$('.office-map');
+  if(!svg||!viewport.clientWidth||!viewport.clientHeight)return;
+  const [,,width,height]=svg.getAttribute('viewBox').split(' ').map(Number);
+  mapZoom=Math.min(1,(viewport.clientWidth-2)/width,(viewport.clientHeight-2)/height);
+  $('#office-map').style.setProperty('--map-zoom',mapZoom);
+}
+function focusMapBot(){
+  const viewport=$('#office-map-viewport'),point=roomScene.position(selectedBotId)||{x:roomScene.layout.width/2,y:roomScene.layout.height/2};
+  viewport.scrollTo({left:Math.max(0,point.x*mapZoom-viewport.clientWidth/2),top:Math.max(0,point.y*mapZoom-viewport.clientHeight/2)});
+}
+async function toggleBot(id){
+  const b=bots.find(b=>b.id===id);if(!b)return;
+  if(!serverState?.connected){goPage('settings');toast('여기서 API 키를 연결한 뒤 봇을 시작하세요.',true);return;}
+  try{await api('/bots/'+encodeURIComponent(id)+(b.runtime.runEnabled?'/pause':'/start'),{method:'POST'});await syncWorkspace();toast(b.runtime.runEnabled?'신규 진입을 중지했습니다.':'조건 감시를 시작했습니다.');}catch(error){toast(error.message,true);}
+}
+
+function renderActivity() { $('#activity-list').innerHTML=logs.map(l=>`<article class="activity-row"><span class="activity-icon">${icon('history')}</span><div><strong>${esc(l.title)}</strong><p>${esc(l.message)}</p></div><time datetime="${new Date(l.at).toISOString()}">${time(l.at)}</time></article>`).join(''); }
+function download(filename,value) { const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+
+const options = (items, value) => items.map(([key,label])=>`<option value="${esc(key)}" ${String(key)===String(value)?'selected':''}>${esc(label)}</option>`).join('');
+const bindInput=(label,key,value,{unit='',type='number',min='',max='',step='any',note='',full=false}={})=>`<label class="field ${full?'full':''}"><span>${label}</span><span class="input-unit"><input data-bind="${key}" type="${type}" value="${esc(value)}" ${type==='number'?`min="${min}" max="${max}" step="${step}"`:''} ${type==='text'?'maxlength="32"':''} aria-label="${label}">${unit?`<span>${unit}</span>`:''}</span>${note?`<small>${note}</small>`:''}</label>`;
+const bindSelect=(label,key,value,items,note='')=>`<label class="field"><span>${label}</span><select data-bind="${key}" aria-label="${label}">${options(items,value)}</select>${note?`<small>${note}</small>`:''}</label>`;
+function getPath(obj,key){return key.split('.').reduce((v,k)=>v?.[k],obj);}
+function setPath(obj,key,value){const keys=key.split('.');const last=keys.pop();keys.reduce((v,k)=>v[k],obj)[last]=value;}
+function botSymbolField(){
+  const selected=SYMBOLS.find(s=>s.symbol===draft.symbol);
+  return '<div class="field"><span>담당 종목</span><button type="button" id="bot-symbol-picker" class="bot-symbol-picker" aria-label="담당 종목 검색" aria-haspopup="dialog"><span><strong>'+esc(draft.symbol)+'</strong><small>'+esc(selected?symbolName(selected):'USDT 무기한 선물')+'</small></span>'+icon('search')+'</button><small>심볼이나 종목명을 검색해 선택하세요.</small></div>';
+}
+function botConfigLocked(){return Boolean(draft.quantity>0||serverState?.orders?.some(order=>order.botId===draft.id));}
+function renderBasic() {
+  $('#editor-basic').innerHTML=`<div class="form-section"><h3>봇의 이름과 담당 종목</h3><div class="form-grid">${bindInput('봇 이름','name',draft.name,{type:'text',full:true})}${botSymbolField()}<div class="field full" id="bot-appearance-summary">${appearanceCard(draft)}</div></div></div><div class="form-section"><h3>이 봇의 운용 예산</h3><div class="editor-wallet-summary"><span>선물지갑 USDT 잔고 <strong>${fmt(serverState?.account?.walletBalance)} USDT</strong></span><span>현재 주문 가능 <strong>${fmt(serverState?.account?.availableBalance)} USDT</strong></span></div><div class="form-grid">${bindInput('운용예산 · 증거금 한도','budget',draft.budget,{unit:'USDT',min:10,max:100000000,step:1,note:`다른 봇 배정 후 남은 한도: ${fmt(serverState?.account?serverState.account.walletBalance-bots.filter(b=>b.id!==draft.id).reduce((s,b)=>s+effectiveBudget(b),0):NaN)} USDT · 자금을 따로 이체하지 않습니다.`})}${bindSelect('손익에 따른 예산 운용','budgetMode',draft.budgetMode||'fixed',BUDGET_OPTIONS)}${bindSelect('포지션당 진입 횟수','maxEntries',draft.maxEntries,[[0,'제한 없음 (기본)'],...Array.from({length:20},(_,i)=>[i+1,'최대 '+(i+1)+'회'])],'처음 진입과 추가 진입의 체결 횟수입니다. 전량 정리하면 0회로 초기화합니다.')}${bindSelect('증거금 모드','margin',draft.margin,[['ISOLATED','아이솔레이트 (격리)'],['CROSSED','크로스 (교차)']])}</div><div class="budget-preview" id="budget-preview"></div><div class="field-note">${icon('info')}<span>레버리지는 조건·행동 탭에서 롱·숏 진입 조건마다 정합니다. 봇 예산은 주문 운용 한도이며 최대 손실 보장은 아닙니다. 크로스는 계좌의 담보를 공유합니다.</span></div></div>`;
+  renderLeverage();loadLeverageLimits();updateBudgetPreview();
+  const savedBot=bots.find(bot=>bot.id===draft.id);if(savedBot)$('#editor-basic .form-section').insertAdjacentHTML('beforeend','<div class="import-bot-shortcut"><button type="button" class="button secondary" data-import-for-bot="'+esc(savedBot.id)+'">기존 포지션 연결</button><small>계좌의 '+esc(savedBot.symbol)+' 포지션을 이 봇에 맡깁니다. 현재 저장된 조건과 예산을 유지합니다.</small></div>');
+  if(botConfigLocked()){$('#bot-symbol-picker').disabled=true;$('#editor-basic [data-bind="margin"]').disabled=true;}
+}
+function renderLeverage(){
+  const rule=currentRule(),range=$('#rule-leverage-range'),numberInput=$('#rule-leverage-number'),note=$('#leverage-limit-note');if(!rule||!isEntry(rule.action)||!range||!numberInput)return;
+  const cap=leverageCap(leverageLimits,effectiveBudget(draft));
+  range.max=numberInput.max=Math.max(1,cap);range.disabled=!leverageLimits?.available||cap<1;range.value=Math.max(1,Math.min(cap,rule.leverage||1));range.setAttribute('aria-valuetext',range.value+'배');
+  if(document.activeElement!==numberInput)numberInput.value=rule.leverage;
+  const step=cap<=20?5:cap<=50?10:25,ticks=[1];for(let value=step;value<cap;value+=step)ticks.push(value);if(cap>1)ticks.push(cap);
+  $('#leverage-ticks').innerHTML=ticks.map(value=>'<span>'+value+'×</span>').join('');
+  const maximum=notionalCap(leverageLimits,rule.leverage);
+  note.className=rule.leverage>cap?'leverage-error':'';
+  note.textContent=(leverageLimits?.available?`${draft.symbol} · 거래소 최대 ${leverageLimits.maxLeverage}× · 예산 기준 최대 ${cap}×`+(maximum?` · 선택 배수의 명목 한도 ${fmt(maximum,0)} USDT`:'')+(rule.leverage>cap?' · 허용 범위로 조정하세요.':''):leverageLimits?.reason||'종목별 레버리지 한도를 조회하는 중…')+(botConfigLocked()?` · 현재 포지션은 ${draft.leverage}× 유지. 이 설정은 다음 새 포지션에 적용합니다.`:'');
+}
+function ruleLeverageMarkup(rule,prefix){return '<div class="leverage-field"><div class="leverage-heading"><span>이 진입 조건의 레버리지</span><label class="leverage-value"><input id="rule-leverage-number" type="number" data-bind="'+prefix+'.leverage" aria-label="이 진입 조건의 레버리지" min="1" max="125" step="1"><span>×</span></label></div><input id="rule-leverage-range" class="leverage-range" type="range" min="1" max="125" step="1" aria-label="진입 조건 레버리지 슬라이더"><div id="leverage-ticks" class="leverage-ticks"></div><small id="leverage-limit-note"></small><small>포지션이 없는 첫 진입 때 적용합니다. 보유 중 추가 진입은 현재 포지션 배수를 유지합니다. 같은 종목의 롱·숏은 거래소 레버리지를 공유합니다.</small></div>';}
+async function loadLeverageLimits(){
+  const request=++leverageRequest,symbol=draft.symbol;leverageLimits=null;renderLeverage();
+  try{const limits=await api('/leverage?symbol='+encodeURIComponent(symbol));if(request!==leverageRequest||draft?.symbol!==symbol)return;leverageLimits=limits;}
+  catch(error){if(request!==leverageRequest)return;leverageLimits={available:false,reason:'한도 조회 실패 · '+error.message};}
+  renderLeverage();
+}
+function updateBudgetPreview() {
+  const stored=bots.find(bot=>bot.id===draft.id),view={...stored,...draft,runtime:stored?.runtime},limit=effectiveBudget(view),realized=Number(stored?.runtime?.realized)||0,mode=draft.budgetMode||'fixed',usage=budgetUsage({...view,used:stored?.used,reserved:stored?.reserved});
+  const amounts=draft.actionRules.filter(r=>r.enabled&&isEntry(r.action)).map(r=>limit*r.sizePercent/100),low=amounts.length?Math.min(...amounts):null,high=amounts.length?Math.max(...amounts):null;
+  const notionals=draft.actionRules.filter(r=>r.enabled&&isEntry(r.action)).map(r=>limit*r.sizePercent/100*(r.leverage||draft.leverage));
+  $('#budget-preview').innerHTML='<div><small>조건별 진입 증거금 · 현재 한도 기준</small><strong>'+fmt(low)+(high!==low?' ~ '+fmt(high):'')+'<span>USDT</span></strong></div><div><small>최대 명목 주문금액 · 조건별 배수 기준</small><strong>'+fmt(notionals.length?Math.max(...notionals):null)+'<span>USDT</span></strong></div><div><small>수수료·수량 여유분</small><strong>1% 제외 후 계산</strong></div>';
+  let note=$('#budget-usage-note');if(!note){note=document.createElement('div');note.id='budget-usage-note';note.className='budget-usage-note';$('#budget-preview').after(note);}
+  const explanation={fixed:'손실이 나도 기준 예산을 유지합니다. 지갑 잔고가 허용하면 다음 진입에 같은 한도를 다시 사용할 수 있습니다.',pnl:'기준 예산에 이 봇의 누적 실현손익을 더합니다. 손실은 차감하며 수익은 원금을 넘어서도 재투자합니다.',capped:'기준 예산에 누적 실현손익을 더하되, 설정한 원금까지만 운용합니다. 손실은 차감하고 이후 수익으로 원금까지만 복구합니다.'}[mode];
+  note.innerHTML='<strong>기준 예산 '+fmt(draft.budget)+' · 누적 실현손익 '+signed(realized)+' → 현재 운용한도 '+fmt(limit)+' USDT</strong><p>'+explanation+'</p><strong>보유 포지션 증거금 '+fmt(usage.inPositions)+' / 미체결 진입 주문 증거금 '+fmt(usage.pending)+' / 남은 예산 '+fmt(usage.available)+' USDT</strong><br>증거금은 현재 운용한도 안에 포함되며 누적 매매금액 제한이 아닙니다. '+(draft.margin==='ISOLATED'?'격리는 실제 배정된 증거금으로 계산하며 수동 추가분도 포함합니다.':'크로스는 포지션에 필요한 초기 증거금으로 계산합니다.')+'<br>실현손익은 이 봇의 전체 관리 기간과 확인된 USDT 수수료 기준이며, 미실현손익·펀딩·다른 자산 수수료는 제외합니다. 예산·방식 변경은 저장할 때 적용하며 자금을 이체하지 않습니다.'+(usage.overBudget>0?'<p class="budget-overflow-note">현재 증거금이 운용한도보다 '+fmt(usage.overBudget)+' USDT 많습니다. 저장과 보유 포지션 관리는 가능하며 새 진입은 남은 예산 안에서만 가능합니다.</p>':'')+(limit===0?'<p class="budget-overflow-note">현재 운용한도가 0이므로 새 진입을 보류합니다. 보유 포지션 정리와 보호 주문 관리는 유지됩니다.</p>':'');
+}
+function orderMarkup(rule,prefix){return '<div class="form-section rule-order-section"><h3>이 행동의 주문 방식</h3><div class="form-grid">'+bindSelect('주문 방식',prefix+'.order.type',rule.order.type,[['LIMIT','지정가'],['MARKET','시장가']])+bindSelect('지정가 기준',prefix+'.order.price',rule.order.price,[['bid','매수 1호가'],['ask','매도 1호가'],['last','현재가']])+bindInput('기준 가격에서 조정',prefix+'.order.ticks',rule.order.ticks,{unit:'틱',min:-100,max:100,step:1})+bindInput('체결 대기시간',prefix+'.order.timeout',rule.order.timeout,{unit:'초',min:1,max:3600,step:1})+bindSelect('미체결 잔량 처리',prefix+'.order.remainder',rule.order.remainder,[['cancel','잔량 취소 후 종료'],['market','잔량 취소 확인 후 시장가 전환']])+bindSelect('지정가 체결 정책',prefix+'.order.postOnly',String(rule.order.postOnly),[['true','Post-only · 메이커만'],['false','일반 지정가']])+'</div><div id="action-preview" class="action-preview"></div></div>';}
+
+function renderConditions() {
+  signatureHelp?.dispose();clearTimeout(formulaDebounce);
+  const rule=currentRule()||draft.actionRules[0];selectedRuleId=rule?.id;draft.conditionMode='formula';
+  const list='<div class="action-rules-heading"><div><h3>조건마다 실행할 행동을 정하세요</h3><p>진입 · 정리 · 봇 정지를 수식과 함께 설정합니다.</p></div><button type="button" class="button secondary" id="add-action-rule">'+icon('plus')+'조건 추가</button></div><div class="action-rule-list">'+draft.actionRules.map((r,i)=>'<div class="action-rule-row '+(r.id===selectedRuleId?'selected':'')+'"><button type="button" class="action-rule-select" data-select-rule="'+r.id+'" aria-pressed="'+(r.id===selectedRuleId)+'"><span class="rule-number">'+(i+1)+'</span><span><strong>'+ACTIONS[r.action]+'</strong><small>'+esc(r.formula||'조건식을 입력하세요')+'</small></span></button><label class="rule-enabled"><input type="checkbox" data-bind="actionRules.'+i+'.enabled" aria-label="조건 '+(i+1)+' 사용" '+(r.enabled?'checked':'')+'>사용</label></div>').join('')+'</div>';
+  if(!rule){$('#editor-conditions').innerHTML=list;return;}
+  const prefix=rulePrefix(),index=draft.actionRules.indexOf(rule),entry=isEntry(rule.action),stop=isStop(rule.action);rule.order||=makeActionRule().order;rule.reentry||=makeActionRule().reentry;
+  const settings='<div class="rule-editor-heading"><h3>조건 '+(index+1)+'</h3><div><button type="button" data-move-rule="up" aria-label="선택 조건 위로" '+(!index?'disabled':'')+'>'+icon('chevron')+'</button><button type="button" data-move-rule="down" aria-label="선택 조건 아래로" '+(index===draft.actionRules.length-1?'disabled':'')+'>'+icon('chevron')+'</button><button type="button" id="remove-action-rule" aria-label="선택 조건 삭제" '+(draft.actionRules.length===1?'disabled':'')+'>'+icon('trash')+'</button></div></div><div class="form-grid rule-action-settings">'+bindSelect('조건 충족 시 행동',prefix+'.action',rule.action,Object.entries(ACTIONS))+(stop?'<div class="stop-action-note">조건이 충족되면 신규 진입을 정지하고 미체결 진입 주문을 취소합니다. 보유 포지션의 정리 조건과 TP·SL 관리는 계속합니다. 다시 시작하려면 캐릭터의 시작을 선택하세요.</div>':bindInput(entry?'진입 비율 · 봇 예산 기준':'정리 비율 · 보유 수량 기준',prefix+'.sizePercent',rule.sizePercent,{unit:'%',min:.01,max:100,step:.01,note:entry?'봇 예산 안에서 이 조건이 사용할 증거금 비율':'100%는 해당 봇의 보유 포지션 전량 정리'})+bindSelect('같은 조건 재실행',prefix+'.reentry.mode',rule.reentry.mode,[['rearm','조건 해제 후 다시 충족'],['bar','봉마다 한 번'],['cooldown','시간 간격마다']],{rearm:'조건이 거짓이 됐다가 다시 참이 되면 실행합니다.',bar:'조건이 참이면 수식의 가장 짧은 봉 주기마다 한 번 실행합니다.',cooldown:'조건이 계속 참이면 아래 간격마다 다시 실행합니다.'}[rule.reentry.mode])+(rule.reentry.mode==='cooldown'?bindInput('같은 조건 재실행 간격',prefix+'.reentry.cooldown',rule.reentry.cooldown,{unit:'초',min:0,max:86400,step:1,note:'0초 = 간격 없음. 조건이 참이면 매 감시 주기(약 3초)마다 실행할 수 있습니다.'}):'')+(entry?bindInput('전량 정리 후 새 진입 대기',prefix+'.reentry.afterExitCooldown',rule.reentry.afterExitCooldown,{unit:'초',min:0,max:86400,step:1,note:'0초 = 대기 없음. 전량 정리 후 이 시간이 지나고 진입 조건도 맞아야 주문합니다.'})+ruleLeverageMarkup(rule,prefix):''))+ '</div>';
+  $('#editor-conditions').innerHTML=list+settings+formulaEditorMarkup({...draft,formula:rule.formula,formulaTimeframe:rule.timeframe,formulaCandle:rule.candle},{prefix})+(stop?'<div id="action-preview" class="action-preview"></div>':orderMarkup(rule,prefix))+'<div class="field-note rule-behavior-note">'+icon('info')+'<span>봇 정지 조건은 신규 주문보다 먼저 처리합니다. 정리 조건은 진입보다 먼저 처리하며 같은 종류는 위쪽 조건을 먼저 실행합니다. 롱·숏 진입이 동시에 충족되면 진입을 보류합니다. 한 봇은 한 방향을 보유하며, 반대 방향은 기존 포지션 정리 후 진입합니다. 신규 진입을 중지해도 보유 포지션의 정리 조건과 보호 주문은 관리합니다.</span></div>';
+  signatureHelp=installSignatureHelp($('#formula-source'),$('#formula-signature'));renderLeverage();updateFormulaFeedback();updateActionPreview();
+}
+async function updateFormulaFeedback() {
+  const rule=currentRule();if(!rule)return;
+  const source=rule.formula||'',feedback=$('#formula-feedback'),request=++formulaRequest;
+  $('#formula-count').textContent=source.length+' / 1000';
+  $('#formula-lines').innerHTML=Array.from({length:Math.max(6,source.split('\n').length)},(_,i)=>String(i+1).padStart(2,'0')).join('<br>');
+  if(!rule.enabled&&!source){feedback.className='formula-feedback';feedback.textContent='사용을 꺼 둔 조건입니다. 수식을 입력한 뒤 사용을 켜세요.';return;}
+  try {
+    const intervals=ruleIntervals(source);feedback.className='formula-feedback valid';feedback.innerHTML=icon('check')+'<div><strong>문법 정상</strong><span>거래소 봉으로 조건을 확인하는 중…</span></div>';
+    const snapshots=Object.fromEntries(await Promise.all((intervals.length?intervals:['1m']).map(async interval=>[interval,await api('/market?symbol='+encodeURIComponent(draft.symbol)+'&interval='+encodeURIComponent(interval))])));if(request!==formulaRequest||!$('#bot-dialog').open)return;
+    const {result}=evaluateRuleFormula(source,snapshots,{quantity:draft.quantity,entryPrice:draft.entryPrice,direction:draft.positionDirection,leverage:draft.leverage});feedback.className='formula-feedback valid';
+    let message=result.missing?'계산에 필요한 봉 또는 포지션 정보가 없습니다.':result.pass?'조회한 거래소 봉에서 조건 충족':'조회한 거래소 봉에서 조건 미충족';
+    if(!result.ok)message=result.error;
+    feedback.innerHTML=icon('check')+'<div><strong>문법 정상</strong><span>'+esc(message)+' · 수동 검사 결과 · '+ACTIONS[rule.action]+'</span></div>';
+  } catch(error) {if(request!==formulaRequest)return;feedback.className='formula-feedback invalid';feedback.innerHTML=icon('info')+'<div><strong>수식을 확인해 주세요</strong><span>'+esc(error.message)+'</span></div>';}
+}
+function setFormulaExample(index) {
+  const example=formulaExamples[index],rule=currentRule();if(!example||!rule)return;
+  const textarea=$('#formula-source');rule.formula=example.value;textarea.value=rule.formula;$('#form-errors').hidden=true;updateFormulaFeedback();textarea.focus();
+}
+function renderActions() {
+  if(!['MARK_PRICE','CONTRACT_PRICE'].includes(draft.exit.price))draft.exit.price='MARK_PRICE';
+  const control=(kind,label)=>'<div class="protection-control" data-protection-control="'+kind+'"><label class="protection-toggle"><input type="checkbox" data-bind="exit.'+kind+'Enabled" aria-label="'+label+' 사용" '+(protectionEnabled(draft.exit,kind)?'checked':'')+'><span>'+label+' 사용</span></label>'+bindInput((kind==='takeProfit'?'익절':'손절')+' · 평균 진입가 대비 가격 변동','exit.'+kind,draft.exit[kind],{unit:'%',min:.01,max:1000,step:.01,note:kind==='takeProfit'?'롱은 상승, 숏은 하락할 때 익절합니다.':'롱은 하락, 숏은 상승할 때 손절합니다.'})+'</div>';
+  $('#editor-actions').innerHTML='<div class="form-section"><h3>포지션 공통 보호 주문 <span class="protection-optional">선택 사항</span></h3><p class="protection-intro">익절·손절을 각각 켜거나 끌 수 있습니다. 둘 다 끄면 조건·행동 탭의 정리 조건만 사용합니다.</p><div class="protection-grid">'+control('takeProfit','익절 TP')+control('stopLoss','손절 SL')+'</div><p id="protection-current-summary" class="protection-current-summary" role="status"></p><p class="protection-example">예: 평균 진입가 100 USDT인 롱에서 익절 3%는 103, 손절 1.5%는 98.5입니다. 레버리지를 적용한 수익률이 아닌 가격 변동률이며, 추가 진입하면 평균 진입가를 기준으로 다시 계산합니다.</p><div class="form-grid">'+bindSelect('보호 주문 가격 기준','exit.price',draft.exit.price,[['MARK_PRICE','마크 가격 (거래소 평가 가격)'],['CONTRACT_PRICE','최종 체결가 (마지막 거래 가격)']])+'</div><dl class="protection-price-help"><div><dt>마크 가격</dt><dd>여러 시세 등을 바탕으로 거래소가 계산하는 평가 가격입니다. 미실현손익과 강제청산 판단에 쓰입니다.</dd></div><div><dt>최종 체결가</dt><dd>이 선물 종목이 가장 최근에 실제 거래된 가격입니다. 순간적인 체결로 마크 가격과 다를 수 있습니다.</dd></div></dl><p class="protection-example">선택한 가격이 목표에 도달하면 시장가 정리를 실행합니다. 실제 체결 가격은 달라질 수 있습니다. 이 선택은 조건식의 종가·하이킨종가 계산을 바꾸지 않습니다.</p><div class="field-note">'+icon('shield')+'<span>켜 둔 보호 주문은 봇이 관리하는 수량 전체에 적용합니다. 둘 다 끄면 거래소 TP/SL을 등록하지 않으며, 조건식 정리는 프로그램이 켜져 있고 주문 실행이 허용된 동안 동작합니다. 기존 봇 소유 주문의 변경·취소는 주문 실행을 허용한 상태에서 반영하며, 취소 완료까지 확인합니다.</span></div></div><div class="form-section"><h3>주문 중복 방지와 소유 수량</h3><div class="field-note">'+icon('info')+'<span>각 조건의 실행과 주문 의도를 전송 전에 저장합니다. 접수 여부가 불명확하면 재전송하지 않고 조회합니다. 정리 행동은 이 봇의 보유 수량에만 적용하며 포지션이 없으면 실행하지 않습니다.</span></div></div>';
+  updateProtectionControls();
+}
+function updateProtectionControls(){
+  for(const kind of ['takeProfit','stopLoss']){const enabled=protectionEnabled(draft.exit,kind);$('#editor-actions [data-bind="exit.'+kind+'"]').disabled=!enabled;$('#editor-actions [data-protection-control="'+kind+'"]').classList.toggle('is-disabled',!enabled);}
+  const enabled=hasProtection(draft.exit);$('#editor-actions [data-bind="exit.price"]').disabled=!enabled;
+  $('#protection-current-summary').textContent=protectionSummary(draft.exit)+(enabled?' · 봇 보유 수량 전체에 적용':' · 가격 기준은 사용하지 않습니다. 정리 조건이 없으면 자동 정리를 실행하지 않습니다.');
+}
+function updateActionPreview() {
+  const rule=currentRule(),preview=$('#action-preview');if(!rule||!preview)return;
+  if(isStop(rule.action)){preview.textContent='조건 충족 → 신규 진입 정지 · 미체결 진입 주문 취소 · 보유 포지션 관리 유지';return;}
+  const market=rule.order.type==='MARKET';preview.textContent='조건 충족 → '+ACTIONS[rule.action]+' · '+rule.sizePercent+'%'+(isEntry(rule.action)?' · 새 포지션 '+rule.leverage+'×':'')+' · '+(market?'시장가':({bid:'매수 1호가',ask:'매도 1호가',last:'현재가'})[rule.order.price]+' '+rule.order.ticks+'틱 지정가 → '+rule.order.timeout+'초 뒤 잔량 '+(rule.order.remainder==='market'?'취소 확인 후 시장가 전환':'취소'));
+  document.querySelector('[data-bind="'+rulePrefix()+'.sizePercent"]').disabled=rule.action==='CLOSE_ALL';
+  $$('[data-bind^="'+rulePrefix()+'.order."]').forEach(el=>{if(!el.dataset.bind.endsWith('.type'))el.disabled=market;});
+}
+function renderEditorStatus() {
+  if(!draft)return;const stored=bots.find(b=>b.id===draft.id)||draft;
+  const saved=bots.some(b=>b.id===draft.id),controls=$('#editor-run-controls');controls.hidden=!saved;
+  $('#editor-start-bot').disabled=!saved||!!stored.runtime?.runEnabled;$('#editor-pause-bot').disabled=!stored.runtime?.runEnabled;
+  $('#editor-run-state').textContent=stored.runtime?.runEnabled?'신규 진입 허용':stored.quantity>0?'신규 진입 정지 · 보유 관리 중':'시작 대기';
+  $('#editor-status').innerHTML='<div class="editor-status-top">'+pixelScene(stored,true)+'<div><h3>'+esc(stored.name)+' · '+esc(stored.symbol)+'</h3><p>'+esc(taskLabel(stored))+'</p></div></div>'+botStatusMarkup(stored,serverState,positionInsights)+(stored.budgetWarning?'<p class="budget-overflow-note">'+esc(stored.budgetWarning)+'</p>':'')+'<div class="bot-log">'+(logs.filter(l=>l.botId===stored.id).slice(0,15).map(l=>'<p><time>'+time(l.at)+'</time>'+esc(l.message)+'</p>').join('')||'<p>아직 이 봇의 활동 기록이 없습니다.</p>')+'</div>';
+}
+function setEditorTab(tab){editorTab=tab;$$('[data-editor-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.editorTab===tab);b.setAttribute('aria-selected',b.dataset.editorTab===tab);});$$('.editor-panel').forEach(p=>p.hidden=p.id!==`editor-${tab}`);$('.editor-body').scrollTop=0;}
+function openBot(id=null,tab='basic') {
+  const b=bots.find(b=>b.id===id);draft=upgradeActions(structuredClone(b || makeBot()));selectedRuleId=draft.actionRules.find(r=>r.enabled)?.id||draft.actionRules[0]?.id;
+  $('#editor-title').textContent=b?b.name:'새 봇 만들기';$('#editor-eyebrow').textContent=b?'YOUR BOT WORKSPACE':'BUILD YOUR BOT';$('#delete-bot').hidden=!b;$('#form-errors').hidden=true;
+  renderBasic();renderConditions();renderActions();renderEditorStatus();setEditorTab(tab);$('#bot-dialog').showModal();
+}
+function confirmAction(title,message,callback,label='확인') { $('#confirm-title').textContent=title;$('#confirm-message').textContent=message;$('#confirm-action').textContent=label;confirmCallback=callback;$('#confirm-dialog').showModal(); }
+async function saveBot(event,confirmed=false){
+  event.preventDefault();const stored=bots.find(bot=>bot.id===draft.id),errors=validateBot(draft,bots,{balance:serverState?.account?.walletBalance??Infinity,symbols:SYMBOLS.map(s=>s.symbol),enforceAllocationLimit:!stored||draft.budget>stored.budget,maxLeverage:botConfigLocked()?(leverageLimits?.maxLeverage||125):leverageCap(leverageLimits,effectiveBudget(draft))});
+  if(errors.length){$('#form-errors').innerHTML='<ul>'+errors.map(e=>'<li>'+esc(e)+'</li>').join('')+'</ul>';$('#form-errors').hidden=false;return;}
+  if(stored?.quantity>0&&!stored.runtime?.importPending&&!confirmed&&JSON.stringify([stored.actionRules,stored.exit])!==JSON.stringify([draft.actionRules,draft.exit])){confirmAction('보유 포지션 관리 조건 변경',stored.name+' · 변경한 정리 조건과 TP·SL이 보유 포지션에 적용됩니다. 이미 충족된 조건은 바로 실행될 수 있습니다. 저장 후 신규 진입은 정지됩니다.',()=>saveBot({preventDefault(){}},true),'저장·적용');return;}
+  const submit=$('#bot-form [type="submit"]');submit.disabled=true;
+  try{const saved=await api('/bots',{method:'POST',body:draft});selectedBotId=saved.id;$('#bot-dialog').close();await syncWorkspace();toast('설정을 저장했습니다. 신규 진입은 일시정지 상태입니다.');}
+  catch(error){$('#form-errors').textContent=error.message;$('#form-errors').hidden=false;$('#form-errors').scrollIntoView({block:'nearest'});}
+  finally{submit.disabled=false;}
+}
+
+function showSymbols(target='home'){
+  symbolPickerTarget=target==='bot'?'bot':'home';symbolResultLimit=100;$('#symbol-dialog h2').textContent=symbolPickerTarget==='bot'?'담당 종목 찾기':'바이낸스 상품 찾기';$('#symbol-dialog .eyebrow').textContent=symbolPickerTarget==='bot'?'BOT SYMBOL':'BINANCE MARKETS';$('#symbol-search').value='';$('#symbol-market-filters').hidden=symbolPickerTarget==='bot';renderSymbolResults('');$('#symbol-dialog').showModal();$('#symbol-search').focus();if(symbolPickerTarget==='home'&&!marketCatalogReady)loadMarkets().catch(error=>{marketError=error.message;renderSymbolResults($('#symbol-search').value);});
+}
+function renderSymbolResults(query) {
+  const bot=symbolPickerTarget==='bot',normalize=text=>String(text).toLowerCase().replace(/[\s/\-]/g,''),term=normalize(query),current=bot?draft?.symbol:currentSymbol;
+  const candidates=bot?SYMBOLS.map(s=>({...s,market:'usdm',baseAsset:s.short,quoteAsset:'USDT',marginAsset:'USDT',contractType:'PERPETUAL',name:symbolName(s)})):marketInstruments;
+  const rank=s=>s.symbol===current&&(bot||s.market===currentMarket)&&!term?-1:normalize(s.symbol)===term?0:normalize(s.symbol).startsWith(term)?1:2;
+  const items=candidates.filter(s=>(bot|| (marketFilter==='favorites'?favorites.includes(marketKey(s)):matchesMarket(s,marketFilter)))&&normalize(s.symbol+' '+s.baseAsset+' '+(bot?s.name:instrumentName(s))+' '+productLabel(s)).includes(term)).sort((a,b)=>rank(a)-rank(b));
+  $('#symbol-market-filters').innerHTML=bot?'':[['favorites','★ 즐겨찾기 '+favorites.length],...MARKET_FILTERS].map(([key,label])=>'<button type="button" data-market-filter="'+key+'" aria-pressed="'+(key===marketFilter)+'" class="'+(key===marketFilter?'active':'')+'">'+label+'</button>').join('');
+  const note=$('#symbol-market-note');note.hidden=bot||!marketCatalogErrors.length;note.textContent=marketCatalogErrors.map(e=>e.error).join(' / ');
+  $('#symbol-result-count').textContent=!bot&&!marketCatalogReady?'바이낸스 상품 목록을 불러오는 중…':items.length+'개 상품'+(bot?' · 봇 매매 지원 종목':' · 별을 눌러 즐겨찾기');
+  $('#symbol-results').innerHTML=items.slice(0,symbolResultLimit).map(s=>{const saved=favorites.includes(marketKey(s));return '<div class="symbol-result-row"><button type="button" class="symbol-favorite '+(saved?'active':'')+'" data-favorite-key="'+esc(marketKey(s))+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 즐겨찾기 '+(saved?'삭제':'추가')+'" aria-pressed="'+saved+'">'+(saved?'★':'☆')+'</button><button type="button" class="symbol-result '+(s.symbol===current&&(bot||s.market===currentMarket)?'selected':'')+'" data-market="'+s.market+'" data-symbol="'+esc(s.symbol)+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 선택"><span class="coin-icon" style="color:'+(s.color||'#8aa497')+';background:#f0f5eb">'+coinGlyph(s.symbol)+'</span><span class="symbol-result-name"><strong>'+esc(s.symbol)+'</strong><small>'+esc(bot?s.name:instrumentName(s))+' · '+esc(productLabel(s))+'</small></span><span class="symbol-result-quote">'+price(s.price)+(s.symbol===current&&(bot||s.market===currentMarket)?'<small>선택됨</small>':'')+'</span></button></div>';}).join('')+(items.length>symbolResultLimit?'<button type="button" id="symbol-show-more" class="symbol-show-more">'+(items.length-symbolResultLimit)+'개 더 보기 · 검색으로 좁힐 수 있습니다</button>':'')||'<div class="empty-table">'+(!bot&&!marketCatalogReady?'상품 목록을 불러오는 중입니다.':marketFilter==='favorites'&&!term?'즐겨찾기가 없습니다. 전체 목록에서 별을 눌러 추가하세요.':'검색 결과가 없습니다. 다른 종목명이나 심볼을 입력하세요.')+'</div>';
+}
+function openMarket(){
+  $('#market-sidebar').classList.add('open');if(!$('.sidebar-backdrop')){const backdrop=document.createElement('div');backdrop.className='sidebar-backdrop';backdrop.addEventListener('click',closeMarket);document.body.append(backdrop);}$('#close-market').focus();
+}
+function closeMarket(){ $('#market-sidebar').classList.remove('open');$('.sidebar-backdrop')?.remove(); }
+
+document.addEventListener('click',event=>{
+  const character=event.target.closest('[data-select-map-bot]');
+  if(character){roomControls.open(character.dataset.selectMapBot);return;}
+  const b=event.target.closest('button');if(!b)return;
+  if(b.dataset.importForBot){positionImportUI.open(null,b.dataset.importForBot);return;}
+  if(b.id==='import-position-button'||b.dataset.importPosition){positionImportUI.open(b.dataset.importPosition||null);return;}
+  if(b.dataset.prepareClose){preparePositionClose(b.dataset.prepareClose);return;}
+  if(b.id==='editor-start-bot'||b.id==='editor-pause-bot'){roomControls.action(b.id==='editor-start-bot'?'start':'pause',draft.id);return;}
+  if(b.dataset.botTrade){const target=bots.find(item=>item.id===b.dataset.botTrade);if(target){if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');selectSymbol(target.symbol,'usdm');manualUI.prepareBot(target.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});}return;}
+  if(b.dataset.cancelBotOrder){const order=serverState.orders.find(o=>o.id===b.dataset.cancelBotOrder&&o.botId===b.dataset.ownerBot);if(order)confirmAction('미체결 잔량 취소',order.symbol+' · '+order.type+' · '+order.quantity+' 중 미체결 잔량을 취소합니다.',async()=>{await api('/bots/'+encodeURIComponent(order.botId)+'/orders/'+encodeURIComponent(order.id)+'/cancel',{method:'POST'});await syncWorkspace();},'잔량 취소');return;}
+
+  if(b.dataset.favoriteKey){try{const next=toggleFavorite(favorites,b.dataset.favoriteKey);localStorage.setItem(FAVORITES_KEY,JSON.stringify(next));favorites=next;renderSymbolResults($('#symbol-search').value);}catch(error){toast(error.message,true);}return;}
+  if(b.dataset.bookPrice){manualUI?.setBookPrice(b.dataset.bookPrice);return;}
+  if(b.id==='apply-whole-frame'){
+    try{const textarea=$('#formula-source'),source=applyWholeTimeframe(textarea.value,$('#formula-whole-frame').value);if(source.length>1000)throw new Error('수식은 1,000자 이하여야 합니다.');textarea.value=currentRule().formula=source;updateFormulaFeedback();textarea.focus();signatureHelp?.update(true);}
+    catch(error){toast(error.message,true);}return;
+  }
+  if(b.id==='add-action-rule'){if(draft.actionRules.length>=20){toast('조건은 20개까지 설정할 수 있습니다.',true);return;}const r=makeActionRule();draft.actionRules.push(r);selectedRuleId=r.id;renderConditions();return;}
+  if(b.dataset.selectRule){selectedRuleId=b.dataset.selectRule;renderConditions();return;}
+  if(b.id==='remove-action-rule'){draft.actionRules=draft.actionRules.filter(r=>r.id!==selectedRuleId);selectedRuleId=draft.actionRules[0]?.id;renderConditions();updateBudgetPreview();return;}
+  if(b.dataset.moveRule){const i=draft.actionRules.findIndex(r=>r.id===selectedRuleId),j=i+(b.dataset.moveRule==='up'?-1:1);if(j>=0&&j<draft.actionRules.length)[draft.actionRules[i],draft.actionRules[j]]=[draft.actionRules[j],draft.actionRules[i]];renderConditions();return;}
+  if(b.dataset.page)goPage(b.dataset.page);
+  if(b.hasAttribute('data-close-dialog')){b.closest('dialog').close();return;}
+  if(b.dataset.marketFilter){marketFilter=b.dataset.marketFilter;symbolResultLimit=100;renderSymbolResults($('#symbol-search').value);return;}
+  if(b.id==='symbol-show-more'){symbolResultLimit+=100;renderSymbolResults($('#symbol-search').value);return;}
+  if(b.dataset.positionSymbol){showPositionChart(b.dataset.positionSymbol);return;}
+  if(b.id==='bot-symbol-picker'){showSymbols('bot');return;}
+  if(b.dataset.symbol){
+    if(b.closest('#symbol-results')&&symbolPickerTarget==='bot'){
+      if(!draft||!SYMBOLS.some(s=>s.symbol===b.dataset.symbol))return;
+      draft.symbol=b.dataset.symbol;renderBasic();updateFormulaFeedback();$('#form-errors').hidden=true;$('#symbol-dialog').close();$('#bot-symbol-picker').focus();return;
+    }
+    selectSymbol(b.dataset.symbol,b.dataset.market||'usdm');if(b.closest('dialog'))b.closest('dialog').close();
+  }
+  if(b.dataset.interval){persistChartView();currentInterval=b.dataset.interval;chartWorkspace.select({interval:currentInterval});$$('[data-interval]').forEach(el=>el.classList.toggle('active',el===b));renderMarket();updateChart();}
+  if(b.dataset.range&&chart)applyChartRange(b.dataset.range);
+  if(b.dataset.homeTab){homeTab=b.dataset.homeTab;$$('[data-home-tab]').forEach(el=>{el.classList.toggle('active',el===b);el.setAttribute('aria-selected',el===b);});renderHomeTable();}
+  if(b.dataset.tool){drawingMode=b.dataset.tool==='line';$$('[data-tool]').forEach(el=>el.classList.toggle('active',el===b));if(drawingMode)toast('차트에서 수평선을 넣을 가격을 클릭하세요.');}
+  if(b.dataset.botFilter){botFilter=b.dataset.botFilter;$$('[data-bot-filter]').forEach(el=>el.classList.toggle('active',el===b));renderBots();}
+  if(b.dataset.editBot)openBot(b.dataset.editBot);
+  if(b.dataset.viewBot)openBot(b.dataset.viewBot,'status');
+  if(b.dataset.configureBot)openBot(b.dataset.configureBot,'conditions');
+  if(b.dataset.toggleBot)toggleBot(b.dataset.toggleBot);
+  if(b.dataset.closePosition){const target=bots.find(item=>item.id===b.dataset.closePosition);confirmAction('포지션 전량 청산',target.name+' · '+target.symbol+' · 보유 수량 '+target.quantity+'을 '+(serverState.environment==='live'?'실전':'테스트넷')+' 계좌에서 시장가 청산합니다.',async()=>{await api('/bots/'+target.id+'/close',{method:'POST'});await syncWorkspace();},'전량 청산');}
+  if(b.dataset.editorTab)setEditorTab(b.dataset.editorTab);
+  if(b.dataset.customizeAppearance){const target=draft?.id===b.dataset.customizeAppearance?draft:bots.find(bot=>bot.id===b.dataset.customizeAppearance);if(target)appearanceUI.open(target);return;}
+  if(b.dataset.formulaExample!==undefined)setFormulaExample(Number(b.dataset.formulaExample));
+  if(b.id==='room-motion'){roomScene.setMotion(!roomScene.enabled);return;}
+  if(b.id==='room-fullscreen'){
+    const panel=$('.office-panel');const request=document.fullscreenElement===panel?document.exitFullscreen():panel.requestFullscreen();request.catch(()=>toast('이 브라우저에서는 맵 전체화면을 열 수 없습니다.',true));return;
+  }
+  if(b.id==='map-focus-bot'){mapAutoFit=false;mapZoom=Math.max(.85,mapZoom);$('#office-map').style.setProperty('--map-zoom',mapZoom);focusMapBot();return;}
+  if(b.dataset.mapZoom){
+    const viewport=$('#office-map-viewport');
+    const center={x:(viewport.scrollLeft+viewport.clientWidth/2)/mapZoom,y:(viewport.scrollTop+viewport.clientHeight/2)/mapZoom};
+    mapAutoFit=b.dataset.mapZoom==='fit';
+    mapZoom=Math.max(.3,Math.min(1.6,mapZoom+(b.dataset.mapZoom==='in'?.15:-.15)));
+    $('#office-map').style.setProperty('--map-zoom',mapZoom);
+    if(b.dataset.mapZoom==='fit'){fitOfficeMap();viewport.scrollTo(0,0);}
+    else viewport.scrollTo(center.x*mapZoom-viewport.clientWidth/2,center.y*mapZoom-viewport.clientHeight/2);
+  }
+  if(b.id==='new-bot'||b.id==='add-bot-card')openBot();
+});
+document.addEventListener('input',event=>{
+  const el=event.target;
+  if(el.id==='rule-leverage-range'){currentRule().leverage=el.valueAsNumber;renderLeverage();updateBudgetPreview();$('#form-errors').hidden=true;return;}
+  if(el.dataset.bind || el.dataset.rule) $('#form-errors').hidden=true;
+  if(el.dataset.bind){
+    const previous=currentRule()?.action,val=el.type==='checkbox'?el.checked:el.type==='number'?el.valueAsNumber:el.dataset.bind==='maxEntries'?Number(el.value):el.dataset.bind.endsWith('.postOnly')?el.value==='true':el.value;setPath(draft,el.dataset.bind,val);
+    if(el.dataset.bind.startsWith('actionRules.')&&el.dataset.bind.endsWith('.action')){const rule=currentRule();if(rule.action==='CLOSE_ALL')rule.sizePercent=100;else if(isEntry(previous)!==isEntry(rule.action))rule.sizePercent=isEntry(rule.action)?25:100;if(isEntry(rule.action))rule.leverage??=draft.leverage||3;renderConditions();}
+    else if(el.dataset.bind.endsWith('.enabled')||el.dataset.bind.endsWith('.reentry.mode'))renderConditions();
+    else if(el.dataset.bind.includes('.order.')||el.dataset.bind.endsWith('.sizePercent'))updateActionPreview();
+    if(['budget','budgetMode','leverage'].includes(el.dataset.bind)||el.dataset.bind.startsWith('actionRules.'))updateBudgetPreview();
+    if(['budget','budgetMode','leverage'].includes(el.dataset.bind)||el.dataset.bind.endsWith('.leverage')){renderLeverage();updateActionPreview();}
+    if(el.dataset.bind.endsWith('.timeframe')||el.dataset.bind.endsWith('.candle')||el.dataset.bind==='symbol')updateFormulaFeedback();
+    if(el.dataset.bind.startsWith('exit.'))updateProtectionControls();
+  }
+  if(el.id==='formula-source'){currentRule().formula=el.value;$('#form-errors').hidden=true;$('#formula-count').textContent=el.value.length+' / 1000';$('#formula-feedback').className='formula-feedback';$('#formula-feedback').textContent='입력한 수식을 확인하는 중…';clearTimeout(formulaDebounce);++formulaRequest;formulaDebounce=setTimeout(()=>updateFormulaFeedback(),400);}
+
+});
+$('#symbol-picker').addEventListener('click',showSymbols);$('#watch-search-button').addEventListener('click',()=>{marketFilter='favorites';showSymbols();});$('#symbol-search').addEventListener('input',e=>{symbolResultLimit=100;renderSymbolResults(e.target.value);});
+$('#indicator-button').addEventListener('click',openStudyLibrary);
+$('#candle-type').addEventListener('change',e=>{candleType=e.target.value;chartWorkspace.select({candleType});updateChart(false);});
+document.addEventListener('change',event=>{
+  if(event.target.id!=='formula-insert')return;
+  const value=event.target.value;if(!value)return;
+  const textarea=$('#formula-source'),start=textarea.selectionStart,end=textarea.selectionEnd;
+  textarea.setRangeText(value,start,end,'end');currentRule().formula=textarea.value;event.target.value='';updateFormulaFeedback();textarea.focus();
+});
+document.addEventListener('keydown',event=>{
+  if(event.target.id==='symbol-search'&&['ArrowDown','Enter'].includes(event.key)&&!event.isComposing){
+    const first=$('#symbol-results .symbol-result');if(first){event.preventDefault();if(event.key==='Enter')first.click();else first.focus();}return;
+  }
+  if(event.target.closest('#symbol-results')&&['ArrowDown','ArrowUp','Home','End'].includes(event.key)){
+    const results=$('#symbol-results .symbol-result'),index=results.indexOf(event.target.closest('.symbol-result'));if(index<0)return;event.preventDefault();
+    const next=event.key==='Home'?0:event.key==='End'?results.length-1:Math.max(0,Math.min(results.length-1,index+(event.key==='ArrowDown'?1:-1)));results[next]?.focus();return;
+  }
+  const character=event.target.closest('[data-select-map-bot]');
+  if(character&&['Enter',' '].includes(event.key)){event.preventDefault();roomControls.open(character.dataset.selectMapBot);}
+  if(event.target.id==='formula-source'&&event.key==='Tab'){event.preventDefault();const textarea=event.target;textarea.setRangeText('  ',textarea.selectionStart,textarea.selectionEnd,'end');currentRule().formula=textarea.value;updateFormulaFeedback();}
+});
+const mapViewport=$('#office-map-viewport');let mapDrag=null;
+mapViewport.addEventListener('pointerdown',event=>{
+  if(event.pointerType!=='mouse'||event.target.closest('[data-select-map-bot]'))return;
+  mapDrag={x:event.clientX,y:event.clientY,left:mapViewport.scrollLeft,top:mapViewport.scrollTop};mapViewport.setPointerCapture(event.pointerId);mapViewport.classList.add('dragging');
+});
+mapViewport.addEventListener('pointermove',event=>{if(!mapDrag)return;mapViewport.scrollLeft=mapDrag.left-event.clientX+mapDrag.x;mapViewport.scrollTop=mapDrag.top-event.clientY+mapDrag.y;});
+const endMapDrag=()=>{mapDrag=null;mapViewport.classList.remove('dragging');};mapViewport.addEventListener('pointerup',endMapDrag);mapViewport.addEventListener('pointercancel',endMapDrag);
+new ResizeObserver(()=>{if(mapAutoFit)fitOfficeMap();}).observe(mapViewport);
+document.addEventListener('fullscreenchange',()=>{const button=$('#room-fullscreen'),expanded=document.fullscreenElement===$('.office-panel');button.setAttribute('aria-label',expanded?'맵 전체화면 닫기':'맵 전체화면');button.title=expanded?'맵 전체화면 닫기':'맵 전체화면';if(mapAutoFit)fitOfficeMap();else requestAnimationFrame(()=>focusMapBot());});
+$('#fit-chart').addEventListener('click',()=>applyChartRange('all'));
+$('#fullscreen-chart').addEventListener('click',()=>{try{openChartModal(currentInstrument(),{interval:currentInterval,candleType});}catch(error){toast(error.message,true);}});
+$('#clear-lines').addEventListener('click',()=>{drawnLines.forEach(l=>candleSeries.removePriceLine(l));drawnLines=[];persistChartView();toast('추가한 수평선을 지웠습니다.');});
+$('#mobile-market-button').addEventListener('click',openMarket);
+$('#close-market').addEventListener('click',closeMarket);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMarket();});
+$('#bot-form').addEventListener('submit',saveBot);
+$('#delete-bot').addEventListener('click',()=>{const bot=bots.find(b=>b.id===draft.id);confirmAction('이 봇을 삭제할까요?',bot.name+'의 설정을 삭제합니다. 포지션·미해결 주문이 있으면 삭제가 거절됩니다.',async()=>{await api('/bots/'+bot.id,{method:'DELETE'});$('#bot-dialog').close();await syncWorkspace();toast('봇 설정을 삭제했습니다.');},'삭제');});
+$('#confirm-action').addEventListener('click',()=>{$('#confirm-dialog').close();const callback=confirmCallback;confirmCallback=null;Promise.resolve(callback?.()).catch(error=>toast(error.message,true));});
+$('#export-log').addEventListener('click',()=>download('futures-workroom-activity.json',{environment:serverState?.environment,logs}));
+$('#export-bots').addEventListener('click',()=>download('futures-workroom-bots.json',{version:1,environment:serverState?.environment,bots}));
+$('#help-button').addEventListener('click',()=>{goPage('settings');});
+$$('dialog:not(#bot-dialog)').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}}));
+window.addEventListener('hashchange',()=>goPage(location.hash.slice(1)));
+installConnectionUI({refresh:syncWorkspace,toast});
+installStudyUI({notify:toast});
+manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
+appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});
+$('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('wallet')+'계좌 정보';
+icons();syncChartButtons();renderMarket();renderHomeTable();renderBots();renderActivity();initChart();goPage(location.hash.slice(1)||'home');
+async function bootstrap(){
+  try{await syncWorkspace();await loadSymbols();await loadMarkets();if(!localStorage.getItem('fw-migrated-v2')&&legacyBots.length){let imported=true;for(const legacy of legacyBots.filter(old=>!bots.some(b=>b.id===old.id))){try{await api('/bots',{method:'POST',body:legacy});}catch(error){imported=false;toast('이전 설정 가져오기: '+error.message,true);}}if(imported)localStorage.setItem('fw-migrated-v2','true');await syncWorkspace();}await updateChart(true);}
+  catch(error){marketError=error.message;renderRuntimeBanner();}
+}
+bootstrap();setInterval(()=>syncWorkspace().catch(()=>{}),3000);setInterval(()=>{if(currentPage==='home')updateChart(false);},3000);setInterval(()=>loadSymbols().catch(error=>{marketError=error.message;renderRuntimeBanner();}),15000);
+$('#local-clock').textContent=time();setInterval(()=>$('#local-clock').textContent=time(),1000);
+
+setInterval(()=>loadMarkets().catch(()=>{}),60000);

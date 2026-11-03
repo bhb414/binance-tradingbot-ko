@@ -1,0 +1,42 @@
+// Local UI test fixture. Authenticated requests never leave this fake client.
+import {createServer} from '../server.mjs';
+import {emptyState} from '../backend/store.mjs';
+import {makeBot} from '../public/core.js';
+import {makeActionRule} from '../public/actions.js';
+const symbolInfo=(symbol,baseAsset,type='PERPETUAL')=>({symbol,baseAsset,quoteAsset:'USDT',marginAsset:'USDT',contractType:type,status:'TRADING',filters:[{filterType:'PRICE_FILTER',tickSize:'0.1'},{filterType:'LOT_SIZE',minQty:'0.001',maxQty:'10000',stepSize:'0.001'},{filterType:'MARKET_LOT_SIZE',minQty:'0.001',maxQty:'10000',stepSize:'0.001'},{filterType:'MIN_NOTIONAL',notional:'5'}]});
+const infos=[symbolInfo('BTCUSDT','BTC'),symbolInfo('ETHUSDT','ETH'),symbolInfo('INTCUSDT','INTC','TRADIFI_PERPETUAL'),symbolInfo('SKHYUSDT','SKHY','TRADIFI_PERPETUAL')],orders=new Map(),positions=new Map(),configs=new Map(infos.map(info=>[info.symbol,{symbol:info.symbol,marginType:'ISOLATED',leverage:3}]));let nextOrder=1;
+class FakeClient{
+  constructor(){this.offset=0;}
+  clearCredentials(){}redact(value){return String(value);}async syncTime(){return Date.now();}
+  async exchangeInfo(){return {symbols:infos};}async tickers(){return infos.map(info=>({symbol:info.symbol,lastPrice:'100',priceChangePercent:'0',quoteVolume:'100000'}));}
+  async book(){return {bids:[['100','10']],asks:[['100.1','10']]};}
+  async premium(){return {markPrice:'100'};}async klines(symbol,interval){const seconds=Number(interval.slice(0,-1))*({m:60,h:3600,d:86400,w:604800,M:2592000}[interval.at(-1)]),last=Math.floor(Date.now()/1000/seconds)*seconds;return Array.from({length:600},(_,i)=>({time:last-(599-i)*seconds,closeTime:(last-(598-i)*seconds)*1000-1,open:100,high:102,low:99,close:100+Math.sin(i/5),volume:10}));}
+  async account(){return {canTrade:true,assets:[{asset:'USDT',walletBalance:'1000',availableBalance:'1000'}]};}
+  async positions(){return [...positions].filter(([,quantity])=>quantity).map(([symbol,quantity])=>({symbol,positionSide:'BOTH',positionAmt:String(quantity),entryPrice:'100',markPrice:'100',unRealizedProfit:'0',initialMargin:'10',marginType:configs.get(symbol).marginType,isolatedWallet:configs.get(symbol).marginType==='ISOLATED'?'10':'0',liquidationPrice:'120'}));}
+  async positionMode(){return {dualSidePosition:false};}async openOrders(symbol){return [...orders.values()].filter(order=>(!symbol||order.symbol===symbol)&&order.status==='NEW');}async openAlgoOrders(){return [];}
+  async income(){return process.argv.includes('--manage')?[{symbol:'BTCUSDT',incomeType:'REALIZED_PNL',asset:'USDT',income:'2.40',time:Date.now()-1800000,tranId:1},{symbol:'BTCUSDT',incomeType:'COMMISSION',asset:'USDT',income:'-0.08',time:Date.now()-1800000,tranId:1},{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',asset:'USDT',income:'-0.03',time:Date.now()-1800000,tranId:1}]:[];}
+  async trades(){return [{id:1,time:Date.now(),commission:'0.01',commissionAsset:'USDT'}];}async symbolConfig(symbol){return symbol?[configs.get(symbol)]:[...configs.values()];}async leverageBrackets(symbol){return [{symbol,brackets:[{initialLeverage:symbol==='BTCUSDT'?125:20,notionalFloor:0,notionalCap:100000}]}];}
+  async changeMargin(symbol,margin){configs.get(symbol).marginType=margin;return {code:200};}async changeLeverage(symbol,leverage){configs.get(symbol).leverage=leverage;return {leverage};}
+  async placeOrder(parameters){const quantity=Number(parameters.quantity),market=parameters.type==='MARKET',order={...parameters,clientOrderId:parameters.newClientOrderId,origQty:parameters.quantity,executedQty:market?parameters.quantity:'0',cumQuote:market?String(quantity*100):'0',avgPrice:market?'100':'0',status:market?'FILLED':'NEW',orderId:nextOrder++};orders.set(parameters.newClientOrderId,order);if(market)positions.set(parameters.symbol,(positions.get(parameters.symbol)||0)+(parameters.side==='BUY'?quantity:-quantity));return order;}
+  async queryOrder(symbol,id){return {...orders.get(id)};}async cancelOrder(symbol,id){const order=orders.get(id);order.status='CANCELED';return {...order};}
+}
+const publicClient=new FakeClient(),marketData={async catalog(){return {symbols:infos.map(info=>({...info,market:'usdm',name:info.baseAsset,tickSize:'0.1',price:100,change:0})),errors:[],asOf:Date.now()};},async quote(market,symbol,interval){return {market,instrument:{...infos.find(info=>info.symbol===symbol),market,tickSize:'0.1'},environment:'live',asOf:Date.now(),candles:await publicClient.klines(symbol,interval),book:await publicClient.book(symbol),premium:await publicClient.premium(symbol),ticker:{symbol,lastPrice:100,priceChangePercent:0,highPrice:102,lowPrice:99,quoteVolume:100000}};}};
+const state=emptyState(),store={state,async load(){return state;},async save(){}},app=await createServer({store,marketData,clientFactory:()=>new FakeClient()});
+await app.engine.connect({environment:'testnet',apiKey:'fabricated-ui-preview-key',secret:'fabricated-ui-preview-secret',allowTrading:true});const originalSnapshot=app.engine.snapshot.bind(app.engine);app.engine.snapshot=()=>({...originalSnapshot(),error:'UI 검증용 모의계좌 · 외부 주문 전송 없음'});
+if(process.argv.includes('--import')){
+  const exit={takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',takeProfitEnabled:false,stopLossEnabled:false},actionRules=[makeActionRule({action:'EXIT_LONG',formula:'(하이킨종가 < 볼린저하단(하이킨종가, 55, 1.04))@1h[1]',sizePercent:100})];
+  await app.engine.saveBot(makeBot({id:'ui-existing-btc',name:'기존 BTC 전략',symbol:'BTCUSDT',budget:100,exit,actionRules}));
+  await app.engine.saveBot(makeBot({id:'ui-existing-eth',name:'기존 ETH 전략',symbol:'ETHUSDT',budget:100,exit,actionRules}));
+  positions.set('BTCUSDT',1);await app.engine.refreshAccount(true);
+}
+if(process.argv.includes('--manage')){
+ const exit={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'},actionRules=[makeActionRule({action:'EXIT_LONG',formula:'FALSE',sizePercent:100})];
+ await app.engine.saveBot(makeBot({id:'ui-owned-btc',name:'BTC 추세',symbol:'BTCUSDT',budget:100,exit,actionRules}));
+ await app.engine.saveBot(makeBot({id:'ui-flat-eth',name:'ETH 전략',symbol:'ETHUSDT',budget:100,exit,actionRules}));
+ positions.set('BTCUSDT',1);const bot=app.engine.bot('ui-owned-btc');Object.assign(bot.runtime,{quantity:1,entryPrice:100,direction:'LONG',entries:1,realized:2.32,positionEpoch:1});
+ state.positionImports=[{id:'fixture-import',scope:state.scope,botId:bot.id,symbol:bot.symbol,direction:'LONG',quantity:1,entryPrice:100,at:Date.now()-3600000}];
+ state.fills.push({id:'fixture-fee',scope:state.scope,botId:bot.id,at:Date.now()-1800000,symbol:bot.symbol,fee:.08,feeAsset:'USDT'});
+ await app.engine.refreshAccount(true);
+}
+app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
+process.once('SIGINT',()=>app.server.close());

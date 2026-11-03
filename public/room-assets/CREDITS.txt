@@ -1,0 +1,17 @@
+Office map artwork
+
+Kenney - Roguelike Indoors / Roguelike Modern City
+https://kenney.nl/assets/roguelike-indoors
+https://kenney.nl/assets/roguelike-modern-city
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+The original license notices are included beside this file.
+
+People: PIPOYA FREE RPG Character Sprites 32x32 by Pipoya
+https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32
+The author permits personal and commercial productions and modification.
+Standalone redistribution or resale of the original assets is prohibited.
+Selected modular PNG layers from the author's Character Sprite 32 Generator
+are included solely for the application's avatar customizer. No generator
+executable is included or executed. License checked 2026-11-03.
+
+SVG files contain the original PNG pixels, without resampling or recolouring.

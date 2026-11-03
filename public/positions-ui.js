@@ -1,0 +1,25 @@
+import {positionMargin} from './core.js';
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const format=(value,digits=2)=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('en-US',{minimumFractionDigits:digits===2?2:0,maximumFractionDigits:digits});
+const signed=(value,digits=2)=>value===null||value===undefined?'—':(value>=0?'+':'')+format(value,digits);
+const tone=value=>value===null||value===undefined?'':value>=0?'positive':'negative';
+export function positionRows(positions,{bots,state,insights,symbolButton,importButton}){
+  const rows=positions.map(position=>{
+    const direction=['LONG','SHORT'].includes(position.positionSide)?position.positionSide:position.quantity>0?'LONG':'SHORT',long=direction==='LONG',settings=insights?.settings[position.symbol],margin=settings?.margin||position.marginType||(position.isolatedMargin>0?'ISOLATED':'CROSSED'),leverage=settings?.leverage||position.leverage||(position.initialMargin>0?Math.round(Math.abs(position.quantity)*position.markPrice/position.initialMargin):null);
+    const owner=bots.find(bot=>bot.symbol===position.symbol&&bot.quantity>0&&(state.positionMode!=='HEDGE'||bot.positionDirection===direction)),collateral=positionMargin(position,leverage||1,margin),roi=collateral>0?position.unrealizedProfit/collateral*100:null,asset=position.marginAsset||'USDT',size=position.notional||Math.abs(position.quantity)*position.markPrice||null;
+    const costs=insights?.realized?.costsBySymbol?.[position.symbol],net=insights?.realized?.complete&&costs?.complete!==false?(insights.realized.netBySymbol?.[position.symbol]??0):null;
+    const realized=insights?.realized?.complete?(insights.realized.bySymbol[position.symbol]??0):null,key=position.symbol+':'+direction,ownerLabel=owner?owner.name+' · '+(owner.runtime?.importPending?'관리 시작 대기':'봇 관리 중'):'수동 포지션';
+    const amount=value=>format(value)+' <span class="position-unit">'+esc(asset)+'</span>';
+    const cell=(value,secondary='',title='',className='')=>'<td'+(className?' class="'+className+'"':'')+(title?' title="'+esc(title)+'"':'')+'><strong>'+value+'</strong>'+(secondary?'<small>'+secondary+'</small>':'')+'</td>';
+    const buttons=(owner?'<button type="button" class="position-manage-button" data-edit-bot="'+esc(owner.id)+'">봇 설정</button>':importButton(position))+'<button type="button" class="position-close-button" data-prepare-close="'+esc(key)+'">부분·전량 정리</button>';
+    return '<tr aria-label="'+esc(position.symbol+' '+(long?'롱':'숏')+' 포지션')+'"><th scope="row" class="position-symbol-cell"><div><span class="position-side '+(long?'long':'short')+'" title="'+(long?'롱':'숏')+'">'+(long?'L':'S')+'</span>'+symbolButton(position.symbol)+'</div><small>무기한 · '+(margin==='ISOLATED'?'격리':margin==='CROSSED'?'크로스':'—')+(leverage?' '+format(leverage,0)+'×':'')+'</small></th>'+
+      cell('<span class="'+tone(position.unrealizedProfit)+'">'+signed(position.unrealizedProfit)+' <span class="position-unit">'+esc(asset)+'</span></span>','<span class="'+tone(roi)+'">'+signed(roi)+(roi===null?'':'%')+' ROI</span>')+
+      cell(amount(size),'수량 '+format(Math.abs(position.quantity),8))+
+      cell(format(position.entryPrice,5))+cell(format(position.markPrice,5))+cell(format(position.liquidationPrice>0?position.liquidationPrice:null,5))+
+      cell(amount(collateral),'비율 '+format(position.marginRatio)+(position.marginRatio==null?'':'%'),(margin==='ISOLATED'?'실제 격리 배정 증거금 · 수동 추가분 포함':'현재 포지션 초기 필요 증거금')+' / '+(position.marginRatioScope==='account'?'크로스 계좌의 유지 증거금 / 크로스 증거금 잔고':'포지션 유지 증거금 / 격리 증거금 잔고'))+
+      cell('<span class="'+tone(realized)+'">'+signed(realized)+'</span>','<span class="'+tone(realized)+'">'+signed(collateral>0&&realized!==null?realized/collateral*100:null)+'%</span>','최근 30일 종목 전체의 USDT 실현 매매손익. 비율은 현재 포지션 증거금 대비 참고 값이며 과거 투자수익률이 아닙니다.')+
+      cell('<span class="'+tone(net)+'">'+signed(net)+'</span>','<span class="'+tone(net)+'">'+signed(collateral>0&&net!==null?net/collateral*100:null)+'%</span>','최근 30일 종목 전체의 실현 매매손익 + 실제 수수료 + 펀딩 수입/지출. 미실현손익 제외. 현재 증거금 대비 참고율. USDT 이외 수수료가 있으면 미확인으로 표시합니다.')+
+      '<td class="position-actions-cell"><span class="position-owner" title="'+esc(ownerLabel)+'">'+esc(ownerLabel)+'</span><div class="position-row-actions">'+buttons+'</div></td></tr>';
+  }).join('');
+  return '<div class="position-table-scroll" role="region" aria-label="보유 포지션 표 · 좌우로 스크롤해 전체 정보 보기" tabindex="0"><table class="position-table"><thead><tr><th scope="col">종목 <small>증거금 모드 · 레버리지</small></th><th scope="col">미실현 손익 <small>수익률 ROI</small></th><th scope="col">포지션 금액 <small>보유 수량</small></th><th scope="col">진입 가격</th><th scope="col">마크 가격</th><th scope="col">청산 가격</th><th scope="col">증거금 <small>증거금 비율</small></th><th scope="col">매매손익 <small>30일 · 증거금 대비 %</small></th><th scope="col">순손익 <small>수수료·펀딩 포함 · %</small></th><th scope="col" class="position-actions-cell">포지션 관리</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="position-scroll-hint">표를 좌우로 밀어 전체 정보와 관리 버튼을 확인하세요.</p>';
+}

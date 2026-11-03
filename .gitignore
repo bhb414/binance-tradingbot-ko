@@ -1,0 +1,14 @@
+.runtime/
+*.log
+.env
+node_modules/
+asset-sources/
+previews/
+QA.md
+*.dpapi
+*.pem
+*.key
+*.tmp
+.env.*
+coverage/
+.migration-backup/
