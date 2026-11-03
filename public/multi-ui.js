@@ -1,3 +1,4 @@
+import {protectionEditorMarkup,syncProtectionEditor,applyProtectionChoice} from './protection-editor.js';
 import {FORMULA_PRICE_FIELDS} from './formula-editor.js';
 import {makeMultiBot,multiRule,multiTarget,MULTI_ACTIONS,TARGET_ACTIONS,multiAllocations,multiAliases,validateMulti} from './multi-bot.js';
 import {BUDGET_OPTIONS,effectiveBudget} from './budget.js';
@@ -51,7 +52,7 @@ export function installMultiUI({api,getState,getSymbols,getInsights,refresh,toas
  }
  async function loadLimits(){if(!getState()?.connected||!draft)return;const connection=getState().connectionId;await Promise.allSettled(draft.legs.filter(l=>l.symbol).map(async l=>{if(limits.get(l.symbol)?.connection===connection)return;const value=await api('/leverage?symbol='+encodeURIComponent(l.symbol));limits.set(l.symbol,{...value,connection});if(dialog.open)refreshLimits();}));}
  function protection(){
-  $('#pf-body').innerHTML='<h3>종목별 공통 보호 주문</h3><p class="pf-note">각 종목의 평균 진입가를 기준으로 별도의 TP·SL을 등록합니다. 한 종목이 정리되어도 다른 종목은 자동 정리하지 않습니다.</p><div class="form-grid">'+checkbox('익절 사용','exit.takeProfitEnabled',draft.exit.takeProfitEnabled)+input('익절 · 진입가 대비 가격 변동 %','exit.takeProfit',draft.exit.takeProfit,{min:.01,max:1000})+checkbox('손절 사용','exit.stopLossEnabled',draft.exit.stopLossEnabled)+input('손절 · 진입가 대비 가격 변동 %','exit.stopLoss',draft.exit.stopLoss,{min:.01,max:1000})+select('보호 주문 가격 기준','exit.price',draft.exit.price,[['MARK_PRICE','마크 가격'],['CONTRACT_PRICE','최종 체결가']])+'</div><p class="pf-note">보호 주문을 사용하지 않으면 조건·행동 탭의 정리 조건으로 관리합니다.</p>';
+  $('#pf-body').innerHTML='<h3>종목별 공통 보호 주문</h3><p class="pf-note">각 종목의 평균 진입가와 보유 레버리지로 별도의 TP·SL을 계산합니다. 한 종목이 정리되어도 다른 종목은 유지합니다.</p>'+protectionEditorMarkup(draft.exit,{bind:'data-pf-bind'});
  }
  function status(){
   const b=saved();if(!b){$('#pf-body').innerHTML='<p class="pf-note">저장한 뒤 상태를 확인할 수 있습니다.</p>';return;}const members=b.members||[],perf=botPerformance(b,getInsights?.(),getState()?.fills),ids=new Set([b.id,...members.map(m=>m.id)]);
@@ -68,11 +69,13 @@ export function installMultiUI({api,getState,getSymbols,getInsights,refresh,toas
   const path=target.dataset.pfBind;if(!path)return;const keys=path.split('.');let object=draft;for(const k of keys.slice(0,-1))object=object[k];const value=target.type==='checkbox'?target.checked:target.type==='number'||target.type==='range'?Number(target.value):target.value;object[keys.at(-1)]=value;
   if(path.endsWith('.leverage'))dialog.querySelectorAll('[data-pf-bind="'+path+'"]').forEach(el=>{if(el!==target)el.value=value;});
   if(path.endsWith('.action')&&rule())for(const t of rule().targets||[])if(t.action==='CLOSE_ALL')t.sizePercent=100;
+  if(path.startsWith('exit.'))syncProtectionEditor($('#pf-body'),draft.exit);
   error('');header();updateNumbers();if(target.tagName==='SELECT'||target.type==='checkbox'){if(tab==='rules')rules();}if(path==='budget'||path==='budgetMode'||path.endsWith('.weight'))refreshLimits();
  }
  dialog.addEventListener('input',event=>{event.stopPropagation();if(event.target.tagName==='SELECT')return;if(event.target.id==='pf-formula'){rule().formula=event.target.value;clearTimeout(timer);timer=setTimeout(feedback,600);return;}change(event.target);});
  dialog.addEventListener('change',event=>{event.stopPropagation();if(event.target.id==='pf-insert'){const textarea=$('#pf-formula'),value=event.target.value;if(value){textarea.setRangeText(value,textarea.selectionStart,textarea.selectionEnd,'end');rule().formula=textarea.value;feedback();textarea.focus();}event.target.value='';return;}if(event.target.tagName==='SELECT')change(event.target);});
  dialog.addEventListener('click',event=>{event.stopPropagation();const b=event.target.closest('button');if(!b)return;
+  if(tab==='protection'&&applyProtectionChoice(draft.exit,b.dataset)){protection();error('');return;}
   if(b.hasAttribute('data-pf-close')){dialog.close();return;}if(b.dataset.pfTab){tab=b.dataset.pfTab;error('');render();return;}
   if(b.hasAttribute('data-pf-toggle')){const actual=saved();if(actual)onToggle(actual.runtime.runEnabled?'pause':'start',actual.id);return;}
   if(b.hasAttribute('data-pf-appearance')){appearance(draft);return;}
@@ -87,7 +90,7 @@ export function installMultiUI({api,getState,getSymbols,getInsights,refresh,toas
   if(b.dataset.pfTrade||b.dataset.pfCloseMember){const id=b.dataset.pfTrade||b.dataset.pfCloseMember,m=saved()?.members.find(m=>m.id===id);if(m){dialog.close();onTrade(m,!!b.dataset.pfCloseMember);}return;}
   if(b.hasAttribute('data-pf-delete')){if(b.dataset.confirmed!=='yes'){b.dataset.confirmed='yes';b.textContent='삭제 확인';return;}(async()=>{try{await api('/bots/'+draft.id,{method:'DELETE'});await refresh();dialog.close();toast('다중종목 봇을 삭제했습니다.');}catch(problem){error(problem.message);}})();}
  });
- $('#pf-form').addEventListener('submit',async event=>{event.preventDefault();event.stopPropagation();if(busy)return;const symbols=getSymbols().map(s=>s.symbol),issues=validateMulti(draft,{symbols,balance:Infinity});if(issues.length){error(issues.join('\n'));return;}busy=true;$('#pf-save').disabled=true;error('');
+ $('#pf-form').addEventListener('submit',async event=>{event.preventDefault();event.stopPropagation();if(busy)return;const symbols=getSymbols().map(s=>s.symbol),issues=validateMulti(draft,{symbols,balance:Infinity});if(draft.exit?.basis==='leveraged'&&!getState()?.capabilities?.leveragedProtection)issues.push('서버 갱신 후 진입 증거금 기준 TP·SL을 저장해 주세요.');if(issues.length){error(issues.join('\n'));return;}busy=true;$('#pf-save').disabled=true;error('');
   try{const next=await api('/bots',{method:'POST',body:draft});draft=structuredClone(next);await refresh();render();toast('다중종목 봇을 저장했습니다. 시작은 위 버튼에서 선택하세요.');}catch(problem){error(problem.message);}finally{busy=false;$('#pf-save').disabled=false;}
  });
  dialog.addEventListener('close',()=>{help?.dispose();clearTimeout(timer);request++;});

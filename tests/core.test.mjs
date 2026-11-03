@@ -50,3 +50,8 @@ test('demo candles are deterministic OHLC and indicators have correct history wi
   assert.equal(data.at(-1).close,68432.8);assert.ok(data.every((c,i)=>c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&(!i||c.time>data[i-1].time)));
   assert.equal(movingAverage(data,20).length,241);assert.equal(movingAverage(data,20)[0].value,data.slice(0,20).reduce((s,c)=>s+c.close,0)/20);
 });
+
+test('TP/SL validates effective price thresholds using each entry leverage and rejects unknown bases or signed stored magnitudes',()=>{
+ const b=makeBot({leverage:20,exit:{basis:'leveraged',takeProfit:200,stopLoss:200,price:'MARK_PRICE'}});assert.deepEqual(validateBot(b),[]);assert.ok(validateBot({...b,exit:{...b.exit,basis:'price'}}).length);
+ assert.ok(validateBot({...b,leverage:1}).length);assert.ok(validateBot({...b,exit:{...b.exit,basis:'mystery'}}).length);assert.ok(validateBot({...b,exit:{...b.exit,stopLoss:-5}}).length);
+});

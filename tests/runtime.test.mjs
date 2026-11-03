@@ -476,3 +476,25 @@ test('recovery can reconnect the same saved account read-only before verifying o
  h.engine.credentialStore={async load(){return {environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890'};}};
  h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.connected,true);assert.equal(h.engine.tradingEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
 });
+
+test('leveraged TP/SL translates ROI to the same native trigger for long and short and retains legacy price percentages',()=>{
+ const fine={...info,filters:info.filters.map(f=>f.filterType==='PRICE_FILTER'?{...f,tickSize:'0.01'}:f)},exit={basis:'leveraged',takeProfit:5,stopLoss:5,price:'MARK_PRICE'},b={...makeBot(),leverage:20,exit};
+ for(const direction of ['LONG','SHORT']){const orders=protectiveOrders({...b,direction},fine,'1',100),stop=orders.find(p=>p.role==='stop'),take=orders.find(p=>p.role==='take');assert.equal(take.parameters.triggerPrice,direction==='LONG'?'100.25':'99.75');assert.equal(stop.parameters.triggerPrice,direction==='LONG'?'99.75':'100.25');}
+ const price={...exit};delete price.basis;assert.equal(protectiveOrders({...b,direction:'LONG',exit:price},fine,'1',100).find(p=>p.role==='take').parameters.triggerPrice,'105');
+ assert.throws(()=>protectiveOrders({...b,direction:'LONG',leverage:0},fine,'1',100),/레버리지/);
+});
+test('leveraged software protection closes only at the requested return for each direction and enabled side',async()=>{
+ for(const direction of ['LONG','SHORT'])for(const kind of ['takeProfit','stopLoss']){
+  const h=await actionHarness([marketRule('ENTER_'+direction,'TRUE',{leverage:20})]),b=h.engine.bot(h.id);await h.engine.saveBot({...b,exit:{basis:'leveraged',price:'MARK_PRICE',takeProfit:10,stopLoss:10,takeProfitEnabled:kind==='takeProfit',stopLossEnabled:kind==='stopLoss'}});
+  await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.engine.bot(h.id).leverage,20);
+  const sign=(direction==='LONG'?1:-1)*(kind==='takeProfit'?1:-1);let price=100+sign*.2;h.engine.client.premium=async()=>({markPrice:String(price)});await h.engine.tick();assert.notEqual(h.exchange.quantity,0);
+  price=100+sign*.6;await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);
+ }
+});
+test('explicit price basis preserves live guards; changing the basis replaces only owned guards and persists after restart',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG','TRUE',{leverage:20})]),b=h.engine.bot(h.id);delete b.exit.basis;await h.engine.startBot(h.id);await h.engine.tick();const before=h.exchange.calls.filter(c=>c.method==='placeAlgo').length,qty=h.exchange.quantity;
+ await h.engine.saveBot({...h.engine.bot(h.id),exit:{...b.exit,basis:'price'}});await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,before);
+ await h.engine.saveBot({...h.engine.bot(h.id),exit:{...b.exit,basis:'leveraged',takeProfit:10,stopLoss:10}});await h.engine.tick();
+ const active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.deepEqual(active.map(o=>o.triggerPrice).sort(),['100.5','99.5']);assert.equal(h.exchange.quantity,qty);
+ const restored=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(restored.bot(h.id).exit.basis,'leveraged');assert.equal(restored.bot(h.id).runtime.runEnabled,false);
+});

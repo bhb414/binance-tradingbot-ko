@@ -3,7 +3,7 @@ import { compileFormula, DEFAULT_FORMULA, formulaTimeframes, FORMULA_TIMEFRAMES 
 import { ACTIONS, isEntry, isStop } from './actions.js';
 import { BUDGET_MODES,effectiveBudget } from './budget.js';
 import {MAX_LEVERAGE} from './leverage.js';
-import {protectionEnabled,hasProtection} from './protection.js';
+import {protectionEnabled,hasProtection,protectionBasis,protectionPricePercent} from './protection.js';
 export { BUDGET_MODES,effectiveBudget } from './budget.js';
 export const DEMO_BALANCE = 5000;
 export const SYMBOLS = [
@@ -21,7 +21,7 @@ export const uid = () => randomId();
 export const makeCondition = () => ({ id: uid(), type: 'condition', metric: 'close', period: 20, timeframe: '15m', offset: 0, candle: 'closed', operator: 'cross_up', targetType: 'metric', targetMetric: 'ema', targetPeriod: 20, targetTimeframe: '15m', targetOffset: 0, targetCandle: 'closed', value: 30 });
 export const makeGroup = () => ({ id: uid(), type: 'group', logic: 'AND', children: [makeCondition()] });
 export function makeBot(overrides = {}) {
-  return { id: uid(), name: '새로운 봇', symbol: 'BTCUSDT', budget: 500, budgetMode:'fixed', entryPercent: 25, maxEntries: 0, leverage: 3, margin: 'ISOLATED', direction: 'LONG', status: 'paused', task: 'watching', color: 'mint', pnl: 0, used: 0, reserved: 0, conditionMode:'formula', formula:DEFAULT_FORMULA, formulaTimeframe:'15m', formulaCandle:'closed', rules: makeGroup(), order: { type: 'LIMIT', price: 'bid', ticks: 0, timeout: 15, remainder: 'cancel', postOnly: true }, reentry: { mode: 'rearm', cooldown: 60, afterExitCooldown:0 }, exit: { takeProfit: 3, stopLoss: 1.5, price: 'MARK_PRICE' }, ...overrides };
+  return { id: uid(), name: '새로운 봇', symbol: 'BTCUSDT', budget: 500, budgetMode:'fixed', entryPercent: 25, maxEntries: 0, leverage: 3, margin: 'ISOLATED', direction: 'LONG', status: 'paused', task: 'watching', color: 'mint', pnl: 0, used: 0, reserved: 0, conditionMode:'formula', formula:DEFAULT_FORMULA, formulaTimeframe:'15m', formulaCandle:'closed', rules: makeGroup(), order: { type: 'LIMIT', price: 'bid', ticks: 0, timeout: 15, remainder: 'cancel', postOnly: true }, reentry: { mode: 'rearm', cooldown: 60, afterExitCooldown:0 }, exit: { takeProfit: 3, stopLoss: 1.5, price: 'MARK_PRICE', basis:'price' }, ...overrides };
 }
 export function seedBots() {
   return [
@@ -55,8 +55,11 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,symbols=SYMBOL
     const enabled=bot.exit?.[kind+'Enabled'];if(enabled!==undefined&&typeof enabled!=='boolean')errors.push(label+' 사용 여부를 확인해 주세요.');
     if(protectionEnabled(bot.exit,kind)&&(!finite(bot.exit?.[kind])||bot.exit[kind]<=0||bot.exit[kind]>1000))errors.push('사용하는 '+label+' 기준을 0보다 크고 1,000% 이하로 입력해 주세요.');
   }
-  const directions=Array.isArray(bot.actionRules)?bot.actionRules.filter(r=>r?.enabled&&isEntry(r.action)).map(r=>r.action):['ENTER_'+bot.direction];
-  if(directions.includes('ENTER_LONG')&&protectionEnabled(bot.exit,'stopLoss')&&bot.exit?.stopLoss>=100||directions.includes('ENTER_SHORT')&&protectionEnabled(bot.exit,'takeProfit')&&bot.exit?.takeProfit>=100)errors.push('청산 목표 가격이 0 이하가 되지 않도록 비율을 설정해 주세요.');
+  if(!['price','leveraged'].includes(protectionBasis(bot.exit)))errors.push('TP·SL 계산 기준을 확인해 주세요.');
+  const entries=Array.isArray(bot.actionRules)?bot.actionRules.filter(r=>r?.enabled&&isEntry(r.action)):[{action:'ENTER_'+bot.direction,leverage:bot.leverage}];
+  if(hasProtection(bot.exit)&&['price','leveraged'].includes(protectionBasis(bot.exit)))for(const entry of entries){try{const leverage=bot.runtime?.quantity>0?bot.leverage:entry.leverage??bot.leverage;
+    if(entry.action==='ENTER_LONG'&&protectionEnabled(bot.exit,'stopLoss')&&protectionPricePercent(bot.exit,'stopLoss',leverage)>=100||entry.action==='ENTER_SHORT'&&protectionEnabled(bot.exit,'takeProfit')&&protectionPricePercent(bot.exit,'takeProfit',leverage)>=100)errors.push('청산 목표 가격이 0 이하가 되지 않도록 비율을 설정해 주세요.');
+  }catch(error){errors.push(error.message);}}
   if (hasProtection(bot.exit)&&!['MARK_PRICE','CONTRACT_PRICE'].includes(bot.exit?.price)) errors.push('청산 조건 가격 기준을 확인해 주세요.');
   let count = 0;
   function inspect(node, depth = 0) {

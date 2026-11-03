@@ -30,7 +30,7 @@ import {installMultiUI} from './multi-ui.js';
 import {positionRows} from './positions-ui.js';
 import {appearanceCard,installAppearanceUI} from './appearance-ui.js';
 import {workroomPerformance} from './workroom-metrics.js';
-import {protectionEnabled,hasProtection,protectionSummary} from './protection.js';
+import {protectionEditorMarkup,syncProtectionEditor,applyProtectionChoice} from './protection-editor.js';
 import { ACTIONS, isEntry, isStop, makeActionRule, upgradeActions } from './actions.js';
 
 
@@ -369,15 +369,9 @@ function setFormulaExample(index) {
 }
 function renderActions() {
   if(!['MARK_PRICE','CONTRACT_PRICE'].includes(draft.exit.price))draft.exit.price='MARK_PRICE';
-  const control=(kind,label)=>'<div class="protection-control" data-protection-control="'+kind+'"><label class="protection-toggle"><input type="checkbox" data-bind="exit.'+kind+'Enabled" aria-label="'+label+' 사용" '+(protectionEnabled(draft.exit,kind)?'checked':'')+'><span>'+label+' 사용</span></label>'+bindInput((kind==='takeProfit'?'익절':'손절')+' · 평균 진입가 대비 가격 변동','exit.'+kind,draft.exit[kind],{unit:'%',min:.01,max:1000,step:.01,note:kind==='takeProfit'?'롱은 상승, 숏은 하락할 때 익절합니다.':'롱은 하락, 숏은 상승할 때 손절합니다.'})+'</div>';
-  $('#editor-actions').innerHTML='<div class="form-section"><h3>포지션 공통 보호 주문 <span class="protection-optional">선택 사항</span></h3><p class="protection-intro">익절·손절을 각각 켜거나 끌 수 있습니다. 둘 다 끄면 조건·행동 탭의 정리 조건만 사용합니다.</p><div class="protection-grid">'+control('takeProfit','익절 TP')+control('stopLoss','손절 SL')+'</div><p id="protection-current-summary" class="protection-current-summary" role="status"></p><p class="protection-example">예: 평균 진입가 100 USDT인 롱에서 익절 3%는 103, 손절 1.5%는 98.5입니다. 레버리지를 적용한 수익률이 아닌 가격 변동률이며, 추가 진입하면 평균 진입가를 기준으로 다시 계산합니다.</p><div class="form-grid">'+bindSelect('보호 주문 가격 기준','exit.price',draft.exit.price,[['MARK_PRICE','마크 가격 (거래소 평가 가격)'],['CONTRACT_PRICE','최종 체결가 (마지막 거래 가격)']])+'</div><dl class="protection-price-help"><div><dt>마크 가격</dt><dd>여러 시세 등을 바탕으로 거래소가 계산하는 평가 가격입니다. 미실현손익과 강제청산 판단에 쓰입니다.</dd></div><div><dt>최종 체결가</dt><dd>이 선물 종목이 가장 최근에 실제 거래된 가격입니다. 순간적인 체결로 마크 가격과 다를 수 있습니다.</dd></div></dl><p class="protection-example">선택한 가격이 목표에 도달하면 시장가 정리를 실행합니다. 실제 체결 가격은 달라질 수 있습니다. 이 선택은 조건식의 종가·하이킨종가 계산을 바꾸지 않습니다.</p><div class="field-note">'+icon('shield')+'<span>켜 둔 보호 주문은 봇이 관리하는 수량 전체에 적용합니다. 둘 다 끄면 거래소 TP/SL을 등록하지 않으며, 조건식 정리는 프로그램이 켜져 있고 주문 실행이 허용된 동안 동작합니다. 기존 봇 소유 주문의 변경·취소는 주문 실행을 허용한 상태에서 반영하며, 취소 완료까지 확인합니다.</span></div></div><div class="form-section"><h3>주문 중복 방지와 소유 수량</h3><div class="field-note">'+icon('info')+'<span>각 조건의 실행과 주문 의도를 전송 전에 저장합니다. 접수 여부가 불명확하면 재전송하지 않고 조회합니다. 정리 행동은 이 봇의 보유 수량에만 적용하며 포지션이 없으면 실행하지 않습니다.</span></div></div>';
-  updateProtectionControls();
+  $('#editor-actions').innerHTML='<div class="form-section"><h3>포지션 공통 보호 주문 <span class="protection-optional">선택 사항</span></h3><p class="protection-intro">익절·손절을 각각 켜거나 끌 수 있습니다. 둘 다 끄면 조건·행동 탭의 정리 조건만 사용합니다.</p>'+protectionEditorMarkup(draft.exit)+'<div class="field-note">'+icon('shield')+'<span>보호 주문은 봇이 관리하는 수량 전체에 적용합니다. 둘 다 끄면 거래소 TP·SL을 등록하지 않습니다. 기존 보호 주문의 변경·취소는 주문 실행이 허용된 동안 반영하며 취소 완료까지 확인합니다.</span></div></div><div class="form-section"><h3>주문 중복 방지와 소유 수량</h3><div class="field-note">'+icon('info')+'<span>각 조건의 실행과 주문 의도를 전송 전에 저장합니다. 접수 여부가 불명확하면 재전송하지 않고 조회합니다. 정리 행동은 이 봇의 보유 수량에만 적용하며 포지션이 없으면 실행하지 않습니다.</span></div></div>';
 }
-function updateProtectionControls(){
-  for(const kind of ['takeProfit','stopLoss']){const enabled=protectionEnabled(draft.exit,kind);$('#editor-actions [data-bind="exit.'+kind+'"]').disabled=!enabled;$('#editor-actions [data-protection-control="'+kind+'"]').classList.toggle('is-disabled',!enabled);}
-  const enabled=hasProtection(draft.exit);$('#editor-actions [data-bind="exit.price"]').disabled=!enabled;
-  $('#protection-current-summary').textContent=protectionSummary(draft.exit)+(enabled?' · 봇 보유 수량 전체에 적용':' · 가격 기준은 사용하지 않습니다. 정리 조건이 없으면 자동 정리를 실행하지 않습니다.');
-}
+function updateProtectionControls(){syncProtectionEditor($('#editor-actions'),draft.exit);}
 function updateActionPreview() {
   const rule=currentRule(),preview=$('#action-preview');if(!rule||!preview)return;
   if(isStop(rule.action)){preview.textContent='조건 충족 → 신규 진입 정지 · 미체결 진입 주문 취소 · 보유 포지션 관리 유지';return;}
@@ -401,6 +395,7 @@ function openBot(id=null,tab='basic') {
 function confirmAction(title,message,callback,label='확인') { $('#confirm-title').textContent=title;$('#confirm-message').textContent=message;$('#confirm-action').textContent=label;confirmCallback=callback;$('#confirm-dialog').showModal(); }
 async function saveBot(event,confirmed=false){
   event.preventDefault();const stored=bots.find(bot=>bot.id===draft.id),errors=validateBot(draft,bots,{balance:serverState?.account?.walletBalance??Infinity,symbols:SYMBOLS.map(s=>s.symbol),enforceAllocationLimit:!stored||draft.budget>stored.budget,maxLeverage:botConfigLocked()?(leverageLimits?.maxLeverage||125):leverageCap(leverageLimits,effectiveBudget(draft))});
+  if(draft.exit?.basis==='leveraged'&&!serverState?.capabilities?.leveragedProtection)errors.push('서버가 아직 진입 증거금 기준 TP·SL을 지원하지 않습니다. 서버 갱신 후 다시 저장해 주세요.');
   if(errors.length){$('#form-errors').innerHTML='<ul>'+errors.map(e=>'<li>'+esc(e)+'</li>').join('')+'</ul>';$('#form-errors').hidden=false;return;}
   if(stored?.quantity>0&&!stored.runtime?.importPending&&!confirmed&&JSON.stringify([stored.actionRules,stored.exit])!==JSON.stringify([draft.actionRules,draft.exit])){confirmAction('보유 포지션 관리 조건 변경',stored.name+' · 변경한 정리 조건과 TP·SL이 보유 포지션에 적용됩니다. 이미 충족된 조건은 바로 실행될 수 있습니다. 저장 후 신규 진입은 정지됩니다.',()=>saveBot({preventDefault(){}},true),'저장·적용');return;}
   const submit=$('#bot-form [type="submit"]');submit.disabled=true;
@@ -491,6 +486,7 @@ document.addEventListener('click',event=>{
     if(b.dataset.mapZoom==='fit'){fitOfficeMap();viewport.scrollTo(0,0);}
     else viewport.scrollTo(center.x*mapZoom-viewport.clientWidth/2,center.y*mapZoom-viewport.clientHeight/2);
   }
+  if(b.closest('#editor-actions')&&draft&&applyProtectionChoice(draft.exit,b.dataset)){renderActions();$('#form-errors').hidden=true;return;}
   if(b.id==='new-bot'||b.id==='add-bot-card')openBot();
 });
 document.addEventListener('input',event=>{

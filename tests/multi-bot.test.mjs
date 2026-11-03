@@ -122,3 +122,10 @@ test('unused percentages do not silently reassign or double-book the parent bot 
  assert.ok(validateMulti({...p,legs:[{...p.legs[0],weight:50},{...p.legs[1],weight:50.01}]},{symbols}).some(message=>message.includes('100%')));
  assert.deepEqual(validateMulti({...p,legs:[{...p.legs[0],weight:49.999},{...p.legs[1],weight:50.001}]},{symbols}),[]);
 });
+
+test('multi-symbol protection applies each held leg leverage independently and closing one leg preserves the other',async()=>{
+ const h=await harness(),algos=new Map();h.client.placeAlgo=async p=>{const order={...p,algoStatus:'NEW',algoId:algos.size+1};algos.set(p.clientAlgoId,order);return {...order};};h.client.queryAlgo=async id=>({...algos.get(id)});h.client.cancelAlgo=async id=>{algos.get(id).algoStatus='CANCELED';return {};};
+ const p=await h.engine.saveBot(config({exit:{basis:'leveraged',takeProfit:8,stopLoss:4,price:'MARK_PRICE',takeProfitEnabled:true,stopLossEnabled:true}}));await h.engine.startBot(p.id);await h.engine.tick();
+ const a=[...algos.values()].filter(o=>o.symbol==='BTCUSDT'),b=[...algos.values()].filter(o=>o.symbol==='ETHUSDT');assert.equal(a.find(o=>o.type==='TAKE_PROFIT_MARKET').triggerPrice,'104');assert.equal(b.find(o=>o.type==='TAKE_PROFIT_MARKET').triggerPrice,'49');
+ h.x.prices.BTCUSDT=104.1;h.x.now+=5000;await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.ok(h.x.quantities.ETHUSDT<0);
+});

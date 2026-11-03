@@ -1,5 +1,5 @@
 import {effectiveBudget} from '../public/budget.js';
-import {protectionEnabled,hasProtection} from '../public/protection.js';
+import {protectionEnabled,hasProtection,protectionBasis,protectionPricePercent} from '../public/protection.js';
 // Quantization uses integer decimal arithmetic, including non-power-of-ten steps.
 function decimal(value){let text=String(value);if(/e/i.test(text))text=Number(text).toFixed(16);if(!/^\d+(?:\.\d+)?$/.test(text))throw new Error('양의 소수 값이 필요합니다.');const [whole,fraction='']=text.split('.');return {integer:BigInt(whole+fraction),scale:fraction.length};}
 export function quantize(value,step,mode='floor'){
@@ -27,16 +27,27 @@ export function entryOrder(bot,info,book,freeMargin,hedge=false){
   if(bot.order.type==='LIMIT'){parameters.price=limit;parameters.timeInForce=bot.order.postOnly?'GTX':'GTC';}
   return {parameters,margin:Number(quantity)*estimate/bot.leverage};
 }
+
+// Compute trigger ticks as a rational decimal so 100 × 1.005 cannot lose a tick to floating point.
+function protectionTrigger(exit,kind,leverage,entryPrice,tick,sign,rounding){
+  protectionPricePercent(exit,kind,leverage); // Validate the selected basis and leverage.
+  const entry=decimal(entryPrice),amount=decimal(exit[kind]),step=decimal(tick),factor=100n*BigInt(protectionBasis(exit)==='leveraged'?Number(leverage):1)*10n**BigInt(amount.scale);
+  const numerator=entry.integer*(factor+BigInt(sign)*amount.integer)*10n**BigInt(step.scale),denominator=10n**BigInt(entry.scale)*factor*step.integer;
+  if(numerator<=0n||denominator<=0n)throw new Error('청산 목표 가격이 0 이하입니다.');
+  let units=numerator/denominator;if(rounding==='ceil'&&numerator%denominator)units++;
+  const text=String(units*step.integer).padStart(step.scale+1,'0');
+  return step.scale?(text.slice(0,-step.scale)+'.'+text.slice(-step.scale)).replace(/\.?0+$/,'')||'0':text;
+}
+
 export function protectiveOrders(bot,info,quantity,entryPrice,hedge=false){
   if(!hasProtection(bot.exit))return [];
   const {tick,step}=symbolFilters(info,'MARKET'),long=bot.direction==='LONG',side=long?'SELL':'BUY';
   const qty=quantize(String(quantity),step);if(Number(qty)<=0)throw new Error('보호 주문 수량이 주문 단위보다 작습니다.');
   const plans=[];
-  if(protectionEnabled(bot.exit,'stopLoss'))plans.push(['stop','STOP_MARKET',entryPrice*(1+(long?-1:1)*bot.exit.stopLoss/100)]);
-  if(protectionEnabled(bot.exit,'takeProfit'))plans.push(['take','TAKE_PROFIT_MARKET',entryPrice*(1+(long?1:-1)*bot.exit.takeProfit/100)]);
-  return plans.map(([role,type,value])=>{
-    if(!(value>0))throw new Error('청산 목표 가격이 0 이하입니다.');
-    const triggerPrice=quantize(value.toFixed(16),tick,long?'floor':'ceil');
+  if(protectionEnabled(bot.exit,'stopLoss'))plans.push(['stop','STOP_MARKET','stopLoss',long?-1:1]);
+  if(protectionEnabled(bot.exit,'takeProfit'))plans.push(['take','TAKE_PROFIT_MARKET','takeProfit',long?1:-1]);
+  return plans.map(([role,type,kind,sign])=>{
+    const triggerPrice=protectionTrigger(bot.exit,kind,bot.leverage,entryPrice,tick,sign,long?'floor':'ceil');
     const favorable=(Number(triggerPrice)-entryPrice)*(long?1:-1);
     if(role==='take'?favorable<=0:favorable>=0)throw new Error('익절·손절 간격이 거래소 가격 단위보다 작습니다.');
     return {role,parameters:{algoType:'CONDITIONAL',symbol:bot.symbol,side,type,quantity:qty,positionSide:hedge?bot.direction:'BOTH',...(!hedge?{reduceOnly:'true'}:{}),triggerPrice,workingType:bot.exit.price}};
