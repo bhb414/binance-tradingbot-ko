@@ -12,6 +12,7 @@ import {installSignatureHelp} from './formula-signature.js';
 import { heikinAshi } from './indicators.js';
 import { roomAvatar } from './room.js';
 import {RoomScene} from './room-motion.js';
+import {officeRosterMarkup} from './office-roster.js';
 import {installRoomControls} from './room-controls.js';
 import {installPositionImportUI} from './position-import-ui.js';
 import { formulaEditorMarkup, formulaExamples } from './formula-editor.js';
@@ -260,6 +261,10 @@ function renderBots(){
 function renderOffice(){
   if(bots.length&&!roomHasBots)mapCameraReady=false;roomHasBots=bots.length>0;
   roomScene.update(bots,{selectedId:selectedBotId,filter:botFilter});
+  const roster=$('#office-roster-list'),markup=officeRosterMarkup(bots,{selectedId:selectedBotId,filter:botFilter,icon});
+  if(roster.innerHTML!==markup){const key=roster.contains(document.activeElement)?document.activeElement.dataset.officeKey:null,scroll=roster.scrollTop;roster.innerHTML=markup;roster.scrollTop=scroll;if(key)roster.querySelector('[data-office-key="'+CSS.escape(key)+'"]')?.focus({preventScroll:true});}
+  const count=bots.filter(b=>botFilter==='all'||b.status===botFilter).length;$('#office-roster-count').textContent=count===bots.length?String(count):count+' / '+bots.length;
+
   if(mapAutoFit)fitOfficeMap();else $('#office-map').style.setProperty('--map-zoom',mapZoom);
   if(!mapCameraReady&&$('#office-map-viewport').clientWidth){mapCameraReady=true;requestAnimationFrame(()=>focusMapBot());}
   $('.room-note').textContent=bots.length?'캐릭터에 마우스를 올려 시작·정지 또는 설정':'새 봇을 만들면 캐릭터가 이 맵에 나타나요.';
@@ -428,6 +433,8 @@ document.addEventListener('click',event=>{
   if(b.dataset.importForBot){positionImportUI.open(null,b.dataset.importForBot);return;}
   if(b.id==='import-position-button'||b.dataset.importPosition){positionImportUI.open(b.dataset.importPosition||null);return;}
   if(b.dataset.prepareClose){preparePositionClose(b.dataset.prepareClose);return;}
+  if(b.dataset.officeFocus){selectedBotId=b.dataset.officeFocus;roomControls.close();renderOffice();focusMapBot();return;}
+  if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)roomControls.action(target.runtime?.runEnabled?'pause':'start',target.id);return;}
   if(b.id==='editor-start-bot'||b.id==='editor-pause-bot'){roomControls.action(b.id==='editor-start-bot'?'start':'pause',draft.id);return;}
   if(b.dataset.botTrade){const target=bots.find(item=>item.id===b.dataset.botTrade);if(target){if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');selectSymbol(target.symbol,'usdm');manualUI.prepareBot(target.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});}return;}
   if(b.dataset.cancelBotOrder){const order=serverState.orders.find(o=>o.id===b.dataset.cancelBotOrder&&o.botId===b.dataset.ownerBot);if(order)confirmAction('미체결 잔량 취소',order.symbol+' · '+order.type+' · '+order.quantity+' 중 미체결 잔량을 취소합니다.',async()=>{await api('/bots/'+encodeURIComponent(order.botId)+'/orders/'+encodeURIComponent(order.id)+'/cancel',{method:'POST'});await syncWorkspace();},'잔량 취소');return;}

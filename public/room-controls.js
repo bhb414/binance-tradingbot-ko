@@ -24,8 +24,8 @@ export function installRoomControls({scene,getBots,getState,selectBot,openSettin
     clearTimeout(hideTimer);if(selected===id&&!menu.hidden){if(focus)menu.querySelector('button:not(:disabled)')?.focus({preventScroll:true});return;}
     close();selected=id;scene.hold(id);selectBot(id);menu.hidden=false;menuState();
     const actor=scene.root.querySelector(`[data-select-map-bot="${CSS.escape(id)}"]`);if(!actor)return close();
-    actor.setAttribute('aria-expanded','true');const anchor=(actor.querySelector('.actor-hit')||actor).getBoundingClientRect(),boundary=document.querySelector('#office-map-viewport').getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight;
-    const right=Math.min(document.documentElement.clientWidth,boundary.right)-6,left=Math.max(6,boundary.left+6),scale=anchor.width/72,headTop=anchor.top+(actor.classList.contains('is-working')?38:28)*scale;
+    actor.setAttribute('aria-expanded','true');const anchor=(actor.querySelector('.actor-menu-anchor')||actor.querySelector('.actor-hit')||actor).getBoundingClientRect(),boundary=document.querySelector('#office-map-viewport').getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight;
+    const right=Math.min(document.documentElement.clientWidth,boundary.right)-6,left=Math.max(6,boundary.left+6),headTop=anchor.top;
     menu.style.left=Math.max(left,Math.min(anchor.left+anchor.width/2-width/2,right-width))+'px';
     menu.style.top=Math.max(6,boundary.top+6,Math.min(headTop-height-8,Math.min(innerHeight,boundary.bottom)-height-6))+'px';
     if(focus)menu.querySelector('button:not(:disabled)')?.focus({preventScroll:true});

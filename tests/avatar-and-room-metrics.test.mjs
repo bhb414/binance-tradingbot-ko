@@ -15,13 +15,13 @@ test('every selectable avatar layer fits the real three-column, four-direction s
 });
 test('working characters sit facing their monitors and walk clear of their desk',()=>{
  const bot={id:'seat-check',status:'running',task:'position'},home=roomLayout([bot]).positions.get(bot.id);let seated=0,walking=0;
- for(let t=0;t<90;t+=.1){const pose=actorPose(bot,home,t);if(pose.working){seated++;assert.equal(pose.direction,'left');assert.equal(pose.x,home.x);assert.equal(pose.y,home.y);}if(pose.walking){walking++;assert.ok(!(pose.x>home.x-99&&pose.x<home.x-35&&pose.y>home.y-100&&pose.y<home.y+20),'walk must not enter desk footprint');}}
- assert.ok(seated>walking&&walking>50);
+ for(let t=0;t<600;t+=.1){const pose=actorPose(bot,home,t);if(pose.working){seated++;assert.equal(pose.direction,'left');assert.equal(pose.x,home.x);assert.equal(pose.y,home.y);}if(pose.walking){walking++;assert.ok(!(pose.x>home.x-99&&pose.x<home.x-35&&pose.y>home.y-100&&pose.y<home.y+20),'walk must not enter desk footprint');}}
+ assert.ok(seated>walking*15&&walking>50);
 });
 test('overall return uses original allocations while emotion uses only the held position unrealized result',()=>{
  const bots=[{budget:1000,effectiveBudget:1100,pnl:150,quantity:1,runtime:{realized:200}},{budget:500,pnl:-25,quantity:0,runtime:{realized:-25}}];
  assert.deepEqual(workroomPerformance(bots),{baseBudget:1500,pnl:125,roi:125/1500*100});
  assert.equal(positionEmotion(bots[0]).kind,'sad');assert.equal(positionEmotion(bots[0]).value,-50);assert.equal(positionEmotion(bots[1]).kind,'none');
- assert.equal(positionEmotion({...bots[0],pnl:250}).kind,'happy');assert.equal(positionEmotion({...bots[0],pnl:200}).kind,'neutral');assert.equal(positionEmotion({...bots[0],runtime:{realized:200,syncHold:true}}).kind,'unknown');
+ assert.equal(positionEmotion({...bots[0],pnl:250}).kind,'excited');assert.equal(positionEmotion({...bots[0],pnl:200}).kind,'neutral');assert.equal(positionEmotion({...bots[0],runtime:{realized:200,syncHold:true}}).kind,'unknown');
  assert.equal(workroomPerformance([]).roi,null);assert.equal(workroomPerformance([{budget:100,pnl:null}]).roi,null);
 });

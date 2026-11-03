@@ -32,6 +32,18 @@ export function avatarSprite(bot,{appearance=appearanceFor(bot),direction='down'
  return `<svg class="human-sprite sprite-person" x="${x}" y="${y}" width="${size}" height="${size}" viewBox="${spriteViewBox(direction,frame)}" overflow="hidden" aria-hidden="true">${avatarLayers(appearance).map(name=>`<image href="/room-assets/parts/${name}.svg" width="96" height="128"/>`).join('')}</svg>`;
 }
 export function seatedAvatar(bot){
- const a=appearanceFor(bot),pants=['casual','shirt','school','cardigan'].includes(a.outfit)?'#506745':'#505a6a';
- return `<g class="seated-person"><g transform="scale(-1 1)"><path d="M-5 -7 H15 V1 H20 V13 H12 V4 H-5Z" fill="${pants}"/><path d="M-4 -5 H13 V0 H-4Z" fill="#98a4a3" opacity=".35"/><path d="M12 12 H26 V17 H11Z" fill="#343d48"/></g><svg class="seated-torso" x="-32" y="-52" width="64" height="48" viewBox="32 32 32 24" overflow="hidden" aria-hidden="true">${avatarLayers(a).map(name=>`<image href="/room-assets/parts/${name}.svg" width="96" height="128"/>`).join('')}</svg></g>`;
+ const a=appearanceFor(bot),pants=['casual','shirt','school','cardigan'].includes(a.outfit)?'#4f6357':'#515e70',skin=['#edc7a5','#d8ab82','#b78260','#805a44'][a.skin];
+ return `<g class="seated-person"><g class="seated-legs"><path d="M-6 -20 H14 V-9 H-12 V7 H-20 V-12 H-6Z" fill="${pants}"/><path d="M-20 6 H-6 V13 H-24 V9Z" fill="#34414d"/><path d="M-5 -16 H10 V-10 H-5Z" fill="#9aa9b2" opacity=".3"/></g><svg class="seated-torso" x="-40" y="-70" width="80" height="57.5" viewBox="32 32 32 23" overflow="hidden" aria-hidden="true">${avatarLayers(a).map(name=>`<image href="/room-assets/parts/${name}.svg" width="96" height="128"/>`).join('')}</svg><path d="M-18 -24 H-27 V-20 H-36 V-14 H-23 V-17 H-16Z" fill="#667c85"/><path d="M-36 -20 H-42 V-14 H-34Z" fill="${skin}"/></g>`;
+}
+export function avatarPartLayers(category,item,appearance){
+ const a=normalizeAppearance(appearance);
+ if(category==='hair'){const hair=AVATAR_HAIR.find(x=>x.id===item);return hair?[hair.back===undefined?null:'03Hair-back-'+hair.back,'03Hair-'+hair.front].filter(Boolean):[];}
+ if(category==='outfit'){const outfit=AVATAR_OUTFITS.find(x=>x.id===item);return outfit?['01Costume-'+outfit.file]:[];}
+ if(category==='accessory'){const accessory=AVATAR_ACCESSORIES.find(x=>x.id===item);return accessory?.group?[accessory.group+'-'+accessory.file]:[];}
+ return [];
+}
+export function avatarPartPreview(category,item,appearance){
+ const layers=avatarPartLayers(category,item,appearance);if(!layers.length)return '<span class="appearance-none" aria-hidden="true">∅</span>';
+ const viewBox=category==='outfit'?'36 12 24 20':category==='accessory'?'32 0 32 22':'32 0 32 32';
+ return `<svg class="appearance-part" viewBox="${viewBox}" aria-hidden="true" overflow="hidden">${layers.map(name=>`<image href="/room-assets/parts/${name}.svg" width="96" height="128"/>`).join('')}</svg>`;
 }

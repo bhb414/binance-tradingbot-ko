@@ -1,0 +1,41 @@
+/* One shared office, readable people at desks and a compact management roster. */
+.office-layout{grid-template-columns:minmax(0,1fr) 264px;align-items:start;gap:16px}
+.office-layout .office-map-viewport{height:clamp(540px,70dvh,800px);max-height:none;min-height:0;background:#e3e9e7}
+.office-roster{display:flex;flex-direction:column;height:calc(clamp(540px,70dvh,800px) + 80px);min-width:0;background:#fff;border:1px solid #dbe4dd;border-radius:10px;overflow:hidden}
+.office-roster>header{display:flex;align-items:center;gap:10px;padding:18px 16px;border-bottom:1px solid #edf1ec}
+.office-roster h2{margin:0;font-size:14px;color:#3e5b4b}
+.office-roster>header>span{margin-left:auto;font-size:10px;color:#849a88;background:#f0f5ef;border-radius:5px;padding:3px 7px}
+#office-roster-list{min-height:0;flex:1;overflow:auto;scrollbar-width:thin}
+.office-roster-rows{margin:0;padding:0;list-style:none}
+.office-roster-row{display:flex;align-items:center;gap:3px;padding:13px 11px;border-bottom:1px solid #edf2ec;min-width:0}
+.office-roster-row.selected{background:#f1f7ef;box-shadow:inset 3px 0 #91b19a}
+.office-roster-row.has-error .office-roster-note{color:#bd7c84}
+.office-roster-focus{display:flex;align-items:center;gap:7px;min-width:0;flex:1;text-align:left;padding:0}
+.office-roster-avatar{width:37px;height:43px;flex:none;image-rendering:pixelated}
+.office-roster-focus>span{display:block;min-width:0}
+.office-roster-focus strong{display:block;font-size:11px;line-height:1.4;color:#3f5a49;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.office-roster-focus small{display:block;font:9px/1.5 Consolas,monospace;color:#879a8b;margin-top:3px}
+.office-roster-note{display:block;font-size:9px;margin-top:3px;color:#93a18e}
+.office-roster-actions{display:flex;gap:2px;flex:none}
+.office-roster-actions button{display:grid;place-items:center;width:28px;height:30px;border-radius:5px;color:#668575}
+.office-roster-actions button:hover{background:#e2ecdf;color:#365f47}
+.office-roster-actions .icon{width:17px;height:17px;stroke-width:1.6}
+.office-roster button:focus-visible{outline:2px solid #8caf9b;outline-offset:2px}
+.office-roster>footer{padding:13px 15px;border-top:1px solid #edf2ec;color:#8c9c8d;font-size:9px;line-height:1.8;background:#fafcf8}
+.office-roster-empty{padding:30px 14px;text-align:center;color:#93a18b;font-size:11px}
+.metaverse-office .human-actor .mood-bubble{transform:translate(46px,-70px)}
+.metaverse-office .seated-person{filter:drop-shadow(0 1px 0 #ffffff55)}
+.metaverse-office .selection-ring{stroke-width:2;fill:#c9ddad25}
+.workstation-effect{pointer-events:none}
+.workstation-effect text{font:700 20px Consolas,monospace}
+.coin-float{opacity:0;animation:office-coin-rise 4s ease-out infinite;animation-delay:var(--coin-delay)}
+@keyframes office-coin-rise{0%,12%{opacity:0;transform:translateY(5px)}24%{opacity:1}70%{opacity:.9}92%,100%{opacity:0;transform:translateY(-32px)}}
+.motion-paused .coin-float{animation:none;opacity:0}
+.motion-paused .coin-float:first-of-type{opacity:1}
+.office-map-key{cursor:help}
+.appearance-part{width:64px;height:64px;display:block;image-rendering:pixelated}
+.appearance-option .appearance-part{background:linear-gradient(135deg,#f7faf5,#edf3eb);border-radius:5px}
+.appearance-none{display:grid;place-items:center;width:64px;height:64px;color:#b4bfb1;font-size:30px}
+@media(prefers-reduced-motion:reduce){.coin-float{animation:none;opacity:0}.coin-float:first-of-type{opacity:1}}
+@media(max-width:1100px) and (min-width:761px){.office-layout{grid-template-columns:minmax(0,1fr) 235px;gap:12px}.office-roster-row{padding:12px 8px}.office-roster-avatar{width:31px;height:38px}.office-roster-focus{gap:5px}.office-roster-actions button{width:26px}}
+@media(max-width:760px){.office-layout{grid-template-columns:minmax(0,1fr)}.office-roster{height:auto;max-height:380px}.office-roster>header{padding:14px 16px}#office-roster-list{max-height:280px}.office-roster-row{padding:11px 14px}.office-roster-focus strong{font-size:12px}.office-roster-actions{gap:7px}.office-roster-actions button{width:34px;height:34px}.office-layout .office-map-viewport{height:480px;max-height:68dvh;min-height:360px}.office-toolbar{padding:0 10px;gap:6px}.office-toolbar strong{font-size:11px}.office-toolbar .office-local-tag{display:none}.office-roster>footer{font-size:9px}}

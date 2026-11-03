@@ -22,7 +22,7 @@ export class RoomScene{
       this.sprites=new Map([...this.actors].map(([id,node])=>[id,node.querySelector('.sprite-person')]));
       this.root.style.setProperty('--world-width',this.layout.width+'px');this.root.style.setProperty('--world-height',this.layout.height+'px');this.applyMotion();
     }
-    for(const bot of bots){const node=this.actors.get(bot.id),selected=bot.id===selectedId,dim=filter!=='all'&&filter!==bot.status;node.classList.toggle('selected',selected);node.classList.toggle('dimmed',dim);node.setAttribute('aria-pressed',String(selected));node.setAttribute('tabindex',dim?'-1':'0');const bubble=node.querySelector('.mood-bubble');if(bubble){const mood=positionEmotion(bot);bubble.setAttribute('aria-label',mood.label);bubble.querySelector('title').textContent=mood.label;}}
+    for(const bot of bots){const node=this.actors.get(bot.id),selected=bot.id===selectedId,dim=filter!=='all'&&filter!==bot.status;node.classList.toggle('selected',selected);node.classList.toggle('dimmed',dim);node.setAttribute('aria-pressed',String(selected));node.setAttribute('tabindex',dim?'-1':'0');const bubble=node.querySelector('.mood-bubble');if(bubble){const mood=positionEmotion(bot);bubble.setAttribute('aria-label',mood.label);bubble.querySelector('title').textContent=mood.label;const effect=this.root.querySelector('[data-station-bot=\"'+CSS.escape(bot.id)+'\"]');if(effect){effect.setAttribute('aria-label',mood.label);effect.querySelector('title').textContent=mood.label+' · 현재 손익 상태를 나타내는 시각 효과';}}}
     this.renderPoses();this.schedule();return rebuilt;
   }
   applyMotion(){
