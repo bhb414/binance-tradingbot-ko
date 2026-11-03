@@ -1,6 +1,7 @@
 import {sharedBudget,requestWeight,publicTTL,publicKey} from './binance-rate.mjs';
 import {BinanceError} from './binance.mjs';
 import {candleHistory} from './candle-history.mjs';
+import {sharedStreams,transportSettings} from './streams.mjs';
 const SOURCES=Object.freeze({
   usdm:{base:'https://fapi.binance.com',prefix:'/fapi/v1',label:'USDⓈ-M 선물'},
   coinm:{base:'https://dapi.binance.com',prefix:'/dapi/v1',label:'COIN-M 선물'},
@@ -20,6 +21,9 @@ function normalizeTicker(market,data,instrument){
 }
 export class MarketData {
   constructor({fetchImpl=fetch,now=Date.now}={}){this.fetch=fetchImpl;this.now=now;this.cache=new Map();this.sources=new Map();}
+  configureDataTransport(settings){this.transport=transportSettings(settings);this.cache.clear();for(const [market,source]of Object.entries(SOURCES)){const budget=sharedBudget(source.base,this.fetch,this.now);budget.pollIntervalMs=this.transport.restIntervalSeconds*1000;if(this.fetch===globalThis.fetch&&market!=='options')sharedStreams(budget,{market,now:this.now}).configure(this.transport);}}
+  stream(market){return sharedBudget(this.source(market).base,this.fetch,this.now).streams;}
+  close(){for(const source of Object.values(SOURCES))sharedBudget(source.base,this.fetch,this.now).streams?.close();}
   source(market){if(!Object.hasOwn(SOURCES,market))throw new Error('지원하지 않는 조회 시장입니다.');return SOURCES[market];}
   cached(key,ttl,load){const previous=this.cache.get(key);if(previous?.expires>this.now())return previous.promise;const entry={expires:this.now()+ttl,promise:Promise.resolve().then(load)};this.cache.set(key,entry);entry.promise.catch(()=>{if(this.cache.get(key)===entry)this.cache.delete(key);});return entry.promise;}
   async request(market,endpoint,parameters={}){
@@ -32,11 +36,11 @@ export class MarketData {
       budget.observe(response);let data;try{data=await response.json();}catch{throw new BinanceError(source.label+' 시세 응답 확인 대기',{status:response.status,temporary:true,retryAt:budget.blockedUntil||this.now()+5000});}
       budget.observe(response,data);if(!response.ok||Number(data?.code)<0)throw new BinanceError(source.label+': '+String(data?.msg||'시세 조회 실패').slice(0,250),{code:Number(data?.code),status:response.status,temporary:response.status>=500,retryAt:budget.blockedUntil||this.now()+5000});return data;
     };
-    const send=()=>{const result=state.tail.then(run,run);state.tail=result.catch(()=>{});return result;},ttl=publicTTL(source.prefix+endpoint,parameters);
+    const send=()=>{const result=state.tail.then(run,run);state.tail=result.catch(()=>{});return result;},baseTTL=publicTTL(source.prefix+endpoint,parameters),ttl=baseTTL?Math.max(baseTTL,this.transport?.restIntervalSeconds*1000||0):0;
     return ttl?sharedBudget(source.base,this.fetch,this.now).cached(publicKey(source.prefix+endpoint,parameters),ttl,send):send();
   }
   info(market){return this.cached('info:'+market,300000,()=>this.request(market,'/exchangeInfo'));}
-  tickers(market){return this.cached('tickers:'+market,30000,()=>this.request(market,market==='options'?'/ticker':'/ticker/24hr'));}
+  tickers(market){const load=()=>this.request(market,market==='options'?'/ticker':'/ticker/24hr'),stream=this.stream(market);return stream?stream.tickers(sharedBudget(this.source(market).base,this.fetch,this.now),load):this.cached('tickers:'+market,Math.max(30000,this.transport?.restIntervalSeconds*1000||0),load);}
   async instruments(market){const info=await this.info(market);return (info.symbols||info.optionSymbols||[]).filter(row=>(row.status||row.contractStatus)==='TRADING'&&(!row.expiryDate||row.expiryDate>this.now())&&(market!=='spot'||row.isSpotTradingAllowed!==false)).map(row=>normalizeInstrument(market,row));}
   async catalog(){return this.cached('catalog',30000,async()=>{
     const result=await Promise.allSettled(Object.keys(SOURCES).map(async market=>{const [instruments,tickers]=await Promise.all([this.instruments(market),this.tickers(market).catch(()=>[])]),bySymbol=new Map(rows(tickers).map(t=>[t.symbol,t]));return instruments.map(instrument=>{const ticker=normalizeTicker(market,bySymbol.get(instrument.symbol),instrument);return {...instrument,price:ticker.lastPrice,change:ticker.priceChangePercent};});}));
@@ -46,10 +50,11 @@ export class MarketData {
     this.source(market);if(!['1m','3m','5m','15m','30m','1h','4h','1d'].includes(interval))throw new Error('지원하지 않는 봉 주기입니다.');
     if(typeof symbol!=='string'||symbol.length>80)throw new Error('종목을 확인해 주세요.');
     const instrument=(await this.instruments(market)).find(row=>row.symbol===symbol);if(!instrument)throw new Error('이 시장에서 조회 가능한 종목이 아닙니다.');
-    return this.cached('quote:'+market+':'+symbol+':'+interval,2500,async()=>{
+    const budget=sharedBudget(this.source(market).base,this.fetch,this.now),stream=this.stream(market),read=(kind,load)=>stream?stream.read(budget,kind,symbol,load):load(),candles=force=>candleHistory(budget,this.source(market).prefix+'/klines:'+symbol+':'+interval,1000,async limit=>normalizeCandles(await this.request(market,'/klines',{symbol,interval,limit})),{force});
+    return this.cached('quote:'+market+':'+symbol+':'+interval,this.transport?.mode==='rest'?this.transport.restIntervalSeconds*1000:1000,async()=>{
       const [rawCandles,book,tickerData,premium]=await Promise.all([
-        candleHistory(sharedBudget(this.source(market).base,this.fetch,this.now),this.source(market).prefix+'/klines:'+symbol+':'+interval,1000,async limit=>normalizeCandles(await this.request(market,'/klines',{symbol,interval,limit}))),this.request(market,'/depth',{symbol,limit:10}),
-        this.request(market,market==='options'?'/ticker':'/ticker/24hr',{symbol}),['usdm','coinm'].includes(market)?this.request(market,'/premiumIndex',{symbol}):Promise.resolve(null)
+        stream?stream.candles(budget,symbol,interval,1000,candles):candles(),read('book',()=>this.request(market,'/depth',{symbol,limit:10})),
+        read('ticker',()=>this.request(market,market==='options'?'/ticker':'/ticker/24hr',{symbol})),['usdm','coinm'].includes(market)?read('premium',()=>this.request(market,'/premiumIndex',{symbol})):Promise.resolve(null)
       ]);
       const ticker=normalizeTicker(market,tickerData,instrument),premiumRow=rows(premium).find(row=>row.symbol===symbol)||rows(premium)[0]||null;
       return {environment:'live',market,instrument,asOf:this.now(),serverNow:this.now(),candles:rawCandles,book:{bids:book.bids||[],asks:book.asks||[]},ticker,premium:premiumRow?{markPrice:number(premiumRow.markPrice),lastFundingRate:number(premiumRow.lastFundingRate)}:null};

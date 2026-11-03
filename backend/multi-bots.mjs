@@ -87,7 +87,7 @@ export class MultiBots{
    // Observe already loaded entry signals without requiring another symbol/timeframe request.
    for(const target of rule.targets.filter(t=>t.enabled&&isEntry(t.action)))this.targetItem(p,rule,target,evaluation);
   }
-  for(const b of workers)if(!managed.has(b.id)&&!b.runtime.syncHold){await e.settlePending(b,await e.symbolInfo(b.symbol));await e.refreshAccount(true);await e.syncBotPosition(b);await e.ensureGuards(b,await e.symbolInfo(b.symbol));}
+  for(const b of workers)if(!managed.has(b.id)&&!b.runtime.syncHold){await e.settlePending(b,await e.symbolInfo(b.symbol));await e.refreshAccount();await e.syncBotPosition(b);await e.ensureGuards(b,await e.symbolInfo(b.symbol));}
   if(!p.runtime.runEnabled)return;
   const batches=[],directions=new Map();
   for(const rule of p.actionRules.filter(r=>r.enabled&&r.action==='MULTI')){

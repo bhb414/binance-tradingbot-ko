@@ -43,26 +43,27 @@ export class ManualTrading {
   get records(){return this.engine.state.orders.filter(order=>manual(order)&&order.scope===this.engine.state.scope);}
   recoverInterrupted(){for(const order of this.engine.state.orders.filter(manual)){if(active(order)&&order.stage==='CONFIGURING'){order.status='REJECTED';order.error='설정 처리 중 서버가 종료되었습니다. 주문은 전송하지 않았습니다. 현재 거래소 설정을 다시 확인해 주세요.';}}}
   blocked(symbol,botId=null){const e=this.engine,bot=e.state.bots.find(b=>b.id!==botId&&b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity>0||e.ownOrders(b).some(active)));if(bot)return bot.name+' 봇이 이 종목을 관리 중입니다. 정지는 신규 진입만 중지합니다. 주문 귀속에서 이 봇을 선택해 추가 진입·정리하거나, 보유 포지션·주문을 모두 정리한 뒤 별도 주문을 사용하세요.';if(this.records.some(o=>o.parameters.symbol===symbol&&o.status==='UNKNOWN'))return '접수 여부가 확인되지 않은 수동 주문이 있어 상태 확인이 먼저 필요합니다.';return null;}
-  async context(symbol,botId=null){
+  async context(symbol,botId=null,{fresh=false}={}){
     const e=this.engine;if(typeof symbol!=='string'||!/^[A-Z0-9_]{2,40}$/.test(symbol))throw new Error('주문 종목을 확인해 주세요.');
     const info=(await e.client.exchangeInfo()).symbols.find(s=>s.symbol===symbol&&s.status==='TRADING'&&s.quoteAsset==='USDT'&&s.marginAsset==='USDT');if(!info)throw new Error('현재 계좌 환경에서 주문할 수 있는 USDT 선물 종목이 아닙니다.');
     const book=await e.client.book(symbol),common={symbol,info,environment:e.state.environment,bid:Number(book.bids[0]?.[0]),ask:Number(book.asks[0]?.[0]),connected:e.connected,tradingEnabled:e.tradingEnabled,baseAsset:info.baseAsset,filters:{LIMIT:symbolFilters(info),MARKET:symbolFilters(info,'MARKET')}};
     if(!e.connected)return {...common,availableBalance:null,positions:[],orders:[],margin:null,leverage:null,maxLeverage:null,settingsLocked:true,blockedReason:'설정에서 계좌를 연결해 주세요.'};
-    const [configRows,bracketRows,mode]=await Promise.all([e.client.symbolConfig(symbol),e.client.leverageBrackets(symbol),e.client.positionMode(),e.refreshAccount(true)]),config=Array.isArray(configRows)?configRows.find(c=>c.symbol===symbol)||configRows[0]:configRows,bracket=Array.isArray(bracketRows)?bracketRows.find(b=>b.symbol===symbol)||bracketRows[0]:bracketRows;
+    const read=(key,load)=>!fresh&&e.client.cached?e.client.cached('manual-context:'+key,Math.max(30000,(e.state.dataTransport?.restIntervalSeconds||3)*1000),load):load();
+    const [configRows,bracketRows,mode]=await Promise.all([read('config:'+symbol,()=>e.client.symbolConfig(symbol)),read('brackets:'+symbol,()=>e.client.leverageBrackets(symbol)),read('mode',()=>e.client.positionMode()),e.refreshAccount(fresh)]),config=Array.isArray(configRows)?configRows.find(c=>c.symbol===symbol)||configRows[0]:configRows,bracket=Array.isArray(bracketRows)?bracketRows.find(b=>b.symbol===symbol)||bracketRows[0]:bracketRows;
     const hedge=Boolean(mode.dualSidePosition);if(hedge!==e.hedge&&e.hasExposure())throw new Error('계좌 포지션 모드가 변경되었습니다. 포지션·주문을 확인한 뒤 같은 계좌로 다시 연결해 주세요.');e.hedge=hedge;
     const positions=e.accountSnapshot.positions.filter(p=>p.symbol===symbol),orders=e.accountSnapshot.orders.filter(o=>o.symbol===symbol),brackets=bracket?.brackets||[],leverage=Number(config?.leverage),margin=String(config?.marginType||'').toUpperCase();
     if(!leverage||!['CROSSED','ISOLATED'].includes(margin)||!brackets.length)throw new Error('계좌의 종목 설정과 레버리지 한도를 확인하지 못했습니다.');
     const bot=botId?e.bot(botId):null;if(bot&&bot.symbol!==symbol)throw new Error('주문 종목과 같은 종목의 봇을 선택해 주세요.');
     let botError=null;
     if(bot){
-      for(const order of e.ownOrders(bot).filter(active))await e.refreshOrder(bot,order);
-      await e.refreshAccount(true);await e.syncBotPosition(bot,true);
+      for(const order of e.ownOrders(bot).filter(active))if(fresh)await e.refreshOrder(bot,order);else await e.pollTrackedOrder(order,()=>e.refreshOrder(bot,order));
+      await e.refreshAccount(fresh);await e.syncBotPosition(bot,true);
       const known=new Set(e.ownOrders(bot).map(o=>o.id));
       if(bot.runtime.importPending)botError='가져온 포지션은 봇을 한 번 시작해 관리를 시작한 뒤 주문해 주세요.';
       else if(bot.runtime.syncHold)botError=bot.runtime.error||'봇과 계좌의 포지션 수량을 확인해 주세요.';
       else if(e.ownOrders(bot).some(o=>active(o)&&o.kind==='standard'))botError='이 봇의 미체결 일반 주문을 먼저 취소하거나 체결을 기다려 주세요.';
       else if(orders.some(o=>!known.has(o.clientOrderId)))botError='이 종목에 봇 소유가 아닌 미체결 주문이 있습니다.';
-      const algo=await e.client.openAlgoOrders(symbol),rows=Array.isArray(algo)?algo:algo.orders||[];
+      const algo=await read('algo:'+symbol,()=>e.client.openAlgoOrders(symbol)),rows=Array.isArray(algo)?algo:algo.orders||[];
       if(rows.some(o=>!known.has(o.clientAlgoId)))botError='이 종목에 봇 소유가 아닌 보호 주문이 있습니다.';
     }
     return {...common,hedge,availableBalance:e.accountSnapshot.availableBalance,positions:e.accountSnapshot.positions.filter(p=>p.symbol===symbol),orders,margin,leverage,brackets,notionalCoef:Number(bracket.notionalCoef)||1,maxLeverage:Math.max(...brackets.map(b=>Number(b.initialLeverage))),settingsLocked:positions.length>0||orders.length>0||this.records.some(o=>active(o)&&o.parameters.symbol===symbol),botId:bot?.id||null,botName:bot?.name||null,botBudget:bot?Math.max(0,effectiveBudget(bot)-e.decorate(bot).used-e.decorate(bot).reserved):null,blockedReason:!e.accountSnapshot.canTrade?'현재 API 키의 주문 권한을 확인해 주세요.':botError||this.blocked(symbol,botId)};
@@ -81,7 +82,7 @@ export class ManualTrading {
   }
   async preview(input){
     this.engine.requireTrading();if(input?.market!=='usdm')throw new Error('수동 주문은 USDT 선물에서 지원합니다.');
-    const context=await this.context(input.symbol,input.botId||null),plan=this.validateBotPlan(manualPlan(input,context),context),now=this.engine.now();
+    const context=await this.context(input.symbol,input.botId||null,{fresh:true}),plan=this.validateBotPlan(manualPlan(input,context),context),now=this.engine.now();
     for(const [id,item] of this.plans)if(item.expiresAt<now)this.plans.delete(id);if(this.plans.size>=50)throw new Error('열린 주문 확인이 많습니다. 잠시 후 다시 확인해 주세요.');
     const id=randomUUID(),entry={...plan,id,expiresAt:now+60000,scope:this.engine.state.scope,input:{...input}};this.plans.set(id,entry);return this.viewPlan(entry);
   }
@@ -92,7 +93,7 @@ export class ManualTrading {
     if(typeof id!=='string'||!/^[\da-f-]{36}$/.test(id))throw new Error('주문 확인 번호를 확인해 주세요.');
     const e=this.engine,existing=this.records.find(order=>order.requestId===id);if(existing)return this.view(existing);
     e.requireTrading();const plan=this.plans.get(id);if(!plan||plan.expiresAt<e.now()||plan.scope!==e.state.scope||plan.environment!==e.state.environment)throw new Error('주문 확인이 만료되었거나 계좌가 바뀌었습니다. 다시 확인해 주세요.');
-    const context=await this.context(plan.symbol,plan.botId||null);if((context.hedge?'HEDGE':'ONE_WAY')!==plan.positionMode)throw new Error('포지션 모드가 바뀌었습니다. 주문 내용을 다시 확인해 주세요.');
+    const context=await this.context(plan.symbol,plan.botId||null,{fresh:true});if((context.hedge?'HEDGE':'ONE_WAY')!==plan.positionMode)throw new Error('포지션 모드가 바뀌었습니다. 주문 내용을 다시 확인해 주세요.');
     const fresh=this.validateBotPlan(manualPlan({...plan.input,sizeMode:'quantity',amount:plan.quantity,price:plan.price},context),context);
     if(plan.botId&&JSON.stringify(plan.botPosition)!==JSON.stringify(fresh.botPosition))throw new Error('확인 중 봇의 보유 포지션이 바뀌었습니다. 주문을 다시 확인해 주세요.');
     if(JSON.stringify(fresh.parameters)!==JSON.stringify(plan.parameters))throw new Error('거래소 주문 규격이 달라졌습니다. 주문을 다시 확인해 주세요.');
@@ -127,7 +128,7 @@ export class ManualTrading {
     order.appliedQty=quantity;order.appliedQuote=quote;order.averagePrice=quantity&&quote?quote/quantity:null;order.status=data.status||order.status;order.orderId=data.orderId||order.orderId;if(order.status!=='UNKNOWN')order.error=null;
   }
   async refresh(order){if(order.stage!=='ORDER_SENT')return;if(order.botId){await this.engine.refreshOrder(this.engine.bot(order.botId),order);return;}try{delete order.lastQueryError;this.apply(order,await this.engine.client.queryOrder(order.parameters.symbol,order.id));}catch(error){if(![-2013,-2011].includes(error.code))throw error;order.lastQueryError=error.code;order.error='거래소에서 아직 접수 여부를 확인하지 못했습니다. 같은 주문을 다시 전송하지 않고 조회합니다.';}}
-  async refreshPending(){for(const order of this.records.filter(o=>active(o)&&!o.botId))await this.refresh(order);}
+  async refreshPending(){for(const order of this.records.filter(o=>active(o)&&!o.botId))await this.engine.pollTrackedOrder(order,()=>this.refresh(order));}
   async requestStatus(id){const order=this.records.find(order=>order.requestId===id);if(!order)return {found:false};if(this.engine.connected){await this.refresh(order);await this.engine.checkpoint();}return {found:true,order:this.view(order)};}
   async cancel(id){
     const e=this.engine;e.requireTrading();const order=this.records.find(order=>order.id===id);if(!order)throw new Error('이 계좌에서 앱으로 만든 수동 주문이 아닙니다.');

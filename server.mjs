@@ -17,7 +17,7 @@ const root=path.resolve(fileURLToPath(new URL('./public/',import.meta.url)));
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8'};
 async function readJSON(req){if(!String(req.headers['content-type']||'').startsWith('application/json'))throw Object.assign(Error('JSON 요청이 필요합니다.'),{httpStatus:415});let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>65536)throw Object.assign(Error('요청이 너무 큽니다.'),{httpStatus:413});}return text?JSON.parse(text):{};}
 export async function createServer({networkAccess,dataDirectory=process.env.WORKROOM_DATA_DIR||fileURLToPath(new URL('./.runtime/',import.meta.url)),clientFactory,store,credentialStore=store?null:new CredentialStore(dataDirectory),marketData=new MarketData()}={}){
-  const engine=await new TradingEngine(store||new StateStore(dataDirectory),{clientFactory,credentialStore}).init(),token=randomBytes(32).toString('hex'),network=networkAccess||await new NetworkAccess(store?null:dataDirectory).init();let networkReady=Promise.resolve();
+  const engine=await new TradingEngine(store||new StateStore(dataDirectory),{clientFactory,credentialStore}).init(),token=randomBytes(32).toString('hex'),network=networkAccess||await new NetworkAccess(store?null:dataDirectory).init();let networkReady=Promise.resolve();marketData.configureDataTransport?.(engine.state.dataTransport);
   const server=http.createServer(async(req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cache-Control','no-store');
     res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
@@ -41,6 +41,8 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         let body={};if(['POST','PUT','DELETE'].includes(req.method))body=await readJSON(req);
         if(pathname==='/api/network'&&req.method==='GET'){await networkReady;if(local)await network.refresh();json(200,network.view(local));return;}
         if(pathname==='/api/network'&&req.method==='POST'){if(!local){json(403,{error:'접속 허용 설정은 서버 PC에서 변경하세요.'});return;}await networkReady;json(200,await network.setEnabled(body.enabled));return;}
+        if(pathname==='/api/data-transport'&&req.method==='GET'){json(200,engine.snapshot().dataTransport);return;}
+        if(pathname==='/api/data-transport'&&req.method==='POST'){const state=await engine.setDataTransport(body);marketData.configureDataTransport?.(state.dataTransport.settings);json(200,state.dataTransport);return;}
         if(req.method==='GET'&&pathname==='/api/status'){const state=engine.snapshot();if(!local)state.credentials={saved:state.credentials.saved,error:state.credentials.error,storagePath:null};json(200,state);return;}
         if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkUpdate(appDirectory));return;}
         if(req.method==='GET'&&pathname==='/api/positions/insights'){json(200,engine.multi.insights(await engine.positionInsights.get()));return;}
@@ -77,7 +79,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
       const data=await readFile(filename);res.writeHead(200,{'Content-Type':mime[path.extname(filename)]||'text/plain; charset=utf-8'});res.end(req.method==='HEAD'?undefined:data);
     }catch(error){if(res.headersSent){res.end();return;}json(error.httpStatus|| (error.code==='ENOENT'?404:error.status===429?429:String(req.url).startsWith('/api/')?400:404),{error:engine.client.redact?.(error.message)||'요청을 처리하지 못했습니다.'});}
   });
-  server.on('listening',()=>{engine.startTimer();networkReady=network.start(server).catch(()=>{network.error='같은 Wi-Fi 접속 주소를 열지 못했습니다.';});});server.on('close',()=>{network.close();engine.stopTimer();});return {server,engine,network};
+  server.on('listening',()=>{engine.startTimer();networkReady=network.start(server).catch(()=>{network.error='같은 Wi-Fi 접속 주소를 열지 못했습니다.';});});server.on('close',()=>{network.close();marketData.close?.();engine.stopTimer();});return {server,engine,network};
 }
 if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){
   let release=async()=>{};
