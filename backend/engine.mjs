@@ -35,6 +35,7 @@ export class TradingEngine {
   async stopTimer(){clearInterval(this.timer);await this.queue;}
   note(title,message,botId=null,level='info'){const last=this.state.logs[0];if(last?.message===message&&this.now()-last.at<30000)return;this.state.logs.unshift({id:randomUUID(),at:this.now(),title,message,botId,level});this.state.logs=this.state.logs.slice(0,1000);}
   async checkpoint(){return this.storage.checkpoint();}
+  allocatedBudget(exceptId=null){return this.state.bots.filter(b=>!b.multiBotId&&b.id!==exceptId).reduce((sum,b)=>sum+effectiveBudget(b),0)+this.multi.groups.filter(p=>p.id!==exceptId).reduce((sum,p)=>sum+effectiveBudget({...p,runtime:{realized:this.multi.realized(p)}}),0);}
   hasExposure(){return this.state.bots.some(b=>b.runtime?.quantity>0)||this.state.orders.some(active);}
   async catalog(){const data=await this.client.exchangeInfo();return data.symbols.filter(s=>s.status==='TRADING'&&s.quoteAsset==='USDT'&&s.marginAsset==='USDT'&&['PERPETUAL','TRADIFI_PERPETUAL'].includes(s.contractType));}
   async symbolInfo(symbol){const item=(await this.catalog()).find(s=>s.symbol===symbol);if(!item)throw new Error('거래 가능한 USDT 무기한 선물 종목이 아닙니다.');return item;}
@@ -129,6 +130,7 @@ export class TradingEngine {
     const b=Object.fromEntries(allowed.map(k=>[k,base[k]]));if(!/^[a-zA-Z0-9_-]{1,64}$/.test(b.id))throw new Error('봇 식별자를 확인해 주세요.');
     if(!['mint','lavender','amber'].includes(b.color))throw new Error('캐릭터 색상을 확인해 주세요.');
     const limits=await this.leverageLimits(b.symbol),symbols=(await this.catalog()).map(s=>s.symbol);const errors=validateBot({...b,runtime:existing?.runtime,used:existing?.runtime.quantity*existing?.runtime.entryPrice/b.leverage||0,reserved:existing?this.decorate(existing).reserved:0},this.state.bots,{balance:this.accountSnapshot?.walletBalance??Infinity,symbols,enforceAllocationLimit:!existing||effectiveBudget({...b,runtime:existing.runtime})>effectiveBudget(existing),maxLeverage:existing&&(existing.runtime.quantity>0||this.ownOrders(existing).some(active))?(limits.maxLeverage||125):leverageCap(limits,effectiveBudget({...b,runtime:existing?.runtime}))});
+    if((!existing||effectiveBudget({...b,runtime:existing.runtime})>effectiveBudget(existing))&&this.allocatedBudget(b.id)+effectiveBudget({...b,runtime:existing?.runtime})>(this.accountSnapshot?.walletBalance??Infinity)+1e-8)errors.push('전체 봇 배정 예산이 계좌 USDT 잔고를 초과합니다.');
     if(errors.length)throw new Error(errors.join('\n'));
     if(existing&&(existing.runtime.quantity>0||this.ownOrders(existing).some(active))){
       const locked=['symbol','margin','leverage'];
@@ -146,7 +148,7 @@ export class TradingEngine {
     this.requireTrading();const b=this.bot(id),r=b.runtime;if(r.runEnabled)return this.decorate(b);
     if(this.manual.records.some(order=>order.botId!==b.id&&active(order)&&order.parameters.symbol===b.symbol))throw new Error('같은 종목의 별도 수동 주문이 남아 있습니다. 먼저 수동 주문 상태를 확인하고 정리해 주세요.');
     if(this.state.bots.some(other=>other!==b&&other.symbol===b.symbol&&(other.runtime.runEnabled||other.runtime.quantity>0||this.ownOrders(other).some(active))))throw new Error('같은 종목은 한 봇만 운용할 수 있습니다. 다른 봇의 진입·포지션·주문을 먼저 정리해 주세요.');
-    await this.refreshAccount(true);const total=this.state.bots.reduce((s,item)=>s+effectiveBudget(item),0);if(!r.quantity&&total>this.accountSnapshot.walletBalance)throw new Error('전체 봇 배정 예산이 계좌 USDT 잔고를 초과합니다.');
+    await this.refreshAccount(true);const total=this.allocatedBudget();if(!r.quantity&&total>this.accountSnapshot.walletBalance)throw new Error('전체 봇 배정 예산이 계좌 USDT 잔고를 초과합니다.');
     await this.syncBotPosition(b,true);if(r.syncHold)throw new Error(r.error||'거래소와 봇의 포지션 수량이 일치하지 않습니다.');
     const orders=await this.client.openOrders(b.symbol),algos=await this.client.openAlgoOrders(b.symbol);const algoRows=Array.isArray(algos)?algos:algos.orders||[];
     const known=new Set(this.ownOrders(b).map(o=>o.id));if(orders.some(o=>!known.has(o.clientOrderId))||algoRows.some(o=>!known.has(o.clientAlgoId)))throw new Error('이 종목에 봇 소유가 아닌 미체결 주문이 있습니다.');

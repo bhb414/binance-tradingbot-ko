@@ -37,7 +37,8 @@ test('qualified-symbol formulas combine values and indicators on synchronized hi
 });
 test('multi validation uses percentage budgets and supports distinct targets without pair-only behavior',()=>{
  const p=config();assert.deepEqual(validateMulti(p,{symbols}),[]);assert.deepEqual(multiAllocations(p).map(l=>l.budget),[600,400]);
- assert.ok(validateMulti({...p,legs:p.legs.map(l=>({...l,weight:30}))},{symbols}).some(s=>s.includes('100%')));
+ assert.deepEqual(validateMulti({...p,legs:p.legs.map(l=>({...l,weight:30}))},{symbols}),[]);
+ assert.ok(validateMulti({...p,legs:p.legs.map(l=>({...l,weight:60}))},{symbols}).some(s=>s.includes('100%')));
  assert.ok(validateMulti({...p,legs:[p.legs[0],{...p.legs[1],symbol:'BTCUSDT'}]},{symbols}).length);
 });
 test('one visible multi bot allocates budgets, trades independent symbols and never duplicates a steady signal',async()=>{
@@ -106,4 +107,18 @@ test('storage failure between multi-symbol fills resumes remaining legs without 
  h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.parameters.symbol==='BTCUSDT'&&o.status==='FILLED')){fail=false;throw Object.assign(Error('locked'),{code:'EPERM'});}return save();};
  await assert.rejects(()=>h.engine.tick(),e=>e.storage);assert.equal(h.x.calls.length,1);h.x.now+=6000;await h.engine.tick();await h.engine.tick();
  assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,true);assert.equal(h.x.calls.length,2);assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
+});
+
+test('under-allocated weights leave the remainder unused and size every leg from its actual percentage',async()=>{
+ const h=await harness(),p=config({legs:[{alias:'A',symbol:'BTCUSDT',weight:20},{alias:'B',symbol:'ETHUSDT',weight:30}]});
+ assert.deepEqual(validateMulti(p,{symbols}),[]);assert.deepEqual(multiAllocations(p).map(l=>l.budget),[200,300]);assert.deepEqual(multiAllocations({...p,budgetMode:'pnl'},-100).map(l=>l.budget),[180,270]);
+ await h.engine.saveBot(p);await h.engine.startBot(p.id);await h.engine.tick();await h.engine.tick();
+ assert.deepEqual(h.engine.snapshot().bots[0].members.map(b=>b.budget),[200,300]);assert.equal(h.x.calls.length,2);
+ const margin=h.x.calls.reduce((sum,o)=>sum+Number(o.quantity)*h.x.prices[o.symbol]/h.x.config[o.symbol].leverage,0);assert.ok(Math.abs(margin-495)<.01);assert.equal(h.engine.allocatedBudget(),1000);
+});
+test('unused percentages do not silently reassign or double-book the parent bot budget',async()=>{
+ const h=await harness(),p=config({legs:[{alias:'A',symbol:'BTCUSDT',weight:30},{alias:'B',symbol:'ETHUSDT',weight:30}]});h.client.account=async()=>({canTrade:true,assets:[{asset:'USDT',walletBalance:'1000',availableBalance:'1000'}]});await h.engine.refreshAccount(true);
+ await h.engine.saveBot(p);assert.equal(h.engine.allocatedBudget(),1000);await assert.rejects(()=>h.engine.saveBot(makeBot({symbol:'SOLUSDT',budget:50})),/예산|잔고/);await assert.rejects(()=>h.engine.saveBot(config({id:crypto.randomUUID(),budget:100})),/잔고/);assert.equal(h.x.calls.length,0);
+ assert.ok(validateMulti({...p,legs:[{...p.legs[0],weight:50},{...p.legs[1],weight:50.01}]},{symbols}).some(message=>message.includes('100%')));
+ assert.deepEqual(validateMulti({...p,legs:[{...p.legs[0],weight:49.999},{...p.legs[1],weight:50.001}]},{symbols}),[]);
 });

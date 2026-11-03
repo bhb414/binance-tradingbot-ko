@@ -28,7 +28,7 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
   if(!known.has(leg.symbol)||assets.has(leg.symbol))errors.push('거래 가능한 서로 다른 USDT 선물 종목을 선택하세요.');assets.add(leg.symbol);
   if(!Number.isFinite(leg.weight)||leg.weight<=0||leg.weight>100)errors.push('종목 비중은 0 초과~100%로 입력하세요.');
  }
- if(Math.abs(bot.legs.reduce((s,l)=>s+l.weight,0)-100)>.0001)errors.push('종목 비중 합계가 100%여야 합니다.');
+ if(bot.legs.reduce((s,l)=>s+l.weight,0)>100+1e-9)errors.push('종목 비중 합계는 100% 이하여야 합니다.');
  if((!previous||bot.budget>previous.budget)&&bot.budget+otherAllocated>balance+1e-8)errors.push('다른 봇 예산을 포함한 배정액이 지갑 잔고를 초과합니다.');
  if(!Array.isArray(bot.actionRules)||!bot.actionRules.length||bot.actionRules.length>20)return [...errors,'조건은 1~20개로 지정하세요.'];
  if(!bot.actionRules.some(r=>r?.enabled))errors.push('실행할 조건을 하나 이상 켜세요.');
@@ -57,4 +57,4 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
 }
 export function multiAliases(bot){return Object.fromEntries(bot.legs.map(leg=>[leg.alias,leg.symbol]));}
 export const memberId=(bot,leg)=>bot.id+'_'+leg.alias;
-export function multiAllocations(bot,realized=0){const total=effectiveBudget({...bot,runtime:{realized}});let used=0;return bot.legs.map((leg,index)=>{const budget=index===bot.legs.length-1?Math.max(0,total-used):total*leg.weight/100;used+=budget;return {...leg,budget};});}
+export function multiAllocations(bot,realized=0){const total=effectiveBudget({...bot,runtime:{realized}});return bot.legs.map(leg=>({...leg,budget:total*leg.weight/100}));}

@@ -25,7 +25,7 @@ export class MultiBots{
  async save(input){
   const e=this.e,old=this.groups.find(p=>p.id===input.id),base=makeMultiBot(),p={...base,...Object.fromEntries(['id','name','budget','budgetMode','maxEntries','margin','color','legs','exit','actionRules'].filter(k=>input[k]!==undefined).map(k=>[k,structuredClone(input[k])]))};p.kind='multi';
   if(e.state.bots.some(b=>b.id===p.id)||p.legs?.some?.(leg=>e.state.bots.some(b=>b.id===memberId(p,leg)&&b.multiBotId!==p.id)))throw Error('다른 봇과 식별자가 중복됩니다.');
-  const before=structuredClone(e.state),symbols=(await e.catalog()).map(s=>s.symbol),oldIds=new Set(old?this.workers(old).map(b=>b.id):[]),others=e.state.bots.filter(b=>!oldIds.has(b.id)).reduce((s,b)=>s+effectiveBudget(b),0);
+  const before=structuredClone(e.state),symbols=(await e.catalog()).map(s=>s.symbol),oldIds=new Set(old?this.workers(old).map(b=>b.id):[]),others=e.allocatedBudget(p.id);
   const errors=validateMulti(p,{symbols,balance:e.accountSnapshot?.walletBalance??Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));
   const locked=old&&this.workers(old).some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active));
   if(locked&&(old.margin!==p.margin||JSON.stringify(old.legs.map(l=>[l.alias,l.symbol]))!==JSON.stringify(p.legs.map(l=>[l.alias,l.symbol]))))throw Error('보유·미해결 주문이 있을 때는 종목·별칭·증거금 모드를 바꿀 수 없습니다.');
