@@ -1,7 +1,7 @@
 import * as fileSystem from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import path from 'node:path';
-export const emptyState=()=>({version:2,environment:'live',scope:null,orderPermission:null,nextIntent:1,bots:[],orders:[],fills:[],logs:[]});
+export const emptyState=()=>({version:2,environment:'live',scope:null,orderPermission:null,nextIntent:1,bots:[],orders:[],fills:[],logs:[],fundingLedger:[],fundingCoverage:[]});
 const transient=new Set(['EPERM','EACCES','EBUSY','EAGAIN','ETIMEDOUT','EMFILE','ENFILE']);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export class StateStore{

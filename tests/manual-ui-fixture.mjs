@@ -39,6 +39,31 @@ if(process.argv.includes('--manage')){
  await app.engine.refreshAccount(true);
 }
 
+
+if(process.argv.includes('--history')){
+ const demoNow=Date.now(),income=[],off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'};
+ const add=(bot,symbol,at,direction,gains,leverage)=>{
+  let realized=0;
+  for(const [i,gain]of gains.entries()){
+   const open=at+i*12*3600000,entry=symbol==='BTCUSDT'?100+i*2:50+i,quantity=2,close=entry+gain/quantity*(direction==='LONG'?1:-1),exitTime=open+2*3600000;
+   for(const [role,time,price]of [['entry',open,entry],['exit',exitTime,close]]){
+    const id='fixture-history-'+bot.id+'-'+i+'-'+role,orderId=9000+state.orders.length;
+    state.orders.push({id,botId:bot.id,scope:state.scope,kind:'standard',role,direction,leverage,margin:role==='entry'?quantity*price/leverage:0,status:'FILLED',createdAt:time-100,appliedQty:quantity,appliedQuote:quantity*price,feesFetched:true,orderId,parameters:{symbol,side:direction==='LONG'?(role==='entry'?'BUY':'SELL'):(role==='entry'?'SELL':'BUY'),type:'MARKET',positionSide:'BOTH',quantity:String(quantity)}});
+    state.fills.push({id:id+':2',scope:state.scope,botId:bot.id,symbol,at:time,tradeTime:time,role,direction,quantity,price,leverage,clientOrderId:id});
+    state.fills.push({id:'fixture-history-fee-'+orderId,scope:state.scope,botId:bot.id,symbol,at:time,fee:.08,feeAsset:'USDT',clientOrderId:id,orderId,tradeQuantity:quantity,tradePrice:price,leverage});
+   }
+   income.push({symbol,incomeType:'FUNDING_FEE',asset:'USDT',income:String(i%3===0?.03:-.02),time:open+3600000,tranId:90000+income.length});
+   realized+=gain-.16;
+  }
+  bot.runtime.realized=realized;
+ };
+ const btc=await app.engine.saveBot(makeBot({id:'ui-history-btc',name:'BTC 기록 예시',symbol:'BTCUSDT',budget:500,exit:off,actionRules:[makeActionRule({formula:'FALSE@1m'})]})),eth=await app.engine.saveBot(makeBot({id:'ui-history-eth',name:'ETH 기록 예시',symbol:'ETHUSDT',budget:300,exit:off,actionRules:[makeActionRule({formula:'FALSE@1m'})]}));
+ add(app.engine.bot(btc.id),'BTCUSDT',demoNow-6*86400000,'LONG',[8,-4,11,-7,5,9,-3,12,-5,7],20);
+ add(app.engine.bot(eth.id),'ETHUSDT',demoNow-5*86400000,'SHORT',[5,-3,8,-2,6],10);
+ app.engine.client.income=async({startTime,endTime})=>income.filter(row=>row.time>=startTime&&row.time<=endTime);
+ await app.engine.checkpoint();
+}
+
 if(process.argv.includes('--storage-outage')){
  const save=store.save.bind(store);let blocked=true;
  store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};

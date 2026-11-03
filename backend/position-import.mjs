@@ -60,7 +60,7 @@ export class PositionImports{
     bot.runtime={...(existing?.runtime||{}),runEnabled:false,importPending:true,quantity:current.quantity,entryPrice:current.entryPrice,direction:current.direction,entries:1,realized:existing?.runtime.realized||0,positionEpoch:(existing?.runtime.positionEpoch||0)+1,ruleSignals:{},lastSignal:null,lastBar:null,lastEntryAt:0,lastExitAt:0,lastEvaluation:null,error:null,guardKey:null,mismatchSince:0,syncHold:false,imported:{id,at:e.now(),scope:e.state.scope}};
     delete bot.used;delete bot.reserved;delete bot.pnl;delete bot.quantity;delete bot.entryPrice;delete bot.positionDirection;
     if(existing)e.state.bots[e.state.bots.indexOf(existing)]=bot;else e.state.bots.push(bot);
-    e.state.positionImports||=[];e.state.positionImports.push({id,scope:e.state.scope,botId:bot.id,symbol:bot.symbol,direction:current.direction,quantity:current.quantity,entryPrice:current.entryPrice,at:e.now()});
+    e.state.positionImports||=[];e.state.positionImports.push({id,scope:e.state.scope,botId:bot.id,symbol:bot.symbol,direction:current.direction,quantity:current.quantity,entryPrice:current.entryPrice,at:e.now(),leverage:bot.leverage,initialMargin:current.estimatedMargin});
     e.note('수동 포지션 가져오기',`${bot.name} · ${bot.symbol} · ${current.direction} ${current.quantity} · 관리 시작 대기`,bot.id);
     try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}
     this.plans.delete(id);return {bot:e.decorate(bot),importId:id};

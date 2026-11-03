@@ -8,6 +8,7 @@ import { ManualTrading } from './manual-trading.mjs';
 import {PositionImports} from './position-import.mjs';
 import {accountView} from './account-view.mjs';
 import {PositionInsights} from './position-insights.mjs';
+import {TradeHistory} from './trade-history.mjs';
 import { entryOrder, exitOrder, protectiveOrders, quantize, symbolFilters } from './orders.mjs';
 import { makeBot, validateBot, positionMargin, effectiveBudget } from '../public/core.js';
 import { upgradeBot } from '../public/formula.js';
@@ -28,7 +29,7 @@ export class TradingEngine {
     this.credentialStore=credentialStore;this.credentialError=null;this.reconnectAt=0;
     this.manual=new ManualTrading(this);this.multi=new MultiBots(this);this.storage=new StorageRecovery(this);
     this.orderChecks=new WeakMap();this.accountRevisionAt=0;this.lastCycleAt=0;
-    this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.connectionId=null;
+    this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.connectionId=null;
   }
   get state(){return this.store.state;}
   serial(callback){const result=this.queue.then(callback,callback);this.queue=result.catch(()=>{});return result;}
@@ -180,7 +181,7 @@ export class TradingEngine {
   async pauseRuntime(b){if(this.storage.stop(b.id))return this.decorate(this.bot(b.id));b.runtime.runEnabled=false;await this.checkpoint();if(this.tradingEnabled)for(const o of this.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.cancelStandard(b,o,true);this.note('신규 진입 중지',`${b.name} · 미체결 진입 취소 확인 · 보유 포지션과 청산 주문은 계속 관리합니다.`,b.id);await this.checkpoint();return this.decorate(b);}
   async submit(b,parameters,{kind='standard',role='entry',margin=0,group=null,guardKey=null,parent=null,ruleId=null,direction=b.runtime.direction,orderPolicy=null,timeframe=null}={}){
     this.requireTrading();const sequence=this.state.nextIntent++;const id='fw_'+createHash('sha256').update(b.id+this.state.scope).digest('hex').slice(0,9)+'_'+sequence;
-    const order={id,botId:b.id,scope:this.state.scope,kind,role,parameters:{...parameters},margin,group:group||id,guardKey,status:'UNKNOWN',createdAt:this.now(),appliedQty:0,appliedQuote:0,feesFetched:false,parent,ruleId,direction,orderPolicy,timeframe};
+    const order={id,botId:b.id,scope:this.state.scope,kind,role,parameters:{...parameters},margin,group:group||id,guardKey,status:'UNKNOWN',createdAt:this.now(),appliedQty:0,appliedQuote:0,feesFetched:false,parent,ruleId,direction,orderPolicy,timeframe,leverage:b.leverage,marginType:b.margin};
     const parentOrder=parent?this.state.orders.find(o=>o.id===parent):null,parentFallback=parentOrder?.fallbackDone;if(parentOrder)parentOrder.fallbackDone=true;
     this.state.orders.push(order);await this.checkpoint();
     try{
@@ -200,7 +201,7 @@ export class TradingEngine {
         if(!this.ownOrders(b).some(other=>other!==o&&other.group===o.group&&other.counted)&&!o.counted)r.entries++;
         o.counted=true;r.entryPrice=(r.quantity*r.entryPrice+value)/(r.quantity+delta);r.quantity+=delta;r.lastEntryAt=this.now();
       }else{const closed=Math.min(r.quantity,delta);r.realized+=(fillPrice-r.entryPrice)*closed*(b.runtime.direction==='LONG'?1:-1);r.quantity=Math.max(0,r.quantity-delta);if(r.quantity<1e-12){r.quantity=0;r.entryPrice=0;r.entries=0;r.lastExitAt=this.now();}}
-      this.state.fills.push({id:o.id+':'+quantity,scope:o.scope,botId:b.id,at:this.now(),symbol:b.symbol,side:o.parameters.side,role:o.role,action:o.role==='entry'?'ENTER_'+o.direction:o.ruleId?'EXIT_'+o.direction:'CLOSE',ruleId:o.ruleId,quantity:delta,price:fillPrice});
+      this.state.fills.push({id:o.id+':'+quantity,scope:o.scope,botId:b.id,at:this.now(),symbol:b.symbol,side:o.parameters.side,role:o.role,action:o.role==='entry'?'ENTER_'+o.direction:o.ruleId?'EXIT_'+o.direction:'CLOSE',ruleId:o.ruleId,quantity:delta,price:fillPrice,clientOrderId:o.id,orderId:data.orderId||o.orderId,direction:o.direction||r.direction,leverage:o.leverage||b.leverage,positionEpoch:r.positionEpoch,tradeTime:Number(data.updateTime||data.time)||null});
       this.note('체결 확인',`${b.name} · ${o.parameters.side} ${delta} · ${fillPrice}`,b.id);
     }
     o.appliedQty=quantity;o.appliedQuote=quote;o.status=data.status||o.status;o.orderId=data.orderId||o.orderId;
@@ -212,7 +213,7 @@ export class TradingEngine {
         if(data.actualOrderId&&String(data.actualOrderId)!=='0'){o.childOrderId=data.actualOrderId;await this.applyOrder(b,o,await this.client.queryOrder(b.symbol,{orderId:data.actualOrderId}));}
         else o.status=['NEW','TRIGGERING','TRIGGERED'].includes(data.algoStatus)?data.algoStatus==='NEW'?'NEW':'UNKNOWN':data.algoStatus||'UNKNOWN';
       }else await this.applyOrder(b,o,await this.client.queryOrder(b.symbol,o.id));
-      if(!active(o)&&o.orderId&&!o.feesFetched){const fills=await this.client.trades(b.symbol,o.orderId);for(const trade of fills){const legacyKey='fee:'+o.orderId+':'+trade.id,key='fee:'+o.scope+':'+b.symbol+':'+o.orderId+':'+trade.id;if(this.state.fills.some(f=>f.id===key||f.id===legacyKey&&f.scope===o.scope&&f.botId===b.id&&f.symbol===b.symbol))continue;const fee=number(trade.commission);if(trade.commissionAsset==='USDT')b.runtime.realized-=fee;this.state.fills.push({id:key,scope:o.scope,botId:b.id,at:number(trade.time)||this.now(),symbol:b.symbol,fee,feeAsset:trade.commissionAsset});}o.feesFetched=true;}
+      if(!active(o)&&o.orderId&&!o.feesFetched){const fills=await this.client.trades(b.symbol,o.orderId);for(const trade of fills){const legacyKey='fee:'+o.orderId+':'+trade.id,key='fee:'+o.scope+':'+b.symbol+':'+o.orderId+':'+trade.id;if(this.state.fills.some(f=>f.id===key||f.id===legacyKey&&f.scope===o.scope&&f.botId===b.id&&f.symbol===b.symbol))continue;const fee=number(trade.commission);if(trade.commissionAsset==='USDT')b.runtime.realized-=fee;this.state.fills.push({id:key,scope:o.scope,botId:b.id,at:number(trade.time)||this.now(),symbol:b.symbol,fee,feeAsset:trade.commissionAsset,clientOrderId:o.id,orderId:o.orderId,tradeId:trade.id,tradeQuantity:Number(trade.qty)||null,tradePrice:Number(trade.price)||null,leverage:o.leverage||null,direction:o.direction});}o.feesFetched=true;}
     }catch(error){if([-2013,-2011,-4143].includes(error.code)){o.lastQueryError=error.code;if(o.status==='UNKNOWN')b.runtime.error='주문 접수 여부가 아직 확인되지 않았습니다. 중복 전송하지 않고 조회를 계속합니다.';}else throw error;}
   }
   async cancelStandard(b,o,abortRemainder=false){this.storage.healthy();if(abortRemainder){o.fallbackDone=true;await this.checkpoint();}try{const result=await this.client.cancelOrder(b.symbol,o.id);await this.applyOrder(b,o,result);}catch(error){if(![-2011,-2013].includes(error.code)&&!error.uncertain)throw error;}await this.refreshOrder(b,o);await this.checkpoint();}

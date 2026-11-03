@@ -99,7 +99,7 @@ export class ManualTrading {
     if(JSON.stringify(fresh.parameters)!==JSON.stringify(plan.parameters))throw new Error('거래소 주문 규격이 달라졌습니다. 주문을 다시 확인해 주세요.');
     if(this.records.filter(active).length>=20)throw new Error('이 앱의 수동 미해결 주문은 20개까지 지원합니다.');
     const sequence=e.state.nextIntent++,clientId='fw_m_'+createHash('sha256').update(e.state.scope).digest('hex').slice(0,8)+'_'+sequence;
-    const order={id:clientId,requestId:id,source:plan.botId?'bot-manual':'manual',botId:plan.botId||null,scope:e.state.scope,environment:e.state.environment,kind:'standard',role:plan.botId?(plan.action==='OPEN'?'entry':'exit'):'manual',action:plan.action,direction:plan.direction,parameters:plan.parameters,margin:fresh.estimatedMargin,stage:'CONFIGURING',status:'UNKNOWN',createdAt:e.now(),appliedQty:0,appliedQuote:0,feesFetched:!plan.botId,fallbackDone:true};
+    const order={id:clientId,requestId:id,source:plan.botId?'bot-manual':'manual',botId:plan.botId||null,scope:e.state.scope,environment:e.state.environment,kind:'standard',role:plan.botId?(plan.action==='OPEN'?'entry':'exit'):'manual',action:plan.action,direction:plan.direction,parameters:plan.parameters,margin:fresh.estimatedMargin,stage:'CONFIGURING',status:'UNKNOWN',createdAt:e.now(),appliedQty:0,appliedQuote:0,feesFetched:!plan.botId,fallbackDone:true,leverage:plan.leverage,marginType:plan.margin};
     e.state.orders.push(order);await e.checkpoint();
     try{
       if(plan.botId&&plan.action==='CLOSE'){

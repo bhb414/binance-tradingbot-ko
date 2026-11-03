@@ -1,3 +1,4 @@
+import {fundingRecords,mergeCoverage} from './trade-history.mjs';
 export class PositionInsights{
   constructor(engine){this.engine=engine;this.cache=null;this.pending=null;}
   async get(){
@@ -23,8 +24,22 @@ export class PositionInsights{
       netBySymbol[row.symbol]=(netBySymbol[row.symbol]||0)+row.income;
     }
     const value={connectionId:e.connectionId,asOf:endTime,settings,settingsError:configs.status==='rejected'?'종목 설정 조회 실패':null,realized:{startTime,endTime,complete:realized.status==='fulfilled',bySymbol,netBySymbol,costsBySymbol,...(realized.status==='rejected'?{error:'손익·수수료·펀딩을 모두 조회하지 못했습니다.'}:{})},botFunding:this.botFunding(rows,queryStart,realized.status==='fulfilled')};
-    this.cache={client,value,until:e.now()+(realized.status==='fulfilled'?60000:15000)};return value;
+    const funding={scope,startTime:queryStart,endTime,complete:realized.status==='fulfilled',rows:fundingRecords(rows,scope)};
+    this.cache={client,value,funding,until:e.now()+(realized.status==='fulfilled'?60000:15000)};await this.persistFunding(funding);return value;
   }
+
+  fundingSnapshot(){return this.cache?.funding||null;}
+  async persistFunding(snapshot){
+    const e=this.engine;if(!snapshot.complete||!e.serial||!e.checkpoint||e.storage?.fault)return;
+    await e.serial(async()=>{
+      if(!e.connected||snapshot.scope!==e.state.scope||this.pending?.client&&this.pending.client!==e.client)return;
+      e.state.fundingLedger||=[];e.state.fundingCoverage||=[];const ids=new Set(e.state.fundingLedger.map(r=>r.id));let changed=false;
+      for(const row of snapshot.rows)if(!ids.has(row.id)){e.state.fundingLedger.push(row);ids.add(row.id);changed=true;}
+      const old=e.state.fundingCoverage.filter(r=>r.scope===snapshot.scope),merged=mergeCoverage([...old,{start:snapshot.startTime,end:snapshot.endTime}]);
+      if(changed||!old.length||Math.max(...old.map(r=>r.end))+60000<=snapshot.endTime){e.state.fundingCoverage=[...e.state.fundingCoverage.filter(r=>r.scope!==snapshot.scope),...merged.map(r=>({...r,scope:snapshot.scope}))];await e.checkpoint();}
+    });
+  }
+
   async income(client,startTime,endTime){
     const amounts=[],seen=new Set();let requests=0;
     const read=async(start,end)=>{

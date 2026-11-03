@@ -103,3 +103,12 @@ Node.js 24 이상이 설치된 Windows에서 `run.cmd`를 실행하거나 이 �
 `npm test`로 수식·지표·예산·주문 원장·복구·부분 체결·보호 주문·로컬 API 접근 제약을 확인합니다. 검증은 모의 거래소와 로컬 실행 기준입니다.
 
 바이낸스 구현 기준: [일반 정보](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info), [주문 API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade), [계좌 API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account). 차트는 [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/) 5.2.1을 로컬에 포함하며 라이선스·NOTICE는 `public/vendor/`에 보관합니다.
+
+## 매매 기록·통계
+
+- 활동 기록의 매매 기록·통계 또는 봇 상태·기록의 매매 기록·그래프에서 봇별·전체와 기간을 선택합니다. 전체에는 삭제된 봇의 저장된 기록도 포함하며 봇에 귀속되지 않은 수동 주문은 제외합니다.
+- 포지션이 0인 상태에서 진입해 전량 정리할 때까지가 한 거래입니다. 추가 진입과 부분 정리는 같은 거래의 상세에 포함합니다. 수동 인수는 인수 전 진입 수수료를 알 수 없으면 비용 미확인으로 표시합니다.
+- 거래별 순손익은 매매손익 − 진입·정리 수수료 + 펀딩입니다. 수익률은 순손익 ÷ 진입 증거금 합계 × 100입니다. 이전 체결의 배수는 주문 금액·증거금에서 추정한 경우 ≈로 표시합니다.
+- 누적 수익률은 조회 기간의 확인된 순손익 ÷ 현재 기준예산입니다. 기준예산+순손익은 같은 예산을 기준으로 환산한 금액이며 지갑 잔고·실제 운용한도 추이가 아닙니다. 기간은 정리 완료 시점 기준이고 보유 중인 거래는 별도로 표시합니다.
+- 승률·평균 수익률·이익 합계/손실 합계·최대 낙폭은 완료·비용확인 거래로 계산합니다. 낙폭은 거래 정리 시점의 확정손익 기준으로 장중 미실현 낙폭을 뜻하지 않습니다. 비용 미확인·비 USDT 비용·펀딩 귀속 불명확 거래는 통계와 그래프에서 제외합니다.
+- 펀딩 조회는 기존 계좌 정보 캐시를 공유합니다. 확인된 펀딩과 조회 범위를 원장에 보존해 이후에도 사용합니다. 최초 조회 이전의 누락된 구간은 완전한 수익률로 꾸미지 않습니다. 앞으로는 체결 주문·배수·거래소 체결 시각을 함께 저장합니다.
