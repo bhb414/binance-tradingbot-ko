@@ -396,3 +396,83 @@ test('a stop condition is handled before reading a failing entry timeframe',asyn
  const original=h.engine.client.klines.bind(h.engine.client);h.engine.client.klines=async(symbol,interval)=>{if(interval==='4h')throw Error('should not read entry');return original(symbol,interval);};
  await h.engine.tick();assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,0);
 });
+
+test('storage recovery retries an unsent signal only after file and exchange verification, with one atomic intent',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store);await h.engine.startBot(h.id);let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.role==='entry')){fail=false;throw Object.assign(Error('locked'),{code:'EACCES',syscall:'rename',path:'state.json'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);assert.equal(h.exchange.calls.length,0);assert.equal(h.engine.bot(h.id).runtime.runEnabled,true);assert.equal(h.engine.bot(h.id).runtime.ruleSignals['legacy-entry'].fired,false);
+ assert.equal(h.engine.snapshot().storageFault.code,'EACCES');assert.equal(h.engine.snapshot().bots[0].runtime.waiting.kind,'storage');
+ h.exchange.beforeSend=p=>{const saved=h.store.saved.at(-1);assert.ok(saved.orders.some(o=>o.id===p.newClientOrderId));assert.equal(saved.bots[0].runtime.ruleSignals['legacy-entry'].fired,true);};
+ h.exchange.now+=6000;await h.engine.tick();await h.engine.tick();assert.equal(h.engine.writeError,null);assert.equal(h.engine.tradingEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.ok(h.store.state.storageHealth.recoveredAt);
+});
+test('a lost post-fill journal write recovers the accepted fill and protection without another entry',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store);await h.engine.startBot(h.id);let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.role==='entry'&&o.status==='FILLED')){fail=false;throw Object.assign(Error('disk'),{code:'ENOSPC'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);assert.ok(h.exchange.quantity>0);assert.equal(h.engine.bot(h.id).runtime.quantity,0);assert.equal(h.engine.ownOrders(h.engine.bot(h.id))[0].status,'UNKNOWN');
+ h.exchange.now+=6000;await h.engine.tick();await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.quantity,h.exchange.quantity);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,2);
+ assert.equal(h.store.state.fills.filter(f=>f.role==='entry').length,1);assert.equal(h.engine.storage.fault,null);
+});
+test('protection accepted before a storage failure is queried and never registered twice',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store);await h.engine.startBot(h.id);let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.kind==='algo'&&o.status==='NEW')){fail=false;throw Object.assign(Error('busy'),{code:'EBUSY'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);h.exchange.now+=6000;await h.engine.tick();await h.engine.tick();
+ assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,2);assert.equal(h.engine.storage.fault,null);
+});
+test('an uncertain-order safety pause survives storage recovery even when its fill can be confirmed',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store);await h.engine.startBot(h.id);h.exchange.uncertain=true;let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.bots[0].runtime.error?.includes('timeout')){fail=false;throw Object.assign(Error('busy'),{code:'EBUSY'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);const intent=h.engine.ownOrders(h.engine.bot(h.id))[0];h.exchange.fill(intent.id,Number(intent.parameters.quantity));
+ h.exchange.now+=6000;await h.engine.tick();await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('unknown exchange acceptance holds recovery and never resends a missing client order id',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);h.exchange.uncertain=true;await h.engine.tick();const intent=h.engine.ownOrders(h.engine.bot(h.id))[0],actual=h.exchange.orders.get(intent.id);h.exchange.orders.delete(intent.id);
+ h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);h.store.fail=false;h.exchange.now+=6000;await h.engine.tick();
+ assert.equal(h.engine.tradingEnabled,false);assert.equal(h.engine.snapshot().storageFault.phase,'verification');assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+ h.exchange.orders.set(intent.id,actual);h.exchange.fill(intent.id,Number(intent.parameters.quantity));h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('a mismatched exchange holding cannot release the storage stop; restoring the match can',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const original=h.exchange.quantity;
+ h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);h.store.fail=false;h.exchange.quantity=original+1;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.tradingEnabled,false);assert.equal(h.engine.snapshot().storageFault.phase,'verification');
+ h.exchange.quantity=original;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.bot(h.id).runtime.runEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('user pause and permission off during storage failure remain effective after automatic recovery',async()=>{
+ for(const off of [false,true]){
+  const h=await harness();await h.engine.startBot(h.id);h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);
+  if(off)await h.engine.setTrading(false);else await h.engine.pauseBot(h.id);
+  h.store.fail=false;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.equal(h.engine.tradingEnabled,!off);assert.equal(h.exchange.calls.length,0);assert.equal(h.store.saved.at(-1).orderPermission.enabled,!off);
+ }
+});
+test('rate-limited recovery reads wait without permanent bot stops or duplicate entries',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);h.store.fail=false;
+ const mode=h.engine.client.positionMode.bind(h.engine.client);let calls=0,fail=true;h.engine.client.positionMode=async()=>{calls++;if(fail)throw new BinanceError('rate',{status:429,code:-1003,retryAt:h.exchange.now+60000});return mode();};
+ h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.runEnabled,true);await h.engine.tick();assert.equal(calls,1);assert.equal(h.exchange.calls.length,0);
+ h.exchange.now+=61000;fail=false;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('recovery completion is not announced if its final journal commit fails',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store);await h.engine.startBot(h.id);h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);h.store.fail=false;let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.storageHealth?.recoveredAt){fail=false;throw Object.assign(Error('full'),{code:'ENOSPC'});}return save();};
+ h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.tradingEnabled,false);assert.equal(h.engine.snapshot().storageFault.phase,'saving');assert.equal(h.store.state.logs.filter(l=>l.title==='원장 저장 복구').length,0);assert.equal(h.exchange.calls.length,0);
+ h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+
+test('a failed exit-fill save recovers the close exactly once and does not reopen a steady entry signal',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const b=h.engine.bot(h.id);b.actionRules.push(makeActionRule({action:'CLOSE_ALL',sizePercent:100,formula:'TRUE@1m',formulaVersion:2,order:{type:'MARKET',price:'bid',ticks:0,timeout:10,remainder:'cancel',postOnly:false}}));await h.engine.checkpoint();
+ const save=h.store.save.bind(h.store);let fail=true;h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.role==='exit'&&o.status==='FILLED')){fail=false;throw Object.assign(Error('full'),{code:'ENOSPC'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);assert.equal(h.exchange.quantity,0);h.exchange.now+=6000;await h.engine.tick();await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.bot(h.id).runtime.quantity,0);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);assert.equal(h.store.state.fills.filter(f=>f.role==='exit').length,1);
+});
+test('failed connection-state persistence leaves the working client and account binding intact',async()=>{
+ const h=await harness(),client=h.engine.client,scope=h.engine.state.scope,connectionId=h.engine.connectionId;h.store.fail=true;
+ await assert.rejects(()=>h.engine.connect({environment:'testnet',apiKey:'other-key-1234567890',secret:'other-secret-1234567890',allowTrading:true}),e=>e.storage);assert.equal(h.engine.client,client);assert.equal(h.engine.connectionId,connectionId);assert.equal(h.engine.state.scope,scope);
+ h.store.fail=false;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.state.scope,scope);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);
+});
+
+test('disconnect requested during a failing final write never restores order permission',async()=>{
+ const h=await harness();h.store.fail=true;await assert.rejects(()=>h.engine.disconnect(),e=>e.storage);assert.equal(h.engine.connected,false);
+ h.store.fail=false;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.tradingEnabled,false);assert.equal(h.engine.snapshot().orderPermission.enabled,false);
+});
+
+test('recovery can reconnect the same saved account read-only before verifying owned exposure',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint(),e=>e.storage);h.store.fail=false;h.engine.connected=false;
+ h.engine.credentialStore={async load(){return {environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890'};}};
+ h.exchange.now+=6000;await h.engine.tick();assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.connected,true);assert.equal(h.engine.tradingEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});

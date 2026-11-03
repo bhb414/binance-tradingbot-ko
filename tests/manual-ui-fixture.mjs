@@ -38,5 +38,12 @@ if(process.argv.includes('--manage')){
  state.fills.push({id:'fixture-fee',scope:state.scope,botId:bot.id,at:Date.now()-1800000,symbol:bot.symbol,fee:.08,feeAsset:'USDT'});
  await app.engine.refreshAccount(true);
 }
+
+if(process.argv.includes('--storage-outage')){
+ const save=store.save.bind(store);let blocked=true;
+ store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};
+ await app.engine.checkpoint().catch(()=>{});
+ process.stdin.setEncoding('utf8');process.stdin.on('data',input=>{if(input.trim()==='recover'){blocked=false;app.engine.serial(()=>app.engine.storage.recover({force:true})).then(ok=>console.log('Mock storage recovery: '+ok));}});
+}
 app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
-process.once('SIGINT',()=>app.server.close());
+process.once('SIGINT',()=>{process.stdin.pause();app.server.close();});

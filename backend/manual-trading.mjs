@@ -1,3 +1,4 @@
+import {isStorageError} from './storage-recovery.mjs';
 import {isTemporary} from './binance-rate.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {quantize,symbolFilters,protectiveOrders} from './orders.mjs';
@@ -109,7 +110,7 @@ export class ManualTrading {
       if(fresh.changes.margin){try{await e.client.changeMargin(plan.symbol,plan.margin);}catch(error){if(error.code!==-4046)throw error;}}
       if(fresh.changes.leverage)await e.client.changeLeverage(plan.symbol,plan.leverage);
       if(fresh.changes.margin||fresh.changes.leverage){const rows=await e.client.symbolConfig(plan.symbol),config=Array.isArray(rows)?rows.find(row=>row.symbol===plan.symbol)||rows[0]:rows;if(Number(config?.leverage)!==plan.leverage||String(config?.marginType).toUpperCase()!==plan.margin)throw new Error('거래소의 증거금 모드·레버리지 적용을 확인하지 못했습니다.');await e.refreshAccount(true);if(plan.action==='OPEN'&&fresh.estimatedMargin*1.01>e.accountSnapshot.availableBalance)throw new Error('설정 변경 후 가용 증거금이 부족합니다.');}
-    }catch(error){order.status='REJECTED';order.error='주문 미전송 · '+(e.client.redact?.(error.message)||'종목 설정 확인 실패')+' · 계좌의 현재 종목 설정을 다시 확인해 주세요.';if(plan.botId){const b=e.bot(plan.botId);try{if(!b.runtime.syncHold)await e.ensureGuards(b,context.info);}catch(problem){if(isTemporary(problem))e.defer(problem);else{b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(problem.message)||'보호 주문 확인 필요';}}}await e.checkpoint();return this.view(order);}
+    }catch(error){if(isStorageError(error))throw error;order.status='REJECTED';order.error='주문 미전송 · '+(e.client.redact?.(error.message)||'종목 설정 확인 실패')+' · 계좌의 현재 종목 설정을 다시 확인해 주세요.';if(plan.botId){const b=e.bot(plan.botId);try{if(!b.runtime.syncHold)await e.ensureGuards(b,context.info);}catch(problem){if(isTemporary(problem))e.defer(problem);else{b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(problem.message)||'보호 주문 확인 필요';}}}await e.checkpoint();return this.view(order);}
     if(plan.botId){const b=e.bot(plan.botId);b.leverage=plan.leverage;b.runtime.error=null;}
     order.stage='ORDER_SENT';await e.checkpoint();
     try{const result=await e.client.placeOrder({...order.parameters,newClientOrderId:order.id,newOrderRespType:'RESULT'});if(plan.botId)await e.applyOrder(e.bot(plan.botId),order,result);else this.apply(order,result);}
@@ -125,7 +126,7 @@ export class ManualTrading {
     if(quantity>order.appliedQty+1e-12){const delta=quantity-order.appliedQty,value=quote-order.appliedQuote;e.state.fills.push({id:order.id+':'+quantity,source:'manual',scope:order.scope,botId:null,at:e.now(),symbol:order.parameters.symbol,side:order.parameters.side,role:'manual',action:order.action+'_'+order.direction,quantity:delta,price:value>0?value/delta:null});}
     order.appliedQty=quantity;order.appliedQuote=quote;order.averagePrice=quantity&&quote?quote/quantity:null;order.status=data.status||order.status;order.orderId=data.orderId||order.orderId;if(order.status!=='UNKNOWN')order.error=null;
   }
-  async refresh(order){if(order.stage!=='ORDER_SENT')return;if(order.botId){await this.engine.refreshOrder(this.engine.bot(order.botId),order);return;}try{this.apply(order,await this.engine.client.queryOrder(order.parameters.symbol,order.id));}catch(error){if(![-2013,-2011].includes(error.code))throw error;order.error='거래소에서 아직 접수 여부를 확인하지 못했습니다. 같은 주문을 다시 전송하지 않고 조회합니다.';}}
+  async refresh(order){if(order.stage!=='ORDER_SENT')return;if(order.botId){await this.engine.refreshOrder(this.engine.bot(order.botId),order);return;}try{delete order.lastQueryError;this.apply(order,await this.engine.client.queryOrder(order.parameters.symbol,order.id));}catch(error){if(![-2013,-2011].includes(error.code))throw error;order.lastQueryError=error.code;order.error='거래소에서 아직 접수 여부를 확인하지 못했습니다. 같은 주문을 다시 전송하지 않고 조회합니다.';}}
   async refreshPending(){for(const order of this.records.filter(o=>active(o)&&!o.botId))await this.refresh(order);}
   async requestStatus(id){const order=this.records.find(order=>order.requestId===id);if(!order)return {found:false};if(this.engine.connected){await this.refresh(order);await this.engine.checkpoint();}return {found:true,order:this.view(order)};}
   async cancel(id){

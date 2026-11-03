@@ -1,3 +1,4 @@
+import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
 import {isEntry,isStop,actionDirection} from '../public/actions.js';
@@ -46,7 +47,7 @@ export class MultiBots{
    for(const rule of p.actionRules.filter(r=>r.enabled))await e.formulaMarkets(p.legs[0].symbol,rule.formula,new Map(),multiAliases(p));
    for(const b of workers)await e.startRuntime(b.id);
    p.runtime.runEnabled=true;p.runtime.stopSignals={};p.runtime.error=null;p.runtime.cancelEntries=false;p.runtime.closeAll=false;for(const b of workers)b.runtime.error=null;
-  }catch(error){p.runtime.runEnabled=false;for(const b of workers)b.runtime.runEnabled=false;await e.checkpoint();throw error;}
+  }catch(error){if(isStorageError(error)){e.storage.stop(p.id);throw error;}p.runtime.runEnabled=false;for(const b of workers)b.runtime.runEnabled=false;await e.checkpoint();throw error;}
   e.note('다중종목 감시 시작',p.name,p.id);await e.checkpoint();return this.view(p);
  }
  async cancelEntries(p){if(!this.e.tradingEnabled)return;for(const b of this.workers(p))for(const o of this.e.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.e.cancelStandard(b,o,true);p.runtime.cancelEntries=false;}

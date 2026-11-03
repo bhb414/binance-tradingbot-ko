@@ -87,7 +87,7 @@ test('saved weights and budget modes split the effective group capital; exposed 
  const h=await harness(),p=config({budgetMode:'pnl'});await h.engine.saveBot(p);const workers=h.engine.multi.workers(h.engine.multi.get(p.id));workers[0].runtime.realized=-100;h.engine.multi.syncBudgets(h.engine.multi.get(p.id));assert.deepEqual(workers.map(b=>b.budget),[540,360]);
  await h.engine.startBot(p.id);await h.engine.tick();const changed={...p,legs:p.legs.map((l,i)=>({...l,weight:i?70:30}))};await h.engine.saveBot(changed);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,false);assert.ok(Math.abs(h.engine.snapshot().bots[0].members[0].budget-270)<1e-8);
  await assert.rejects(()=>h.engine.saveBot({...changed,legs:[{...changed.legs[0],symbol:'SOLUSDT'},changed.legs[1]]}),/보유/);
- const before=structuredClone(h.store.state);h.store.save=async()=>{throw Error('disk full');};await assert.rejects(()=>h.engine.saveBot({...changed,budget:700}),/원장을 저장/);assert.deepEqual(h.store.state,before);
+ const before=structuredClone(h.store.state);h.store.save=async()=>{throw Error('disk full');};await assert.rejects(()=>h.engine.saveBot({...changed,budget:700}),/원장 저장/);assert.deepEqual(h.store.state,before);
 });
 test('cross-symbol historical expressions keep gap boundaries, Korean indicators and numeric instrument names',()=>{
  const rows=[1,2,3,4].map(i=>({time:i*3600,closeTime:(i+1)*3600000-1,open:i,high:i,low:i,close:i,volume:1})),a={serverNow:5*3600000-1,candles:rows},b={...a,candles:rows.filter((_,i)=>i!==2)};
@@ -99,4 +99,11 @@ test('cross-symbol historical expressions keep gap boundaries, Korean indicators
 test('one over-budget holding does not prevent another symbol using its own allocation',async()=>{
  const h=await harness(),p=await h.engine.saveBot(config()),a=h.engine.multi.workers(h.engine.multi.get(p.id))[0];Object.assign(a.runtime,{quantity:20,entryPrice:100,direction:'LONG',entries:1});a.leverage=2;h.x.config.BTCUSDT.leverage=2;h.x.quantities.BTCUSDT=20;h.x.entryPrices.BTCUSDT=100;
  await h.engine.startBot(p.id);await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,20);assert.ok(h.x.quantities.ETHUSDT<0);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,true);
+});
+
+test('storage failure between multi-symbol fills resumes remaining legs without reordering the accepted leg',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config()),save=h.store.save.bind(h.store);await h.engine.startBot(p.id);let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.parameters.symbol==='BTCUSDT'&&o.status==='FILLED')){fail=false;throw Object.assign(Error('locked'),{code:'EPERM'});}return save();};
+ await assert.rejects(()=>h.engine.tick(),e=>e.storage);assert.equal(h.x.calls.length,1);h.x.now+=6000;await h.engine.tick();await h.engine.tick();
+ assert.equal(h.engine.storage.fault,null);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,true);assert.equal(h.x.calls.length,2);assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
 });

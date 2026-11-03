@@ -148,3 +148,16 @@ test('manual HTTP endpoints require the local token and only accept a server-iss
     assert.equal((await fetch(base+'/api/manual/requests/'+plan.id,{headers})).status,200);assert.equal((await post('/api/manual/orders/'+order.id+'/cancel',{})).status,200);
   }finally{await new Promise(resolve=>app.server.close(resolve));await app.engine.stopTimer();}
 });
+
+test('manual fills reconcile after journal failure without resubmitting the reviewed request',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store),preview=await h.engine.serial(()=>h.engine.manual.preview({...input,type:'MARKET',price:null}));let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.source==='manual'&&o.status==='FILLED')){fail=false;throw Object.assign(Error('locked'),{code:'EPERM'});}return save();};
+ await assert.rejects(()=>h.engine.serial(()=>h.engine.manual.submit(preview.id)),e=>e.storage);assert.equal(h.exchange.calls.filter(c=>c.method==='place').length,1);
+ h.exchange.now+=6000;await h.engine.tick();const result=await h.engine.serial(()=>h.engine.manual.submit(preview.id));assert.equal(result.status,'FILLED');assert.equal(h.exchange.calls.filter(c=>c.method==='place').length,1);assert.equal(h.store.state.fills.filter(f=>f.source==='manual').length,1);
+});
+test('interrupted manual configuration cannot automatically send a previously unsent order during storage recovery',async()=>{
+ const h=await harness(),save=h.store.save.bind(h.store),preview=await h.engine.serial(()=>h.engine.manual.preview(input));let fail=true;
+ h.store.save=async()=>{if(fail&&h.store.state.orders.some(o=>o.stage==='ORDER_SENT')){fail=false;throw Object.assign(Error('locked'),{code:'EPERM'});}return save();};
+ await assert.rejects(()=>h.engine.serial(()=>h.engine.manual.submit(preview.id)),e=>e.storage);assert.equal(h.exchange.calls.filter(c=>c.method==='place').length,0);
+ h.exchange.now+=6000;await h.engine.tick();const result=await h.engine.serial(()=>h.engine.manual.submit(preview.id));assert.equal(result.status,'REJECTED');assert.equal(h.exchange.calls.filter(c=>c.method==='place').length,0);assert.equal(h.engine.storage.fault,null);
+});

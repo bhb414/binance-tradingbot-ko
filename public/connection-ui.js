@@ -1,4 +1,5 @@
 import {api} from './api.js';
+import {installStorageUI,renderStorage} from './storage-ui.js';
 import {connectionView} from './connection-state.js';
 let state=null,tradingBusy=false,connectionBusy=false,lastConnected=null,remote=false;
 export function setConnectionLocal(local){remote=local===false;if(state)renderConnection(state);}
@@ -17,13 +18,14 @@ export function renderConnection(value){
  $('#connect-account').disabled=remote||connectionBusy;$('#connect-account').textContent=connectionBusy?'연결 확인 중…':state.connected?'새 키 연결·저장':'연결·암호화 저장';
  const toggle=$('#trading-toggle');toggle.setAttribute('aria-checked',String(view.permission));toggle.setAttribute('aria-busy',String(tradingBusy));toggle.disabled=tradingBusy||connectionBusy||!view.connected&&!view.permission;
  $('#trading-toggle-state').textContent=tradingBusy?'변경 중…':view.permission?'켜짐':'꺼짐';
- $('#trading-permission-status').textContent=view.connected?(view.enabled?'수동 주문·봇 주문 실행 가능':'새 주문 전송·봇 조건식 매매 중지'):view.permission?'허용 설정 저장됨 · 계좌 재연결 대기':'계좌 연결 후 켤 수 있습니다.';
+ $('#trading-permission-status').textContent=state.storageFault?'저장 복구·주문 대조가 끝날 때까지 주문 보류':view.connected?(view.enabled?'수동 주문·봇 주문 실행 가능':'새 주문 전송·봇 조건식 매매 중지'):view.permission?'허용 설정 저장됨 · 계좌 재연결 대기':'계좌 연결 후 켤 수 있습니다.';
  if(lastConnected!==view.connected){$('#connection-key-editor').open=!view.connected;lastConnected=view.connected;}
  $('#connection-key-summary').textContent=view.connected?'API 키 변경':'API 키 등록';
  $('#connection-key-editor').hidden=remote;const details=$('.credential-details');if(details)details.hidden=remote;
- let note=$('#connection-remote-note');if(!note){note=document.createElement('p');note.id='connection-remote-note';note.className='connection-remote-note';note.textContent='API 키 등록·변경·삭제는 서버 PC에서 해 주세요.';$('#connection-key-editor').before(note);}note.hidden=!remote;
+ let note=$('#connection-remote-note');if(!note){note=document.createElement('p');note.id='connection-remote-note';note.className='connection-remote-note';note.textContent='API 키 등록·변경·삭제는 서버 PC에서 해 주세요.';$('#connection-key-editor').before(note);}note.hidden=!remote;renderStorage(state);
 }
 export function installConnectionUI({refresh,toast}){
+ installStorageUI({refresh,toast});
  $('#trading-toggle').addEventListener('click',async()=>{
   if(tradingBusy||connectionBusy||!state)return;const enabled=!connectionView(state).permission;tradingBusy=true;showError('');renderConnection(state);
   let applied=false;

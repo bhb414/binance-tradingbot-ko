@@ -12,3 +12,9 @@ test('saved on preference is visible while disconnected without claiming order e
  const view=connectionView({connected:false,tradingEnabled:false,orderPermission:{enabled:true},environment:'live'});
  assert.equal(view.permission,true);assert.equal(view.enabled,false);assert.equal(view.orderLabel,'연결 대기');assert.equal(view.connectionState,'disconnected');
 });
+
+test('storage recovery shows saved permission separately from the execution hold and respects off requests',()=>{
+ const base={connected:true,tradingEnabled:false,orderPermission:{enabled:true},storageFault:{code:'EPERM'},environment:'live',bots:[],error:'원장 저장 오류'};
+ const held=connectionView(base);assert.equal(held.enabled,false);assert.equal(held.permission,true);assert.equal(held.orderLabel,'저장 복구 대기');assert.equal(held.healthLabel,'저장 오류');
+ assert.equal(connectionView({...base,orderPermission:{enabled:false}}).permission,false);
+});
