@@ -42,7 +42,7 @@ function reconstruct(data,now){
  const active=new Map(),cycles=[],indexes=new Map();
  const create=(event,orphan=false)=>{
   const count=(indexes.get(event.botId)||0)+1;indexes.set(event.botId,count);
-  const c={id:event.botId+':'+event.id,botId:event.botId,symbol:event.symbol,direction:event.direction,index:count,openedAt:event.at,closedAt:null,entryQuantity:0,exitQuantity:0,entryNotional:0,exitNotional:0,entryMargin:0,marginKnown:true,marginEstimated:false,remaining:0,averagePrice:0,grossRealized:0,imported:orphan,unknownEntry:orphan,inconsistent:false,hedged:!!event.hedged,events:[],orders:new Map(),funding:0,fee:0,costReasons:[]};cycles.push(c);active.set(event.botId,c);return c;
+  const c={id:event.botId+':'+event.id,botId:event.botId,symbol:event.symbol,direction:event.direction,index:count,openedAt:event.at,closedAt:null,entryQuantity:0,exitQuantity:0,entryNotional:0,exitNotional:0,entryMargin:0,marginKnown:true,marginEstimated:false,remaining:0,averagePrice:0,grossRealized:0,imported:orphan,unknownEntry:orphan,inconsistent:false,hedged:!!event.hedged,events:[],orders:new Map(),funding:0,fundingEvents:[],fee:0,costReasons:[]};cycles.push(c);active.set(event.botId,c);return c;
  };
  for(const event of data.events){let c=active.get(event.botId);
   if(event.type==='entry'||event.type==='import'){
@@ -74,12 +74,12 @@ function applyCosts(cycles,data,funding,now){
    const measured=fees.filter(f=>valid(f.tradeQuantity));if(measured.length&&Math.abs(measured.reduce((s,f)=>s+num(f.tradeQuantity),0)-num(order?.appliedQty))>Math.max(eps,num(order?.appliedQty)*1e-7)||!measured.length&&fees.length>=1000)c.costReasons.push('일부 체결 수수료만 확인됨');
    for(const f of fees){if(f.feeAsset!=='USDT')c.costReasons.push('USDT 외 수수료 미환산');else c.fee+=num(f.fee)*weight;}
   }
-  const end=c.closedAt??Math.min(now,funding.asOf||now);if(!covered(funding.coverage,c.openedAt,end))c.costReasons.push('펀딩 조회 범위 미확인');
+  const end=c.closedAt??Math.min(now,funding.asOf||now);if(end<c.openedAt||!covered(funding.coverage,c.openedAt,end))c.costReasons.push('펀딩 조회 범위 미확인');
   if(c.hedged)c.costReasons.push('헤지 포지션 펀딩 귀속 미확인');
  }
  for(const row of funding.rows){
   const owners=cycles.filter(c=>c.symbol===row.symbol&&c.openedAt<=row.at&&(c.closedAt==null||row.at<=c.closedAt)&&c.events.filter(e=>e.at<=row.at).at(-1)?.remaining>eps),boundary=cycles.filter(c=>c.symbol===row.symbol&&c.events.some(e=>(!e.precise&&row.at>=e.earliest&&row.at<=e.at)||row.at===e.at));
-  if(owners.length===1&&!owners[0].hedged&&!boundary.length&&row.asset==='USDT')owners[0].funding+=row.amount;
+  if(owners.length===1&&!owners[0].hedged&&!boundary.length&&row.asset==='USDT'){owners[0].funding+=row.amount;owners[0].fundingEvents.push({at:row.at,amount:row.amount});}
   else for(const c of new Set([...owners,...boundary]))c.costReasons.push(row.asset!=='USDT'?'USDT 외 펀딩 미환산':'펀딩 시점의 소유 포지션 확인 필요');
  }
  for(const c of cycles){c.costReasons=[...new Set(c.costReasons)];c.gross=c.unknownEntry||c.inconsistent?null:c.grossRealized;c.costsComplete=!c.costReasons.length;c.net=c.closedAt&&c.costsComplete&&c.gross!=null?c.gross-c.fee+c.funding:null;c.returnPercent=c.net!=null&&c.marginKnown&&c.entryMargin>0?c.net/c.entryMargin*100:null;}
@@ -114,4 +114,32 @@ export class TradeHistory{
   if(client!==e.client||scope!==e.state.scope)throw Error('계좌가 변경되었습니다. 기록을 다시 조회하세요.');
   return buildTradeHistory({state:e.state,botId,now:e.now(),account:e.liveAccount?.()||e.accountSnapshot,...options,funding});
  }
+}
+
+export function buildOpenPositionCosts({state,now=Date.now(),funding=null}){
+ const scope=state.scope,extra=funding?.scope===scope?funding:null,coverage=mergeCoverage([...(state.fundingCoverage||[]).filter(r=>r.scope===scope),...(extra?.complete?[{start:extra.startTime,end:extra.endTime}]:[])]),rows=new Map([...(state.fundingLedger||[]).filter(r=>r.scope===scope),...(extra?.rows||[])].map(r=>[r.id,r])),asOf=Math.min(now,Math.max(0,...coverage.map(r=>r.end))),data=ledger(state,now),cycles=reconstruct(data,now),result={};
+ applyCosts(cycles,data,{rows:[...rows.values()],coverage,asOf},now);
+ const orderQuantities=new Map();for(const event of data.events)if(event.type==='entry'&&event.orderId)orderQuantities.set(event.orderId,(orderQuantities.get(event.orderId)||0)+event.quantity);
+ for(const c of cycles.filter(c=>c.closedAt==null&&c.remaining>eps)){
+  const reasons=c.costReasons.filter(r=>!['수수료 조회 대기','USDT 외 수수료 미환산','일부 체결 수수료만 확인됨'].includes(r));
+  if(asOf<c.openedAt||now-asOf>90000)reasons.push('최근 펀딩 내역 조회 대기');
+  const entryOrders=new Set(c.events.filter(e=>e.type==='entry').map(e=>e.orderId).filter(Boolean)),feesByOrder=new Map();
+  for(const id of entryOrders){const order=data.byId.get(id),fees=data.fees.get(id)||[];
+   if(!order?.feesFetched||!fees.length)reasons.push('진입 수수료 조회 대기');
+   const measured=fees.filter(f=>valid(f.tradeQuantity));if(measured.length&&Math.abs(measured.reduce((s,f)=>s+num(f.tradeQuantity),0)-num(order?.appliedQty))>Math.max(eps,num(order?.appliedQty)*1e-7)||!measured.length&&fees.length>=1000)reasons.push('일부 진입 수수료만 확인됨');
+   if(fees.some(f=>f.feeAsset!=='USDT'))reasons.push('USDT 외 진입 수수료 미환산');
+   feesByOrder.set(id,fees.filter(f=>f.feeAsset==='USDT').reduce((sum,f)=>sum+num(f.fee),0));
+  }
+  let quantity=0,entryFee=0,heldFunding=0;
+  const timeline=[...c.events,...(c.fundingEvents||[]).map(f=>({...f,type:'funding'}))].sort((a,b)=>a.at-b.at);
+  for(const event of timeline){
+   if(event.type==='funding'){heldFunding+=event.amount;continue;}
+   if(event.type==='entry'||event.type==='import'){quantity+=event.quantity;if(event.type==='entry'&&event.orderId)entryFee+=(feesByOrder.get(event.orderId)||0)*event.quantity/(orderQuantities.get(event.orderId)||event.quantity);}
+   else {const remaining=Math.max(0,quantity-event.quantity),weight=quantity>0?remaining/quantity:0;entryFee*=weight;heldFunding*=weight;quantity=remaining;}
+  }
+  const bot=(state.bots||[]).find(b=>b.id===c.botId);
+  if(!bot||bot.runtime?.syncHold||Math.abs(num(bot.runtime?.quantity)-c.remaining)>Math.max(eps,c.remaining*1e-7))reasons.push('보유 수량 동기화 확인 필요');
+  result[c.botId]={symbol:c.symbol,direction:c.direction,quantity:c.remaining,entryPrice:c.averagePrice,positionEpoch:bot?.runtime?.positionEpoch??null,openedAt:c.openedAt,entryFee,funding:heldFunding,fundingAsOf:asOf,complete:reasons.length===0,reasons:[...new Set(reasons)]};
+ }
+ return result;
 }

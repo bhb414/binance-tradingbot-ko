@@ -62,6 +62,7 @@ function icons(root = document) { root.querySelectorAll('[data-icon]').forEach(e
 
 let bots=[],logs=[],legacyBots=[];
 try{const saved=JSON.parse(localStorage.getItem('fw-bots-v1')||'null');if(Array.isArray(saved))legacyBots=saved.map(upgradeBot);}catch{}
+let positionCosts=null,positionCostsKey='',positionCostsAt=0,positionCostsPending=null;
 let positionInsights=null,positionInsightsKey='',positionInsightsAt=0,positionInsightsPending=null;
 let serverState=null,marketSnapshot=null,marketError=null,chartRequest=0,formulaRequest=0,syncing=false;
 let manualUI,appearanceUI,multiUI,multiSymbolPick,favorites;try{favorites=readFavorites(localStorage.getItem(FAVORITES_KEY));}catch{favorites=readFavorites(null);}
@@ -85,7 +86,7 @@ const positionImportUI=installPositionImportUI({api,getState:()=>serverState,ref
 function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
 async function syncWorkspace(refreshMarket=false){
   if(syncing)return;syncing=true;
-  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);transportUI?.setState(state);renderRuntimeBanner();renderBots();loadPositionInsights();renderHomeTable();if($('#bot-dialog').open)renderEditorStatus();renderActivity();multiUI?.setState();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
+  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);transportUI?.setState(state);renderRuntimeBanner();renderBots();loadPositionInsights();loadPositionCosts();renderHomeTable();if($('#bot-dialog').open)renderEditorStatus();renderActivity();multiUI?.setState();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
   catch(error){marketError=error.message;renderRuntimeBanner();throw error;}
   finally{syncing=false;}
 }
@@ -116,7 +117,7 @@ function goPage(page) {
   $('#status-page').textContent=({home:'시장 조회',bots:'봇 작업실',activity:'활동 기록',settings:'설정'})[page];
   if (location.hash!==`#${page}`) history.replaceState(null,'',`#${page}`);
   if(page==='home') { renderHomeTable();if(serverState)updateChart(false); }
-  if(page==='bots') renderBots();
+  if(page==='bots') {renderBots();loadPositionCosts();}
   closeMarket();
   window.scrollTo(0,0);
 }
@@ -211,6 +212,22 @@ function importPositionButton(position){
 async function showPositionChart(symbol){
   try{if(!marketCatalogReady)await loadMarkets();const instrument=marketInstruments.find(s=>s.market==='usdm'&&s.symbol===symbol);if(!instrument){toast('해당 포지션 종목의 공개 시세를 찾을 수 없습니다.',true);return;}selectSymbol(symbol,'usdm');renderHomeTable();$('#symbol-picker').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}catch(error){toast(error.message,true);}
 }
+
+function positionCostKey(state){
+ if(!state?.connected||!state.connectionId)return '';
+ const held=(state.positionOwners||state.bots||[]).filter(b=>Number(b.quantity??b.runtime?.quantity)>0);
+ return held.length?JSON.stringify([state.connectionId,held.map(b=>[b.id,b.quantity??b.runtime?.quantity,b.entryPrice??b.runtime?.entryPrice,b.positionDirection??b.runtime?.direction,b.runtime?.positionEpoch]),state.fills?.[0]?.id]):'';
+}
+async function loadPositionCosts(){
+ const key=positionCostKey(serverState);
+ if(key!==positionCostsKey){positionCostsKey=key;positionCosts=null;positionCostsAt=0;}
+ if(currentPage!=='bots'||!key||positionCostsPending||Date.now()-positionCostsAt<15000)return;
+ const request={key};positionCostsPending=request;
+ try{const value=await api('/positions/costs');if(key!==positionCostKey(serverState)||value.connectionId!==serverState?.connectionId)return;positionCosts=value;positionCostsAt=Date.now();renderOffice();}
+ catch{positionCostsAt=Date.now()-10000;}
+ finally{if(positionCostsPending===request)positionCostsPending=null;}
+}
+
 async function loadPositionInsights(){
   const state=serverState,key=state?.connected?(state.connectionId||state.environment):'';
   if(key!==positionInsightsKey){positionInsightsKey=key;positionInsights=null;positionInsightsAt=0;positionInsightsPending=null;}
@@ -263,7 +280,7 @@ function renderBots(){
 function renderOffice(){
   if(bots.length&&!roomHasBots)mapCameraReady=false;roomHasBots=bots.length>0;
   roomScene.update(bots,{selectedId:selectedBotId,filter:botFilter});
-  const roster=$('#office-roster-list'),markup=officeRosterMarkup(bots,{selectedId:selectedBotId,filter:botFilter,icon});
+  const roster=$('#office-roster-list'),markup=officeRosterMarkup(bots,{selectedId:selectedBotId,filter:botFilter,icon,costs:positionCosts&&positionCosts.connectionId===serverState?.connectionId?positionCosts.byBot:{}});
   if(roster.innerHTML!==markup){const key=roster.contains(document.activeElement)?document.activeElement.dataset.officeKey:null,scroll=roster.scrollTop;roster.innerHTML=markup;roster.scrollTop=scroll;if(key)roster.querySelector('[data-office-key="'+CSS.escape(key)+'"]')?.focus({preventScroll:true});}
   const count=bots.filter(b=>botFilter==='all'||b.status===botFilter).length;$('#office-roster-count').textContent=count===bots.length?String(count):count+' / '+bots.length;
 

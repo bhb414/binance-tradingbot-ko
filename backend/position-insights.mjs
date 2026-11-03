@@ -1,9 +1,9 @@
 import {fundingRecords,mergeCoverage} from './trade-history.mjs';
 export class PositionInsights{
   constructor(engine){this.engine=engine;this.cache=null;this.pending=null;}
-  async get(){
+  async get({force=false}={}){
     const e=this.engine;if(!e.connected)throw new Error('계좌를 먼저 연결해 주세요.');const client=e.client,scope=e.state.scope;
-    if(this.cache?.client===client&&this.cache.until>e.now())return this.cache.value;
+    if(!force&&this.cache?.client===client&&this.cache.until>e.now())return this.cache.value;
     if(this.pending?.client===client)return this.pending.promise;
     const promise=this.load(client,scope);this.pending={client,promise};try{return await promise;}finally{if(this.pending?.promise===promise)this.pending=null;}
   }

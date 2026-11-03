@@ -12,6 +12,7 @@ export function requestWeight(endpoint,p={}){
   if(endpoint.endsWith('/klines')){const n=Number(p.limit||500);return n<100?1:n<500?2:n<=1000?5:10;}
   if(endpoint.endsWith('/depth'))return Number(p.limit||100)<=50?2:Number(p.limit)<=100?5:Number(p.limit)<=500?10:20;
   if(endpoint.endsWith('/account')||endpoint.endsWith('/positionRisk'))return 5;
+  if(endpoint.endsWith('/commissionRate'))return 20;
   if(endpoint.endsWith('/income')||endpoint.endsWith('/positionSide/dual'))return 30;
   if(endpoint.endsWith('/symbolConfig')||endpoint.endsWith('/userTrades'))return 5;
   if(endpoint.endsWith('/premiumIndex'))return p.symbol?1:10;

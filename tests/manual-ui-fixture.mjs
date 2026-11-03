@@ -64,6 +64,22 @@ if(process.argv.includes('--history')){
  await app.engine.checkpoint();
 }
 
+
+if(process.argv.includes('--position-costs')){
+ const t=Date.now()-3600000,off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'};
+ for(const [i,symbol,name,pnl,fee]of [[0,'BTCUSDT','BTC 추세',.05,.05],[1,'ETHUSDT','ETH 전략',1.2,.05]]){
+  const b=await app.engine.saveBot(makeBot({id:'ui-cost-'+i,name,symbol,budget:100,exit:off,actionRules:[makeActionRule({formula:'FALSE@1m'})]})),bot=app.engine.bot(b.id),id='ui-entry-'+i,orderId=8800+i;
+  positions.set(symbol,1);Object.assign(bot.runtime,{quantity:1,entryPrice:100,direction:'LONG',entries:1,realized:-fee,positionEpoch:1,lastEntryAt:t,runEnabled:true});
+  state.orders.push({id,botId:bot.id,scope:state.scope,kind:'standard',role:'entry',direction:'LONG',leverage:20,margin:5,status:'FILLED',createdAt:t-100,appliedQty:1,appliedQuote:100,feesFetched:true,orderId,parameters:{symbol,side:'BUY',type:'MARKET',positionSide:'BOTH',quantity:'1'}});
+  state.fills.push({id:id+':fill',clientOrderId:id,scope:state.scope,botId:bot.id,symbol,at:t,tradeTime:t,role:'entry',direction:'LONG',quantity:1,price:100,leverage:20});
+  state.fills.push({id:id+':fee',clientOrderId:id,orderId,scope:state.scope,botId:bot.id,symbol,at:t,fee,feeAsset:'USDT',tradeQuantity:1,tradePrice:100});
+  configs.set(symbol,{symbol,marginType:'CROSSED',leverage:20});
+ }
+ app.engine.client.positions=async()=>[...positions].map(([symbol,quantity])=>{const pnl=symbol==='BTCUSDT'?.05:1.2;return {symbol,positionSide:'BOTH',positionAmt:String(quantity),entryPrice:'100',markPrice:String(100+pnl),unRealizedProfit:String(pnl),initialMargin:'5',marginType:'cross',isolatedWallet:'0',liquidationPrice:'50'};});
+ app.engine.client.commissionRate=async symbol=>({symbol,takerCommissionRate:symbol==='BTCUSDT'?'.0005':'.0004'});
+ await app.engine.refreshAccount(true);
+}
+
 if(process.argv.includes('--storage-outage')){
  const save=store.save.bind(store);let blocked=true;
  store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};

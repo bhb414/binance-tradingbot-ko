@@ -59,6 +59,7 @@ export class BinanceClient {
   openOrders(symbol){return this.request('GET','/fapi/v1/openOrders',{symbol},true);}
   openAlgoOrders(symbol){return this.request('GET','/fapi/v1/openAlgoOrders',{symbol},true);}
   symbolConfig(symbol){return this.request('GET','/fapi/v1/symbolConfig',{symbol},true);}
+  commissionRate(symbol){return this.cached('commission-rate:'+symbol,300000,()=>this.request('GET','/fapi/v1/commissionRate',{symbol},true));}
   leverageBrackets(symbol){return this.request('GET','/fapi/v1/leverageBracket',{symbol},true);}
   changeMargin(symbol,marginType){return this.request('POST','/fapi/v1/marginType',{symbol,marginType},true);}
   changeLeverage(symbol,leverage){return this.request('POST','/fapi/v1/leverage',{symbol,leverage},true);}

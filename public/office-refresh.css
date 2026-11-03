@@ -7,7 +7,7 @@
 .office-roster>header>span{margin-left:auto;font-size:10px;color:#849a88;background:#f0f5ef;border-radius:5px;padding:3px 7px}
 #office-roster-list{min-height:0;flex:1;overflow:auto;scrollbar-width:thin}
 .office-roster-rows{margin:0;padding:0;list-style:none}
-.office-roster-row{display:flex;align-items:center;gap:3px;padding:13px 11px;border-bottom:1px solid #edf2ec;min-width:0}
+.office-roster-row{display:flex;flex-wrap:wrap;align-items:center;gap:3px;row-gap:8px;padding:13px 11px;border-bottom:1px solid #edf2ec;min-width:0}
 .office-roster-row.selected{background:#f1f7ef;box-shadow:inset 3px 0 #91b19a}
 .office-roster-row.has-error .office-roster-note{color:#bd7c84}
 .office-roster-focus{display:flex;align-items:center;gap:7px;min-width:0;flex:1;text-align:left;padding:0}
@@ -39,3 +39,12 @@
 @media(prefers-reduced-motion:reduce){.coin-float{animation:none;opacity:0}.coin-float:first-of-type{opacity:1}}
 @media(max-width:1100px) and (min-width:761px){.office-layout{grid-template-columns:minmax(0,1fr) 235px;gap:12px}.office-roster-row{padding:12px 8px}.office-roster-avatar{width:31px;height:38px}.office-roster-focus{gap:5px}.office-roster-actions button{width:26px}}
 @media(max-width:760px){.office-layout{grid-template-columns:minmax(0,1fr)}.office-roster{height:auto;max-height:380px}.office-roster>header{padding:14px 16px}#office-roster-list{max-height:280px}.office-roster-row{padding:11px 14px}.office-roster-focus strong{font-size:12px}.office-roster-actions{gap:7px}.office-roster-actions button{width:34px;height:34px}.office-layout .office-map-viewport{height:480px;max-height:68dvh;min-height:360px}.office-toolbar{padding:0 10px;gap:6px}.office-toolbar strong{font-size:11px}.office-toolbar .office-local-tag{display:none}.office-roster>footer{font-size:9px}}
+
+.office-roster-returns{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:0 0 100%;padding-left:44px;box-sizing:border-box;font-variant-numeric:tabular-nums}
+.office-roster-returns>span{min-width:0}
+.office-roster-returns small{display:block;font-size:9px;line-height:1.5;color:#879a8b}
+.office-roster-returns strong{display:block;font-size:12px;line-height:1.6;font-weight:600;white-space:nowrap}
+.office-roster-returns .cost-unknown{color:#91a194;font-size:10px;font-weight:400}
+.office-roster-cost-help{margin-top:5px}.office-roster-cost-help summary{cursor:pointer;color:#688371}.office-roster-cost-help p{margin:5px 0 0}
+
+@media(max-width:760px){.office-roster:has(.office-roster-cost-help[open]){max-height:none}}

@@ -48,6 +48,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='GET'&&pathname==='/api/trade-history'){json(200,await engine.tradeHistory.get(url.searchParams.get('botId')||null,{range:url.searchParams.get('range')||'all',page:Number(url.searchParams.get('page')||1)}));return;}
         const historyMatch=/^\/api\/bots\/([A-Za-z0-9_-]+)\/history$/.exec(pathname);
         if(req.method==='GET'&&historyMatch){json(200,await engine.tradeHistory.get(historyMatch[1],{range:url.searchParams.get('range')||'all',page:Number(url.searchParams.get('page')||1)}));return;}
+        if(req.method==='GET'&&pathname==='/api/positions/costs'){json(200,await engine.positionCostEstimates.get());return;}
         if(req.method==='GET'&&pathname==='/api/positions/insights'){json(200,engine.multi.insights(await engine.positionInsights.get()));return;}
         if(req.method==='GET'&&pathname==='/api/market-data/catalog'){json(200,await marketData.catalog());return;}
         if(req.method==='GET'&&pathname==='/api/market-data/quote'){json(200,await marketData.quote(url.searchParams.get('market')||'usdm',url.searchParams.get('symbol')||'BTCUSDT',url.searchParams.get('interval')||'15m'));return;}

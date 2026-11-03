@@ -9,6 +9,7 @@ import {PositionImports} from './position-import.mjs';
 import {accountView} from './account-view.mjs';
 import {PositionInsights} from './position-insights.mjs';
 import {TradeHistory} from './trade-history.mjs';
+import {PositionCostEstimates} from './position-costs.mjs';
 import { entryOrder, exitOrder, protectiveOrders, quantize, symbolFilters } from './orders.mjs';
 import { makeBot, validateBot, positionMargin, effectiveBudget } from '../public/core.js';
 import { upgradeBot } from '../public/formula.js';
@@ -29,7 +30,7 @@ export class TradingEngine {
     this.credentialStore=credentialStore;this.credentialError=null;this.reconnectAt=0;
     this.manual=new ManualTrading(this);this.multi=new MultiBots(this);this.storage=new StorageRecovery(this);
     this.orderChecks=new WeakMap();this.accountRevisionAt=0;this.lastCycleAt=0;
-    this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.connectionId=null;
+    this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.positionCostEstimates=new PositionCostEstimates(this);this.connectionId=null;
   }
   get state(){return this.store.state;}
   serial(callback){const result=this.queue.then(callback,callback);this.queue=result.catch(()=>{});return result;}
