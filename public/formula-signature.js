@@ -1,5 +1,8 @@
 import './analysis-formula.js';
 const signature={
+ weekday:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각의 요일. 월요일=1 ~ 일요일=7. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
+ clockTime:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각을 HHMM으로 반환. 예: 930 = 09:30. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
+ timeWindow:{calendar:true,params:["시작 HHMM","종료 HHMM","시간대 (선택)"],help:["시작 포함. 예: 900 = 09:00. 2300, 600처럼 자정을 넘는 구간도 지원합니다.","종료 미포함. 예: 1800 = 18:00 직전까지. 종료에만 2400을 사용할 수 있습니다.","기본 한국시간. 한국시간/미국동부/UTC. 미국 동부시간의 서머타임은 자동 반영합니다."]},
   crossUp:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 아래에서 위로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≤ B에서 현재 A > B로 바뀌는 순간입니다.']},
   crossDown:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 위에서 아래로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≥ B에서 현재 A < B로 바뀌는 순간입니다.']},
   sma:{params:['데이터','기간'],help:['평균을 계산할 데이터. 예: 종가, 거래량.','평균에 사용할 봉 수 · 1~500 정수.']},
@@ -37,7 +40,7 @@ export function installSignatureHelp(textarea,popup){
     if(reset)dismissed=false;
     const help=signatureAt(textarea.value,textarea.selectionStart);
     if(document.activeElement!==textarea||dismissed||!help){hide();return;}
-    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>주기 예: @5m · 직전 봉: [1] <span>Esc 닫기</span></small>';
+    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
     popup.hidden=false;textarea.setAttribute('aria-describedby','formula-signature');
     const mirror=document.createElement('div'),style=getComputedStyle(textarea);
     for(const key of ['font','lineHeight','letterSpacing','padding','border','boxSizing','wordBreak','overflowWrap','tabSize'])mirror.style[key]=style[key];

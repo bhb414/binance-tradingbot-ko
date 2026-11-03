@@ -200,7 +200,35 @@
     '하이킨저가': 'heikinLow', '하이킨아시저가': 'heikinLow', 'heikinlow': 'heikinLow',
     '하이킨종가': 'heikinClose', '하이킨아시종가': 'heikinClose', 'heikinclose': 'heikinClose',
   };
+
+  // Calendar predicates use the evaluation clock, never the candle's timestamp.
+  const constantAliases=Object.freeze({월요일:1,화요일:2,수요일:3,목요일:4,금요일:5,토요일:6,일요일:7,한국시간:1001,한국:1001,kst:1001,미국동부:1002,뉴욕:1002,et:1002,utc:1003});
+  const calendarZones=Object.freeze({1001:'Asia/Seoul',1002:'America/New_York',1003:'UTC'}),calendarFormatters=new Map();
+  const calendarConstant=name=>Object.hasOwn(constantAliases,normalizeName(name))?constantAliases[normalizeName(name)]:null;
+  function calendarZone(node){
+    if(!node)return 1001;
+    const value=node.type==='variable'?calendarConstant(node.name):null;
+    if(!Object.hasOwn(calendarZones,value))throw new FormulaError('시간대는 한국시간, 미국동부, UTC 중 하나로 입력하세요',node.position);
+    return value;
+  }
+  function clockMinutes(node,end=false){
+    const n=node?.type==='number'?node.value:NaN;
+    if(!Number.isInteger(n)||n<0||n>(end?2400:2359)||n%100>59)throw new FormulaError('시각은 HHMM 정수로 입력하세요. 예: 930 = 09:30, 1800 = 18:00 (종료만 2400 허용)',node?.position);
+    return Math.floor(n/100)*60+n%100;
+  }
+  function calendarParts(context,zone){
+    if(!finite(context.now))return null;
+    if(!context.calendarParts)context.calendarParts=new Map();
+    if(context.calendarParts.has(zone))return context.calendarParts.get(zone);
+    if(!calendarFormatters.has(zone))calendarFormatters.set(zone,new Intl.DateTimeFormat('en-US',{timeZone:calendarZones[zone],year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));
+    const parts=Object.fromEntries(calendarFormatters.get(zone).formatToParts(context.now).map(p=>[p.type,p.value])),weekday=new Date(Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day))).getUTCDay(),hour=Number(parts.hour),minute=Number(parts.minute),result={weekday:weekday||7,time:hour*100+minute,minute:hour*60+minute};
+    context.calendarParts.set(zone,result);return result;
+  }
+
   const functionAliases = {
+    '요일':'weekday','현재요일':'weekday','weekday':'weekday',
+    '시각':'clockTime','현재시각':'clockTime','clocktime':'clockTime',
+    '시간범위':'timeWindow','timewindow':'timeWindow',
     'abs': 'abs', '절대값': 'abs',
     'min': 'min', '최소': 'min', 'max': 'max', '최대': 'max',
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
@@ -234,10 +262,10 @@
   const truthy = value => finite(value) && Number(value) !== 0;
 
   function validateAst(node) {
-    if (node.type === 'variable') resolveVariable(node.name);
+    if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = { abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
@@ -245,6 +273,12 @@
       }
       if (name==='atr' && (node.args[0].type!=='number'||!Number.isInteger(node.args[0].value)||node.args[0].value<1||node.args[0].value>MAX_WINDOW)) throw new FormulaError('ATR 기간을 1~500 정수로 입력하세요',node.position);
       if (name==='frame' && (node.args[1].type!=='number'||![1,3,5,15,30,60,240,1440].includes(node.args[1].value)||node.args[2].type!=='number'||![0,1].includes(node.args[2].value))) throw new FormulaError('봉(수식, 주기 분, 봉상태 0 또는 1) 형식을 확인하세요',node.position);
+
+      if(['weekday','clockTime','timeWindow'].includes(name)){
+        calendarZone(node.args[name==='timeWindow'?2:0]);
+        if(name==='timeWindow'&&clockMinutes(node.args[0])===clockMinutes(node.args[1],true))throw new FormulaError('시작과 종료가 같으면 안 됩니다. 하루 전체는 시간범위(0, 2400)을 사용하세요',node.position);
+      }
+
       node.args.forEach(validateAst);
     }
     if (node.type === 'binary') { validateAst(node.left); validateAst(node.right); }
@@ -312,6 +346,16 @@
 
   function evaluateCall(node, context, index) {
     const name = resolveFunction(node.name);
+
+    if(['weekday','clockTime','timeWindow'].includes(name)){
+      const zone=calendarZone(node.args[name==='timeWindow'?2:0]),clock=calendarParts(context,zone);
+      if(!clock)return null;
+      if(name==='weekday')return clock.weekday;
+      if(name==='clockTime')return clock.time;
+      const start=clockMinutes(node.args[0]),end=clockMinutes(node.args[1],true);
+      return (start<end?clock.minute>=start&&clock.minute<end:clock.minute>=start||clock.minute<end)?1:0;
+    }
+
     // Explicit frame wrappers preserve previously saved mixed-timeframe rules.
     // They are syntax-checked and saved, but the single-frame demo reports missing data.
     if (name === 'frame') return null;
@@ -397,12 +441,13 @@
     if(node.type==='timeframe'){
       const feed=context.frames?.[node.interval];
       if(!feed)return null;
-      if(!context.frameContexts.has(node.interval))context.frameContexts.set(node.interval,makeContext(feed,{maxSteps:context.maxSteps,frames:context.frames},context.budget));
+      if(!context.frameContexts.has(node.interval))context.frameContexts.set(node.interval,makeContext(feed,{maxSteps:context.maxSteps,frames:context.frames,now:context.now},context.budget));
       const target=context.frameContexts.get(node.interval);
       return evaluateNode(node.value,target,target.length-1);
     }
     if(node.type==='symbol'){const feed=Object.hasOwn(context.symbols||{},node.symbol)?context.symbols[node.symbol]:null,series=feed?.[resolveVariable(node.value.name)];return series?series[index]:null;}
     if (node.type === 'variable') {
+      const constant=calendarConstant(node.name);if(constant!=null)return constant;
       const series = context.series[resolveVariable(node.name)];
       return series ? series[index] : null;
     }
@@ -451,7 +496,7 @@
   }
 
   function makeContext(series,options={},budget={steps:0}){
-    const context={series,length:Number(options.length??Object.values(series)[0]?.length??0),maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),frames:options.frames,symbols:options.symbols||series.symbols,frameContexts:new Map(),budget};
+    const context={series,length:Number(options.length??Object.values(series)[0]?.length??(finite(options.now)?1:0)),now:options.now,maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),frames:options.frames,symbols:options.symbols||series.symbols,frameContexts:new Map(),budget};
     Object.defineProperty(context,'steps',{get:()=>budget.steps,set:value=>{budget.steps=value;}});
     return context;
   }
@@ -483,5 +528,5 @@
     };
   }
 
-  return { FormulaError, compile, tokenize, variableAliases, functionAliases, timeframes, limits: { maxSourceLength: MAX_SOURCE_LENGTH, maxWindow: MAX_WINDOW } };
+  return { FormulaError, compile, tokenize, variableAliases, functionAliases, constantAliases, timeframes, limits: { maxSourceLength: MAX_SOURCE_LENGTH, maxWindow: MAX_WINDOW } };
 });

@@ -129,3 +129,9 @@ test('multi-symbol protection applies each held leg leverage independently and c
  const a=[...algos.values()].filter(o=>o.symbol==='BTCUSDT'),b=[...algos.values()].filter(o=>o.symbol==='ETHUSDT');assert.equal(a.find(o=>o.type==='TAKE_PROFIT_MARKET').triggerPrice,'104');assert.equal(b.find(o=>o.type==='TAKE_PROFIT_MARKET').triggerPrice,'49');
  h.x.prices.BTCUSDT=104.1;h.x.now+=5000;await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.ok(h.x.quantities.ETHUSDT<0);
 });
+
+test('multi-symbol rules share calendar constraints and evaluate current time even with cached market snapshots',async()=>{
+ const h=await harness(),p=config();p.actionRules[0].formula='요일() = 월요일 AND 시간범위(900, 1000) AND (A.종가 / B.종가 > 1.5)@1h';
+ h.x.now=Date.parse('2026-01-04T23:59:00Z');const bot=await h.engine.saveBot(p);await h.engine.startBot(bot.id);await h.engine.tick();assert.equal(h.x.calls.length,0);
+ h.x.now=Date.parse('2026-01-05T00:00:00Z');await h.engine.tick();assert.equal(h.x.calls.length,2);assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
+});

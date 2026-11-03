@@ -498,3 +498,16 @@ test('explicit price basis preserves live guards; changing the basis replaces on
  const active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.deepEqual(active.map(o=>o.triggerPrice).sort(),['100.5','99.5']);assert.equal(h.exchange.quantity,qty);
  const restored=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(restored.bot(h.id).exit.basis,'leveraged');assert.equal(restored.bot(h.id).runtime.runEnabled,false);
 });
+
+test('calendar entry windows and scheduled exits use the live engine clock while paused positions stay managed',async()=>{
+ const entry=marketRule('ENTER_LONG','TRUE',{formula:'요일() = 월요일 AND 시간범위(900, 1000)'}),exit=marketRule('EXIT_LONG','TRUE',{formula:'시각() >= 901'}),h=await actionHarness([entry,exit]);
+ h.exchange.now=Date.parse('2026-01-04T23:59:59Z');await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.quantity,0);
+ h.exchange.now=Date.parse('2026-01-05T00:00:00Z');await h.engine.tick();assert.ok(h.exchange.quantity>0);
+ await h.engine.pauseBot(h.id);h.exchange.now=Date.parse('2026-01-05T00:01:00Z');await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);
+});
+
+test('single-bot calendar evaluates current clock instead of a reused snapshot time',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG','TRUE',{formula:'시각() >= 901'})]);h.exchange.now=Date.parse('2026-01-05T00:00:00Z');await h.engine.startBot(h.id);
+ const bot=h.engine.bot(h.id),snapshots=await h.engine.formulaMarkets(bot.symbol,bot.actionRules[0].formula);h.engine.formulaMarkets=async()=>snapshots;h.exchange.now+=60000;
+ assert.equal((await h.engine.evaluateRules(bot))[0].ready,true);
+});

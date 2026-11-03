@@ -80,6 +80,14 @@ if(process.argv.includes('--position-costs')){
  await app.engine.refreshAccount(true);
 }
 
+
+if(process.argv.includes('--calendar')){
+ const off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'};
+ await app.engine.saveBot(makeBot({id:'ui-calendar',name:'요일·시간 예시',symbol:'BTCUSDT',budget:100,exit:off,actionRules:[makeActionRule({formula:'요일() <= 금요일 AND 시간범위(900, 1800)\nAND (종가 > 0)@15m[1]'})]}));
+ const {makeMultiBot,multiRule}=await import('../public/multi-bot.js'),legs=[{alias:'A',symbol:'ETHUSDT',weight:50},{alias:'B',symbol:'INTCUSDT',weight:50}];
+ await app.engine.saveBot(makeMultiBot({id:'ui-calendar-multi',name:'다중종목 시간 예시',budget:100,legs,exit:off,actionRules:[multiRule(legs,{formula:'요일(미국동부) <= 금요일 AND 시간범위(930, 1600, 미국동부)\nAND (A.종가 >= B.종가)@15m[1]'})]}));
+}
+
 if(process.argv.includes('--storage-outage')){
  const save=store.save.bind(store);let blocked=true;
  store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};

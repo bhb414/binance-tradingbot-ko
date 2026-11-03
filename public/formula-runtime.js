@@ -14,7 +14,7 @@ function positionSeries(series,data,position={}){
  if(Number.isFinite(position.profitValue))series.profit=data.map(()=>position.profitValue);
  return series;
 }
-export function evaluateRuleFormula(source,snapshots,position={}){
+export function evaluateRuleFormula(source,snapshots,position={},options={}){
  const formula=compileFormula(source),intervals=formulaTimeframes(formula),clock=intervals[0]||'1m',frames={},aligned={};
  for(const interval of intervals.length?intervals:[clock]){
   const snapshot=snapshots[interval],primary=candles(snapshot,interval),named=Object.entries(snapshot.symbols||{}),byName=new Map();
@@ -27,7 +27,7 @@ export function evaluateRuleFormula(source,snapshots,position={}){
   if(named.length){series.symbols=Object.create(null);for(const [name]of named){const rows=data.map(row=>byName.get(name).get(row.time));series.symbols[name]=positionSeries(formulaSeries(rows),rows,position.symbols?.[name]);}}
   frames[interval]=series;aligned[interval]=data;
  }
- const market=snapshots[clock],data=aligned[clock],result=formula.evaluate(frames[clock],data.length-1,{frames,maxSteps:200000});
+ const market=snapshots[clock],data=aligned[clock],result=formula.evaluate(frames[clock],data.length-1,{frames,maxSteps:200000,now:options.now??market.serverNow});
  if(!result.ok)throw new Error(result.error);
  return {result,market,bar:data.at(-1).time,interval:clock};
 }

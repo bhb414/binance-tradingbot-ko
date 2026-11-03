@@ -19,7 +19,7 @@ export function formulaTimeframes(formula){
     const history=['sma','ema','rsi','stdev','atr','change','changePct','crossUp','crossDown','bbUpper','bbMiddle','bbLower'].includes(name)||['lag','range'].includes(node.type);
     if(history&&children(node).some(hasFrame))throw new Error('과거 봉을 계산하는 함수 전체에 주기를 붙이세요. 예: 상향돌파(종가, EMA(종가, 20))@5m');
     if(history&&!scope)throw new Error('계산식 뒤에 봉 주기를 지정하세요. 예: EMA(종가, 20)@1h[1]');
-    if(node.type==='variable'&&!scope&&!['profit','averagePrice'].includes(api.variableAliases[node.name.toLowerCase()]))throw new Error('데이터 뒤에 봉 주기를 지정하세요. 예: 종가@5m[1]');
+    if(node.type==='variable'&&!scope&&!Object.hasOwn(api.constantAliases,node.name.toLowerCase())&&!['profit','averagePrice'].includes(api.variableAliases[node.name.toLowerCase()]))throw new Error('데이터 뒤에 봉 주기를 지정하세요. 예: 종가@5m[1]');
     children(node).forEach(child=>visit(child,scope));
   }
   visit(ast);if(frames.size>6)throw new Error('조건 하나에는 봉 주기를 최대 6개까지 사용할 수 있습니다.');

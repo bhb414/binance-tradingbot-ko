@@ -57,7 +57,7 @@ export class MultiBots{
  async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리');}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
  position(p){const view=this.view(p),sources={};for(const b of view.members){const state={...b.runtime,leverage:b.leverage};sources[b.alias]=state;sources[b.symbol]=state;}const unrealized=view.pnl-view.runtime.realized;return {quantity:view.quantity,profitValue:view.used>0?unrealized/view.used*100:undefined,symbols:sources};}
  async evaluate(p,rule,cache){
-  const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p));
+  const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p),{now:this.e.now()+(this.e.client.offset||0)});
   return result;
  }
  targetItem(p,rule,target,evaluation){

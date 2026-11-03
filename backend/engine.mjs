@@ -167,7 +167,7 @@ export class TradingEngine {
     const info=await this.symbolInfo(b.symbol),limits=await this.leverageLimits(b.symbol);
     if(!r.quantity&&b.actionRules.some(rule=>rule.enabled&&isEntry(rule.action)&&rule.leverage>leverageCap(limits,effectiveBudget(b))))throw new Error('이 종목과 배정 예산에서 허용하는 진입 조건의 레버리지를 초과합니다.');
     for(const rule of b.actionRules.filter(rule=>rule.enabled)){
-      const snapshots=await this.formulaMarkets(b.symbol,rule.formula),{market}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage});
+      const snapshots=await this.formulaMarkets(b.symbol,rule.formula),{market}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage},{now:this.now()+(this.client.offset||0)});
       const view=this.orderView(b,rule,actionDirection(rule.action));if(isEntry(rule.action)&&!r.quantity&&effectiveBudget(b)>0){const plan=entryOrder(view,info,{...market.book,lastPrice:market.ticker.lastPrice},this.accountSnapshot.availableBalance,this.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),this.hedge);}
     }
     if(!r.quantity&&!this.ownOrders(b).some(active)){
@@ -309,7 +309,7 @@ export class TradingEngine {
       if(cachedOnly&&formulaMarketRequests(b.symbol,rule.formula).some(item=>!markets.has(item.key)))continue;
       if(isStop(rule.action)&&!r.runEnabled)continue;
       if(!isStop(rule.action)&&!isEntry(rule.action)&&(!r.quantity||actionDirection(rule.action)&&actionDirection(rule.action)!==r.direction))continue;
-      const snapshots=await this.formulaMarkets(b.symbol,rule.formula,markets),{market,result,bar,interval}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage});
+      const snapshots=await this.formulaMarkets(b.symbol,rule.formula,markets),{market,result,bar,interval}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage},{now:this.now()+(this.client.offset||0)});
       const signal=r.ruleSignals[rule.id]||={fired:false,lastBar:null,lastExecutionAt:0,epoch:r.positionEpoch};
       if(!isEntry(rule.action)&&signal.epoch!==r.positionEpoch){signal.fired=false;signal.lastBar=null;signal.epoch=r.positionEpoch;}
       if(!result.missing&&!result.pass)signal.fired=false;
