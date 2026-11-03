@@ -99,6 +99,6 @@ Node.js 24 이상이 설치된 Windows에서 `run.cmd`를 실행하거나 이 �
 
 ## 검증과 출처
 
-`npm test`로 수식·지표·예산·주문 원장·복구·부분 체결·보호 주문·로컬 API 접근 제약을 확인합니다. 공개 검토 범위와 한계는 [REVIEW.md](REVIEW.md)에 있습니다.
+`npm test`로 수식·지표·예산·주문 원장·복구·부분 체결·보호 주문·로컬 API 접근 제약을 확인합니다. 검증은 모의 거래소와 로컬 실행 기준입니다.
 
 바이낸스 구현 기준: [일반 정보](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info), [주문 API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade), [계좌 API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account). 차트는 [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/) 5.2.1을 로컬에 포함하며 라이선스·NOTICE는 `public/vendor/`에 보관합니다.

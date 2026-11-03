@@ -32,7 +32,9 @@ export async function bootstrapRepository(root,{onProgress=console.log,gitImpl=g
   await cp(path.join(candidate,'.git'),metadata,{recursive:true,errorOnExist:true,force:false});
   if(await exists(path.join(root,'.git')))throw Error('다른 작업이 Git 기록을 생성했습니다. 다시 업데이트해 주세요.');
   await rename(metadata,path.join(root,'.git'));
-  // Refresh the copied index against this folder, including equivalent Windows line endings.
+  // Rebuild only the tracked index after byte/line-ending verification; never rewrite source or private files.
+  await gitImpl(root,['add','--renormalize','--','.']);
+  await gitImpl(root,['diff','--cached','--exit-code']);
   await gitImpl(root,['diff','--exit-code']);
   onProgress('ZIP 설치본 확인 완료 · 키와 실행 기록은 변경하지 않았습니다.');return true;
  }finally{
