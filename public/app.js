@@ -28,11 +28,7 @@ import {workroomPerformance} from './workroom-metrics.js';
 import {protectionEnabled,hasProtection,protectionSummary} from './protection.js';
 import { ACTIONS, isEntry, isStop, makeActionRule, upgradeActions } from './actions.js';
 
-$('#check-app-update').addEventListener('click',async()=>{
- const button=$('#check-app-update'),status=$('#app-update-status');button.disabled=true;status.textContent='새 버전을 확인하는 중…';
- try{const result=await api('/app/update');status.textContent='현재 '+result.version+' ('+result.revision+') · '+(result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
- catch(error){status.textContent='확인하지 못했습니다: '+error.message;}finally{button.disabled=false;}
-});
+
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -543,6 +539,11 @@ $('#confirm-action').addEventListener('click',()=>{$('#confirm-dialog').close();
 $('#export-log').addEventListener('click',()=>download('futures-workroom-activity.json',{environment:serverState?.environment,logs}));
 $('#export-bots').addEventListener('click',()=>download('futures-workroom-bots.json',{version:1,environment:serverState?.environment,bots}));
 $('#help-button').addEventListener('click',()=>{goPage('settings');});
+$('#check-app-update').addEventListener('click',async()=>{
+ const button=$('#check-app-update'),status=$('#app-update-status');button.disabled=true;status.textContent='새 버전을 확인하는 중…';
+ try{const result=await api('/app/update');status.textContent='현재 '+result.version+' ('+result.revision+') · '+(result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
+ catch(error){status.textContent='확인하지 못했습니다: '+error.message;}finally{button.disabled=false;}
+});
 $$('dialog:not(#bot-dialog)').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}}));
 window.addEventListener('hashchange',()=>goPage(location.hash.slice(1)));
 installConnectionUI({refresh:syncWorkspace,toast});
