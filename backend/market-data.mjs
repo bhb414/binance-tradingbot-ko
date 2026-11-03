@@ -1,3 +1,6 @@
+import {sharedBudget,requestWeight,publicTTL,publicKey} from './binance-rate.mjs';
+import {BinanceError} from './binance.mjs';
+import {candleHistory} from './candle-history.mjs';
 const SOURCES=Object.freeze({
   usdm:{base:'https://fapi.binance.com',prefix:'/fapi/v1',label:'USDⓈ-M 선물'},
   coinm:{base:'https://dapi.binance.com',prefix:'/dapi/v1',label:'COIN-M 선물'},
@@ -22,14 +25,15 @@ export class MarketData {
   async request(market,endpoint,parameters={}){
     const source=this.source(market),state=this.sources.get(market)||{tail:Promise.resolve(),last:0,blockedUntil:0};this.sources.set(market,state);
     const run=async()=>{
-      if(this.now()<state.blockedUntil)throw new Error(source.label+' 공개 시세 호출 제한 대기 중입니다.');
-      const wait=state.last+120-this.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));state.last=this.now();
+      const budget=sharedBudget(source.base,this.fetch,this.now);
+      const wait=state.last+120-this.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));state.last=this.now();budget.reserve(requestWeight(source.prefix+endpoint,parameters));
       const query=new URLSearchParams(Object.entries(parameters).filter(([,v])=>v!==undefined).map(([key,value])=>[key,String(value)]));
-      let response;try{response=await this.fetch(source.base+source.prefix+endpoint+(query.size?'?'+query:''),{method:'GET',headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});}catch{throw new Error(source.label+' 공개 시세에 연결하지 못했습니다.');}
-      if([418,429].includes(response.status))state.blockedUntil=this.now()+Math.max(1,Number(response.headers.get('retry-after'))||60)*1000;
-      const data=await response.json();if(!response.ok||Number(data?.code)<0)throw new Error(source.label+': '+String(data?.msg||'시세 조회 실패').slice(0,250));return data;
+      let response;try{response=await this.fetch(source.base+source.prefix+endpoint+(query.size?'?'+query:''),{method:'GET',headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});}catch{throw new BinanceError(source.label+' 공개 시세에 연결하지 못했습니다.',{temporary:true,retryAt:this.now()+5000});}
+      budget.observe(response);let data;try{data=await response.json();}catch{throw new BinanceError(source.label+' 시세 응답 확인 대기',{status:response.status,temporary:true,retryAt:budget.blockedUntil||this.now()+5000});}
+      budget.observe(response,data);if(!response.ok||Number(data?.code)<0)throw new BinanceError(source.label+': '+String(data?.msg||'시세 조회 실패').slice(0,250),{code:Number(data?.code),status:response.status,temporary:response.status>=500,retryAt:budget.blockedUntil||this.now()+5000});return data;
     };
-    const result=state.tail.then(run,run);state.tail=result.catch(()=>{});return result;
+    const send=()=>{const result=state.tail.then(run,run);state.tail=result.catch(()=>{});return result;},ttl=publicTTL(source.prefix+endpoint,parameters);
+    return ttl?sharedBudget(source.base,this.fetch,this.now).cached(publicKey(source.prefix+endpoint,parameters),ttl,send):send();
   }
   info(market){return this.cached('info:'+market,300000,()=>this.request(market,'/exchangeInfo'));}
   tickers(market){return this.cached('tickers:'+market,30000,()=>this.request(market,market==='options'?'/ticker':'/ticker/24hr'));}
@@ -44,11 +48,11 @@ export class MarketData {
     const instrument=(await this.instruments(market)).find(row=>row.symbol===symbol);if(!instrument)throw new Error('이 시장에서 조회 가능한 종목이 아닙니다.');
     return this.cached('quote:'+market+':'+symbol+':'+interval,2500,async()=>{
       const [rawCandles,book,tickerData,premium]=await Promise.all([
-        this.request(market,'/klines',{symbol,interval,limit:1000}),this.request(market,'/depth',{symbol,limit:10}),
+        candleHistory(sharedBudget(this.source(market).base,this.fetch,this.now),this.source(market).prefix+'/klines:'+symbol+':'+interval,1000,async limit=>normalizeCandles(await this.request(market,'/klines',{symbol,interval,limit}))),this.request(market,'/depth',{symbol,limit:10}),
         this.request(market,market==='options'?'/ticker':'/ticker/24hr',{symbol}),['usdm','coinm'].includes(market)?this.request(market,'/premiumIndex',{symbol}):Promise.resolve(null)
       ]);
       const ticker=normalizeTicker(market,tickerData,instrument),premiumRow=rows(premium).find(row=>row.symbol===symbol)||rows(premium)[0]||null;
-      return {environment:'live',market,instrument,asOf:this.now(),serverNow:this.now(),candles:normalizeCandles(rawCandles),book:{bids:book.bids||[],asks:book.asks||[]},ticker,premium:premiumRow?{markPrice:number(premiumRow.markPrice),lastFundingRate:number(premiumRow.lastFundingRate)}:null};
+      return {environment:'live',market,instrument,asOf:this.now(),serverNow:this.now(),candles:rawCandles,book:{bids:book.bids||[],asks:book.asks||[]},ticker,premium:premiumRow?{markPrice:number(premiumRow.markPrice),lastFundingRate:number(premiumRow.lastFundingRate)}:null};
     });
   }
 }

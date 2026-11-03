@@ -93,12 +93,13 @@ async function loadSymbols(){
 function renderRuntimeBanner(){
   const connected=Boolean(serverState?.connected),enabled=Boolean(serverState?.tradingEnabled),environment=serverState?.environment==='live'?'실전':'테스트넷';
   const botProblem=serverState?.bots?.find(bot=>bot.error);
-  const error=serverState?.error||(botProblem?botProblem.name+' · '+botProblem.error:null)||marketError,summary=error||('바이낸스 '+environment+' · '+(connected?'계좌 연결됨':'계좌 미연결')+' · '+(enabled?'주문 허용':'주문 실행 꺼짐'));
+  const waiting=serverState?.waiting,waitText=waiting?.message||'';
+  const error=serverState?.error||(botProblem?botProblem.name+' · '+botProblem.error:null)||(!waiting?marketError:null),summary=error||waitText||('바이낸스 '+environment+' · '+(connected?'계좌 연결됨':'계좌 미연결')+' · '+(enabled?'주문 허용':'주문 실행 꺼짐'));
   $('.rail').dataset.connectionState=error?'error':connected?(enabled?'trading':'readonly'):'disconnected';
   const status=$('#workspace-connection');status.title=summary;status.setAttribute('aria-label',summary+' · 연결 설정 열기');
   $('#rail-environment').textContent=connected?environment:'미연결';
-  $('#rail-order-state').textContent=error?'확인 필요':connected?(enabled?'주문 허용':'조회 전용'):'연결 설정';
-  const footer=$('#runtime-footer');footer.textContent=environment+' · '+(error?'확인 필요':connected?(enabled?'주문 허용':'조회 전용'):'계좌 미연결');footer.title=summary;
+  $('#rail-order-state').textContent=error?'확인 필요':waiting?'자동 재개 대기':connected?(enabled?'주문 허용':'조회 전용'):'연결 설정';
+  const footer=$('#runtime-footer');footer.textContent=environment+' · '+(error?'확인 필요':waiting?'자동 재개 대기':connected?(enabled?'주문 허용':'조회 전용'):'계좌 미연결');footer.title=summary;
   $('.rail [data-page="settings"].nav-item').title=summary;
   $('.office-local-tag').textContent='BINANCE · '+environment;
   $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(enabled?'주문 실행 가능':'API 연결·주문 허용 필요');
@@ -244,7 +245,7 @@ function renderHomeTable(){
 }
 
 function pixelScene(bot,mini=false){return `<svg class="${mini?'pixel-mini':'pixel-scene'}" viewBox="0 0 260 165" role="img" aria-label="${esc(bot.name)} 사람 캐릭터"><rect x="25" y="130" width="210" height="3" fill="#dbe4d2"/>${roomAvatar(bot,130,84)}</svg>`;}
-function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
+function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
 function renderBots(){
   const assigned=bots.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=bots.filter(b=>b.status==='running').length;
   $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=bots.length;$('#running-count').textContent=running;$('#paused-count').textContent=bots.length-running;

@@ -1,3 +1,4 @@
+import {isTemporary} from './binance-rate.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {quantize,symbolFilters,protectiveOrders} from './orders.mjs';
 import {effectiveBudget} from '../public/budget.js';
@@ -108,14 +109,14 @@ export class ManualTrading {
       if(fresh.changes.margin){try{await e.client.changeMargin(plan.symbol,plan.margin);}catch(error){if(error.code!==-4046)throw error;}}
       if(fresh.changes.leverage)await e.client.changeLeverage(plan.symbol,plan.leverage);
       if(fresh.changes.margin||fresh.changes.leverage){const rows=await e.client.symbolConfig(plan.symbol),config=Array.isArray(rows)?rows.find(row=>row.symbol===plan.symbol)||rows[0]:rows;if(Number(config?.leverage)!==plan.leverage||String(config?.marginType).toUpperCase()!==plan.margin)throw new Error('거래소의 증거금 모드·레버리지 적용을 확인하지 못했습니다.');await e.refreshAccount(true);if(plan.action==='OPEN'&&fresh.estimatedMargin*1.01>e.accountSnapshot.availableBalance)throw new Error('설정 변경 후 가용 증거금이 부족합니다.');}
-    }catch(error){order.status='REJECTED';order.error='주문 미전송 · '+(e.client.redact?.(error.message)||'종목 설정 확인 실패')+' · 계좌의 현재 종목 설정을 다시 확인해 주세요.';if(plan.botId){const b=e.bot(plan.botId);try{if(!b.runtime.syncHold)await e.ensureGuards(b,context.info);}catch(problem){b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(problem.message)||'보호 주문 확인 필요';}}await e.checkpoint();return this.view(order);}
+    }catch(error){order.status='REJECTED';order.error='주문 미전송 · '+(e.client.redact?.(error.message)||'종목 설정 확인 실패')+' · 계좌의 현재 종목 설정을 다시 확인해 주세요.';if(plan.botId){const b=e.bot(plan.botId);try{if(!b.runtime.syncHold)await e.ensureGuards(b,context.info);}catch(problem){if(isTemporary(problem))e.defer(problem);else{b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(problem.message)||'보호 주문 확인 필요';}}}await e.checkpoint();return this.view(order);}
     if(plan.botId){const b=e.bot(plan.botId);b.leverage=plan.leverage;b.runtime.error=null;}
     order.stage='ORDER_SENT';await e.checkpoint();
     try{const result=await e.client.placeOrder({...order.parameters,newClientOrderId:order.id,newOrderRespType:'RESULT'});if(plan.botId)await e.applyOrder(e.bot(plan.botId),order,result);else this.apply(order,result);}
     catch(error){order.error=e.client.redact?.(error.message)||'주문 응답 확인 실패';if(!error.uncertain)order.status='REJECTED';}
     e.note(order.status==='UNKNOWN'?'수동 주문 접수 확인 중':'수동 주문',order.parameters.symbol+' · '+order.parameters.side+' '+order.parameters.quantity+' · '+order.status,null,order.status==='REJECTED'?'error':'info');await e.checkpoint();
     try{await e.refreshAccount(true);}catch{e.connectionError='주문 후 계좌 갱신을 확인하지 못했습니다. 주문 접수 상태를 조회합니다.';}
-    if(plan.botId){const b=e.bot(plan.botId);try{await this.refresh(order);await e.refreshAccount(true);await e.syncBotPosition(b,true);if(!b.runtime.syncHold&&order.status!=='UNKNOWN')await e.ensureGuards(b,context.info);}catch(error){b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(error.message)||'주문 후 포지션·보호 주문 확인 필요';}await e.checkpoint();}
+    if(plan.botId){const b=e.bot(plan.botId);try{await this.refresh(order);await e.refreshAccount(true);await e.syncBotPosition(b,true);if(!b.runtime.syncHold&&order.status!=='UNKNOWN')await e.ensureGuards(b,context.info);}catch(error){if(isTemporary(error))e.defer(error);else{b.runtime.runEnabled=false;b.runtime.error=e.client.redact?.(error.message)||'주문 후 포지션·보호 주문 확인 필요';}}await e.checkpoint();}
     return this.view(order);
   }
   apply(order,data){

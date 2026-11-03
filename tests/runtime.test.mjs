@@ -341,3 +341,45 @@ test('USDT fees and loss-based budget mode survive restart; exhausted budgets ke
   const recovered=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(recovered.bot(h.id).budgetMode,'pnl');assert.equal(recovered.decorate(recovered.bot(h.id)).effectiveBudget,0);assert.equal(recovered.bot(h.id).runtime.runEnabled,false);
   await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});await recovered.startBot(h.id);await recovered.closeBot(h.id);assert.equal(recovered.bot(h.id).runtime.quantity,0);
 });
+
+test('rate-limited market reads preserve start state, wait without requests and resume without duplicate entries',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);
+ const original=h.engine.client.klines.bind(h.engine.client);let calls=0;
+ h.engine.client.klines=async(...args)=>{calls++;if(calls===1)throw new BinanceError('Too many requests',{status:429,retryAt:h.exchange.now+5000});return original(...args);};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(h.engine.snapshot().waiting.kind,'rate-limit');assert.equal(h.exchange.calls.length,0);
+ await h.engine.tick();assert.equal(calls,1);h.exchange.now+=5000;await h.engine.tick();await h.engine.tick();
+ assert.equal(b.runtime.waiting,null);assert.equal(h.engine.snapshot().waiting,null);assert.equal(b.runtime.runEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('account rate limits recover automatically while a user pause remains paused',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);const original=h.engine.client.account.bind(h.engine.client);let failed=false;
+ h.engine.client.account=async()=>{if(!failed){failed=true;throw new BinanceError('limited',{status:429,retryAt:h.exchange.now+5000});}return original();};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,true);await h.engine.pauseBot(h.id);h.exchange.now+=5000;await h.engine.tick();
+ assert.equal(b.runtime.runEnabled,false);assert.equal(h.exchange.calls.length,0);assert.equal(h.engine.snapshot().waiting,null);
+});
+test('an explicitly rate-rejected entry restores its rule latch and retries only after recovery',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);const original=h.engine.client.placeOrder.bind(h.engine.client);let failed=false;
+ h.engine.client.placeOrder=async p=>{if(!failed){failed=true;throw new BinanceError('limited',{status:429,retryAt:h.exchange.now+5000});}return original(p);};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.ruleSignals[b.actionRules[0].id].fired,false);assert.equal(h.store.state.orders[0].status,'REJECTED');assert.equal(h.store.state.orders[0].retryable,true);
+ h.exchange.now+=5000;await h.engine.tick();await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(b.runtime.entries,1);
+});
+test('a rate-rejected protection order retries without another entry and permanent failures still pause',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);const original=h.engine.client.placeAlgo.bind(h.engine.client);let failed=false;
+ h.engine.client.placeAlgo=async p=>{if(!failed){failed=true;throw new BinanceError('limited',{status:429,retryAt:h.exchange.now+5000});}return original(p);};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.ok(b.runtime.quantity>0);h.exchange.now+=5000;await h.engine.tick();
+ assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,2);assert.equal(b.runtime.error,null);
+ const fatal=await harness();await fatal.engine.startBot(fatal.id);fatal.engine.client.klines=async()=>{throw new BinanceError('invalid API permissions',{status:401,code:-2015});};await fatal.engine.tick();assert.equal(fatal.engine.bot(fatal.id).runtime.runEnabled,false);assert.match(fatal.engine.bot(fatal.id).runtime.error,/permissions/);
+});
+
+test('post-fill account limits preserve the accepted entry and restore protection after recovery',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);const original=h.engine.client.account.bind(h.engine.client);let failed=false;
+ h.engine.client.account=async()=>{if(h.exchange.quantity>0&&!failed){failed=true;throw new BinanceError('limited',{status:429,retryAt:h.exchange.now+5000});}return original();};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+ h.exchange.now+=5000;await h.engine.tick();await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,2);
+});
+test('a shared chart cooldown is visible without outgoing requests and never re-enables uncertain-order pauses',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);await h.engine.startBot(h.id);h.exchange.uncertain=true;await h.engine.tick();assert.equal(b.runtime.runEnabled,false);
+ h.engine.client.rate={blockedUntil:h.exchange.now+5000,snapshot(){return {blockedUntil:this.blockedUntil};}};
+ let reads=0;const original=h.engine.client.account.bind(h.engine.client);h.engine.client.account=async()=>{reads++;return original();};
+ await h.engine.tick();assert.equal(reads,0);assert.equal(h.engine.snapshot().waiting.kind,'rate-limit');
+ h.exchange.now+=5000;await h.engine.tick();assert.equal(b.runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
