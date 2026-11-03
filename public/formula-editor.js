@@ -1,5 +1,6 @@
 import {FORMULA_TIMEFRAMES} from './formula.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export const FORMULA_PRICE_FIELDS=['시가','고가','저가','종가','거래량','하이킨시가','하이킨고가','하이킨저가','하이킨종가'];
 export const formulaExamples=[
   {label:'볼린저 상단 돌파',value:'상향돌파(종가, 볼린저상단(종가, 20, 2))@5m[1]'},
   {label:'하이킨 양봉 전환',value:'(하이킨종가 > 하이킨시가\nAND 하이킨종가[1] <= 하이킨시가[1])@15m[1]'},
@@ -7,7 +8,8 @@ export const formulaExamples=[
   {label:'전체 5분 봉 · BB와 RSI',value:'(종가[1] > 볼린저상단(종가, 20, 2)[1]\nAND RSI(종가, 14)[1] < 70)@5m'}
 ];
 export function formulaEditorMarkup(draft) {
-  const inserts=[['종가@5m[1]','종가 · 직전 5분 봉'],['시가@5m','시가 · 현재 5분 봉'],['거래량@5m','거래량 · 현재 5분 봉'],['하이킨종가@15m[1]','하이킨 종가'],['SMA(종가, 20)@5m[1]','SMA · 이동평균'],['EMA(종가, 20)@1h[1]','EMA · 지수이평'],['RSI(종가, 14)@15m[1]','RSI'],['볼린저상단(종가, 20, 2)@5m[1]','볼린저 상단'],['볼린저중심(종가, 20)@5m[1]','볼린저 중심'],['볼린저하단(종가, 20, 2)@5m[1]','볼린저 하단'],['상향돌파(종가, SMA(종가, 20))@5m[1]','상향돌파'],['하향돌파(종가, SMA(종가, 20))@5m[1]','하향돌파'],['ATR(14)@1h[1]','ATR'],['수익률','현재 포지션 수익률'],['[1]','직전 봉'],[' AND ','AND'],[' OR ','OR']];
+  const prices=FORMULA_PRICE_FIELDS.map(name=>{const closed=name==='종가'||name.startsWith('하이킨'),interval=name.startsWith('하이킨')?'15m':'5m';return [name+'@'+interval+(closed?'[1]':''),name.replace('하이킨','하이킨 ')+' · '+(closed?'직전 ':'현재 ')+(interval==='15m'?'15분':'5분')+' 봉'];});
+  const inserts=[...prices,['SMA(종가, 20)@5m[1]','SMA · 이동평균'],['EMA(종가, 20)@1h[1]','EMA · 지수이평'],['RSI(종가, 14)@15m[1]','RSI'],['볼린저상단(종가, 20, 2)@5m[1]','볼린저 상단'],['볼린저중심(종가, 20)@5m[1]','볼린저 중심'],['볼린저하단(종가, 20, 2)@5m[1]','볼린저 하단'],['상향돌파(종가, SMA(종가, 20))@5m[1]','상향돌파'],['하향돌파(종가, SMA(종가, 20))@5m[1]','하향돌파'],['ATR(14)@1h[1]','ATR'],['수익률','현재 포지션 수익률'],['[1]','직전 봉'],[' AND ','AND'],[' OR ','OR']];
   return `<div class="formula-heading"><div><h3>이 행동을 실행할 조건식</h3><p>함수 안에 커서를 놓으면 인수 도움말이 표시됩니다.</p></div><span class="formula-mode-badge">f(x) 수식 입력</span></div>
     <div class="formula-syntax-hint"><code>종가@5m[1]</code><span><b>@5m</b> 5분 봉 · <b>[0]</b> 진행봉 · <b>[1]</b> 직전 봉</span></div>
     <div class="formula-codebox"><div class="formula-toolbar"><span>ACTION CONDITION</span><label class="sr-only" for="formula-insert">수식에 데이터·함수 추가</label><select id="formula-insert"><option value="">+ 데이터·함수</option>${inserts.map(([value,label])=>`<option value="${esc(value)}">${label}</option>`).join('')}</select></div><div class="formula-writing"><div id="formula-lines" aria-hidden="true">01<br>02</div><textarea id="formula-source" aria-label="분석 조건 수식" aria-describedby="formula-syntax-note" spellcheck="false" maxlength="1000" autocomplete="off" autocapitalize="off" rows="6" placeholder="상향돌파(종가, EMA(종가, 20))@5m[1]\nAND 종가@1h[1] > EMA(종가, 60)@1h[1]">${esc(draft.formula)}</textarea><div id="formula-signature" class="formula-signature" role="tooltip" hidden></div></div><div class="formula-code-footer"><span>@봉주기 · [N봉 전] · [시작:끝] 합계 · AND / OR</span><span id="formula-count">${draft.formula.length} / 1000</span></div></div>
