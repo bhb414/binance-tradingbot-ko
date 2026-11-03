@@ -25,9 +25,11 @@ test('local server serves the app on Windows, restricts methods and confines sta
     assert.ok([403,404].includes((await fetch(base+'/%2e%2e%5cserver.mjs')).status));
     assert.equal((await fetch(base+'/missing-file')).status,404);
     assert.equal((await fetch(base+'/api/status')).status,403);
+    assert.equal((await fetch(base+'/api/formula/markets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:'BTCUSDT',source:'A.종가@1h'})})).status,403);
     assert.equal((await fetch(base+'/api/positions/insights')).status,403);
     const {token}=await (await fetch(base+'/api/session')).json();const headers={'X-Workroom-Token':token,'Content-Type':'application/json'};
-    const status=await (await fetch(base+'/api/status',{headers})).json();assert.equal(status.connected,false);assert.deepEqual(status.bots,[]);
+    const status=await (await fetch(base+'/api/status',{headers})).json();assert.equal(status.connected,false);assert.deepEqual(status.bots,[]);assert.deepEqual(status.positionOwners,[]);
+    for(const body of [{symbol:'../bad',source:'TRUE@1h'},{symbol:'BTCUSDT',source:'A.constructor@1h'},{symbol:'BTCUSDT',source:'A.종가@1h',aliases:{A:'../bad'}}])assert.equal((await fetch(base+'/api/formula/markets',{method:'POST',headers,body:JSON.stringify(body)})).status,400);
     assert.equal((await fetch(base+'/api/positions/insights',{headers})).status,400);
     assert.equal((await fetch(base+'/api/trading',{method:'POST',headers:{...headers,Origin:'https://untrusted.example'},body:'{"enabled":true}'})).status,403);
     const reboundStatus=await new Promise((resolve,reject)=>{const request=httpRequest(base+'/api/status',{headers:{...headers,Host:'untrusted.example'}},response=>{response.resume();resolve(response.statusCode);});request.on('error',reject);request.end();});assert.equal(reboundStatus,403);

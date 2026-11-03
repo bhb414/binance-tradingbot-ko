@@ -16,7 +16,7 @@ export class PositionImports{
     return {environment:e.state.environment,positions:e.accountSnapshot.positions.filter(position=>Math.abs(position.quantity)>0).map(position=>{
       const owner=e.state.bots.find(bot=>bot.symbol===position.symbol&&bot.runtime.quantity>0&&(!e.hedge||bot.runtime.direction===sideOf(position)));
       return {...position,key:keyOf(position),direction:sideOf(position),quantity:Math.abs(position.quantity),supported:symbols.has(position.symbol),owner:owner?{id:owner.id,name:owner.name,pending:owner.runtime.importPending===true}:null};
-    }),bots:e.state.bots.map(bot=>({id:bot.id,name:bot.name,symbol:bot.symbol,budget:bot.budget,eligible:!bot.runtime.runEnabled&&(!bot.runtime.quantity||bot.runtime.importPending===true)&&!e.ownOrders(bot).some(active)}))};
+    }),bots:e.state.bots.filter(bot=>!bot.multiBotId).map(bot=>({id:bot.id,name:bot.name,symbol:bot.symbol,budget:bot.budget,eligible:!bot.runtime.runEnabled&&(!bot.runtime.quantity||bot.runtime.importPending===true)&&!e.ownOrders(bot).some(active)}))};
   }
   async inspect(input,newCandidate=null){
     this.requireAccount();const e=this.engine;

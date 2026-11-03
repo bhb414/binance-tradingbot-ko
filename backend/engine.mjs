@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { BinanceClient } from './binance.mjs';
+import {MultiBots} from './multi-bots.mjs';
 import {isTemporary,isRateLimited} from './binance-rate.mjs';
 import { ManualTrading } from './manual-trading.mjs';
 import {PositionImports} from './position-import.mjs';
@@ -9,7 +10,7 @@ import { entryOrder, exitOrder, protectiveOrders, quantize, symbolFilters } from
 import { makeBot, validateBot, positionMargin, effectiveBudget } from '../public/core.js';
 import { upgradeBot } from '../public/formula.js';
 import {ruleIntervals,evaluateRuleFormula} from '../public/formula-runtime.js';
-import {FORMULA_TIMEFRAMES} from '../public/formula.js';
+import {FORMULA_TIMEFRAMES,formulaSymbols,formulaMarketRequests} from '../public/formula.js';
 import {normalizeBrackets,leverageCap,MAX_LEVERAGE} from '../public/leverage.js';
 import { ACTIONS, isEntry, isStop, actionDirection, upgradeActions } from '../public/actions.js';
 import {protectionEnabled,hasProtection} from '../public/protection.js';
@@ -23,12 +24,12 @@ export class TradingEngine {
   constructor(store,{clientFactory=options=>new BinanceClient(options),now=Date.now,credentialStore=null}={}){
     this.store=store;this.clientFactory=clientFactory;this.now=now;this.client=null;this.connected=false;this.tradingEnabled=false;this.hedge=false;this.accountSnapshot=null;this.accountAt=0;this.connectionError=null;this.waiting=null;this.writeError=null;this.queue=Promise.resolve();this.timer=null;this.lastTimeSync=0;this.lastTick=0;
     this.credentialStore=credentialStore;this.credentialError=null;this.reconnectAt=0;
-    this.manual=new ManualTrading(this);
+    this.manual=new ManualTrading(this);this.multi=new MultiBots(this);
     this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.connectionId=null;
   }
   get state(){return this.store.state;}
   serial(callback){const result=this.queue.then(callback,callback);this.queue=result.catch(()=>{});return result;}
-  async init(){await this.store.load();this.client=this.clientFactory({environment:this.state.environment});for(let i=0;i<this.state.bots.length;i++){const old=this.state.bots[i],b=upgradeActions(upgradeBot(old));b.runtime={...initialRuntime(),...old.runtime,runEnabled:false,waiting:null};if(!b.runtime.direction&&(b.runtime.quantity>0||this.state.orders.some(o=>o.botId===b.id&&o.role==='entry'&&active(o))))b.runtime.direction=old.direction||'LONG';delete b.direction;this.state.bots[i]=b;}this.manual.recoverInterrupted();await this.checkpoint();await this.restoreConnection();return this;}
+  async init(){await this.store.load();this.client=this.clientFactory({environment:this.state.environment});for(let i=0;i<this.state.bots.length;i++){const old=this.state.bots[i],b=upgradeActions(upgradeBot(old));b.runtime={...initialRuntime(),...old.runtime,runEnabled:false,waiting:null};if(!b.runtime.direction&&(b.runtime.quantity>0||this.state.orders.some(o=>o.botId===b.id&&o.role==='entry'&&active(o))))b.runtime.direction=old.direction||'LONG';delete b.direction;this.state.bots[i]=b;}this.multi.init();this.manual.recoverInterrupted();await this.checkpoint();await this.restoreConnection();return this;}
   startTimer(){this.timer=setInterval(()=>{if(this.timerBusy)return;this.timerBusy=true;(async()=>{if(!this.connected&&this.reconnectAt&&this.now()>=this.reconnectAt)await this.restoreConnection();await this.tick();})().catch(error=>{this.connectionError=this.client.redact?.(error.message)||error.message;}).finally(()=>{this.timerBusy=false;});},3000);this.timer.unref?.();}
   async stopTimer(){clearInterval(this.timer);await this.queue;}
   note(title,message,botId=null,level='info'){const last=this.state.logs[0];if(last?.message===message&&this.now()-last.at<30000)return;this.state.logs.unshift({id:randomUUID(),at:this.now(),title,message,botId,level});this.state.logs=this.state.logs.slice(0,1000);}
@@ -56,9 +57,15 @@ export class TradingEngine {
     const response=await this.client.leverageBrackets(symbol);
     return {symbol,environment:this.state.environment,available:true,...normalizeBrackets(response,symbol)};
   }
-  async formulaMarkets(symbol,source,cache=new Map()){
-    const intervals=ruleIntervals(source);
-    return Object.fromEntries(await Promise.all((intervals.length?intervals:['1m']).map(async interval=>[interval,await (cache.get(interval)||cache.set(interval,this.market(symbol,interval)).get(interval))])));
+  async formulaMarkets(symbol,source,cache=new Map(),aliases={}){
+    const names=formulaSymbols(source),requests=formulaMarketRequests(symbol,source,aliases),feeds=new Map();
+    await Promise.all(requests.map(async item=>{if(!cache.has(item.key))cache.set(item.key,this.market(item.symbol,item.interval));feeds.set(item.key,await cache.get(item.key));}));
+    const intervals=ruleIntervals(source),result={};
+    for(const interval of intervals.length?intervals:['1m']){
+      const primary=feeds.get(symbol+'@'+interval);
+      result[interval]=names.length?{...primary,symbols:Object.fromEntries(names.map(name=>[name,feeds.get((aliases[name]||name)+'@'+interval)]))}:primary;
+    }
+    return result;
   }
   async restoreConnection(){return this.serial(async()=>{
     if(this.connected||!this.credentialStore)return this.snapshot();
@@ -85,14 +92,14 @@ export class TradingEngine {
       if(this.credentialStore&&!restoring){try{await this.credentialStore.save({environment,apiKey,secret});}catch(error){this.credentialError=error.message;throw error;}}
     }catch(error){const message=candidate.redact?.(error.message)||'계좌 연결을 확인하지 못했습니다.';candidate.clearCredentials();throw new Error(message);}
     const previous=this.client;this.client=candidate;previous?.clearCredentials();this.connected=true;this.connectionId=randomUUID();this.hedge=Boolean(mode.dualSidePosition);this.tradingEnabled=allowTrading===true&&account.canTrade!==false;this.connectionError=null;this.writeError=null;
-    if(this.state.scope&&this.state.scope!==scope){for(const b of this.state.bots)b.runtime=initialRuntime();}
-    for(const b of this.state.bots)b.runtime.runEnabled=false;
+    if(this.state.scope&&this.state.scope!==scope){for(const b of this.state.bots)b.runtime=initialRuntime();for(const p of this.multi.groups)p.runtime={runEnabled:false,error:null,stopSignals:{}};}
+    for(const b of this.state.bots)b.runtime.runEnabled=false;this.multi.stopFlags();
     this.state.scope=scope;this.state.environment=environment;this.state.orderPermission={scope,enabled:this.tradingEnabled};this.accountSnapshot=this.normalizeAccount(account,positions,orders);this.accountAt=this.now();this.lastTimeSync=this.now();
     this.credentialError=null;this.reconnectAt=0;
     this.note('계좌 연결',`${environment==='live'?'실전':'테스트넷'} 계좌 연결 · ${this.hedge?'헤지':'단방향'} 모드 · ${this.tradingEnabled?'주문 허용':'조회 전용'}. 봇 신규 진입은 일시정지 상태입니다.`);
     await this.checkpoint();return this.snapshot();
   }
-  async disconnect(){return this.serial(async()=>{if(this.hasExposure())throw new Error('봇 포지션 또는 미해결 주문이 남아 있어 연결을 해제할 수 없습니다. 먼저 주문과 포지션을 정리해 주세요.');await this.credentialStore?.clear();this.credentialError=null;this.reconnectAt=0;for(const b of this.state.bots)b.runtime.runEnabled=false;this.client.clearCredentials();this.client=this.clientFactory({environment:this.state.environment});this.connected=false;this.tradingEnabled=false;this.state.orderPermission=null;this.accountSnapshot=null;this.connectionError=null;this.note('연결 해제','계좌 연결을 해제하고 저장된 키와 메모리의 키를 제거했습니다.');await this.checkpoint();return this.snapshot();});}
+  async disconnect(){return this.serial(async()=>{if(this.hasExposure())throw new Error('봇 포지션 또는 미해결 주문이 남아 있어 연결을 해제할 수 없습니다. 먼저 주문과 포지션을 정리해 주세요.');await this.credentialStore?.clear();this.credentialError=null;this.reconnectAt=0;for(const b of this.state.bots)b.runtime.runEnabled=false;this.client.clearCredentials();this.client=this.clientFactory({environment:this.state.environment});this.connected=false;this.tradingEnabled=false;this.multi.stopFlags();this.state.orderPermission=null;this.accountSnapshot=null;this.connectionError=null;this.note('연결 해제','계좌 연결을 해제하고 저장된 키와 메모리의 키를 제거했습니다.');await this.checkpoint();return this.snapshot();});}
   async setTrading(enabled){return this.serial(async()=>{
     if(typeof enabled!=='boolean')throw new Error('주문 허용은 켜짐 또는 꺼짐으로 지정해 주세요.');
     if(enabled&&!this.connected)throw new Error('계좌를 먼저 연결해 주세요.');
@@ -100,7 +107,7 @@ export class TradingEngine {
     if(this.tradingEnabled===enabled&&this.state.orderPermission?.scope===this.state.scope&&this.state.orderPermission.enabled===enabled)return this.snapshot();
     if(enabled){await this.refreshAccount(true);if(!this.accountSnapshot.canTrade)throw new Error('이 API 키에는 선물 거래 권한이 없습니다.');}
     this.tradingEnabled=enabled;this.state.orderPermission={scope:this.state.scope,enabled};
-    if(!enabled)for(const b of this.state.bots)b.runtime.runEnabled=false;
+    if(!enabled){for(const b of this.state.bots)b.runtime.runEnabled=false;this.multi.stopFlags();}
     this.note('주문 권한 변경',enabled?'주문 실행을 허용하고 설정을 저장했습니다. 봇 시작은 개별 선택합니다.':'주문 실행을 끄고 설정을 저장했습니다. 기존 포지션·미체결 주문은 유지됩니다.');
     await this.checkpoint();return this.snapshot();
   });}
@@ -109,9 +116,11 @@ export class TradingEngine {
   ownOrders(b){return this.state.orders.filter(o=>o.botId===b.id&&o.scope===this.state.scope);}
   decorate(b){const r=b.runtime,info=r.quantity>0?this.accountSnapshot?.positions.find(p=>p.symbol===b.symbol&&(this.hedge?p.positionSide===r.direction:true)):null;const used=info?positionMargin(info,b.leverage,b.margin):r.quantity*r.entryPrice/b.leverage;const reserved=this.ownOrders(b).filter(o=>active(o)&&o.role==='entry').reduce((sum,o)=>sum+o.margin*Math.max(0,1-number(o.appliedQty)/number(o.parameters.quantity)),0);const fees=this.state.fills.filter(f=>f.scope===this.state.scope&&f.botId===b.id&&f.fee!=null);return {...b,fees:fees.filter(f=>f.feeAsset==='USDT').reduce((sum,f)=>sum+number(f.fee),0),costsPending:fees.some(f=>f.feeAsset!=='USDT')||this.ownOrders(b).some(o=>o.appliedQty>0&&!o.feesFetched),budgetMode:b.budgetMode||'fixed',effectiveBudget:effectiveBudget(b),used,reserved,budgetWarning:used+reserved>effectiveBudget(b)?'보유·미체결 주문 증거금이 운용예산을 초과했습니다. 새 진입은 남은 예산 안에서만 가능합니다.':null,pnl:r.realized+(info?.unrealizedProfit||0),status:r.importPending?'paused':r.runEnabled||r.quantity>0||this.ownOrders(b).some(active)?'running':'paused',task:r.importPending?'imported':r.quantity>0?'position':this.ownOrders(b).some(active)?'waiting':'watching',entryPaused:!r.runEnabled,error:r.error,quantity:r.quantity,entryPrice:r.entryPrice,positionDirection:r.direction};}
   orderView(b,rule=null,direction=b.runtime.direction){return {...this.decorate(b),direction,leverage:isEntry(rule?.action)&&!b.runtime.quantity?rule.leverage:b.leverage,entryPercent:rule?.sizePercent??b.entryPercent,order:rule?.order||b.order};}
-  snapshot(){return {version:2,environment:this.state.environment,connected:this.connected,connectionId:this.connectionId,tradingEnabled:this.tradingEnabled,orderPermission:{enabled:this.state.orderPermission?.scope===this.state.scope&&this.state.orderPermission?.enabled===true},credentials:{saved:Boolean(this.credentialStore?.saved),error:this.credentialError,storagePath:this.credentialStore?.filename||null},positionMode:this.hedge?'HEDGE':'ONE_WAY',account:this.connected?this.accountSnapshot:null,accountAt:this.accountAt,lastTick:this.lastTick,waiting:this.waiting,requestBudget:this.client?.rate?.snapshot()||null,error:this.writeError||this.connectionError||this.credentialError,bots:this.state.bots.map(b=>this.decorate(b)),manualOrders:this.manual.snapshot(),logs:this.state.logs,fills:this.state.fills.filter(f=>f.scope===this.state.scope).slice(-300).reverse(),orders:this.state.orders.filter(o=>o.scope===this.state.scope&&active(o)).map(o=>({id:o.id,botId:o.botId,source:o.source||'bot',role:o.role,status:o.status,symbol:o.parameters.symbol,side:o.parameters.side,type:o.parameters.type,quantity:o.parameters.quantity,price:o.parameters.price||o.parameters.triggerPrice,executedQuantity:o.appliedQty,kind:o.kind}))};}
+  snapshot(){return {version:2,environment:this.state.environment,connected:this.connected,connectionId:this.connectionId,tradingEnabled:this.tradingEnabled,orderPermission:{enabled:this.state.orderPermission?.scope===this.state.scope&&this.state.orderPermission?.enabled===true},credentials:{saved:Boolean(this.credentialStore?.saved),error:this.credentialError,storagePath:this.credentialStore?.filename||null},positionMode:this.hedge?'HEDGE':'ONE_WAY',account:this.connected?this.accountSnapshot:null,accountAt:this.accountAt,lastTick:this.lastTick,waiting:this.waiting,requestBudget:this.client?.rate?.snapshot()||null,error:this.writeError||this.connectionError||this.credentialError,bots:[...this.state.bots.filter(b=>!b.multiBotId).map(b=>this.decorate(b)),...this.multi.snapshot()],positionOwners:this.state.bots.map(b=>this.decorate(b)),manualOrders:this.manual.snapshot(),logs:this.state.logs,fills:this.state.fills.filter(f=>f.scope===this.state.scope).slice(-300).reverse(),orders:this.state.orders.filter(o=>o.scope===this.state.scope&&active(o)).map(o=>({id:o.id,botId:o.botId,source:o.source||'bot',role:o.role,status:o.status,symbol:o.parameters.symbol,side:o.parameters.side,type:o.parameters.type,quantity:o.parameters.quantity,price:o.parameters.price||o.parameters.triggerPrice,executedQuantity:o.appliedQty,kind:o.kind}))};}
   async saveBot(input){return this.serial(async()=>{
     if(!input||typeof input!=='object')throw new Error('봇 설정을 확인해 주세요.');
+    if(input.kind==='multi'||this.multi.has(input.id))return this.multi.save(input);
+    if(this.state.bots.find(b=>b.id===input.id)?.multiBotId)throw Error('다중종목 봇 설정에서 수정하세요.');
     const existing=this.state.bots.find(b=>b.id===input.id),base=upgradeActions(upgradeBot({...makeBot(),...input}));
     const allowed=['id','name','symbol','budget','budgetMode','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
     const b=Object.fromEntries(allowed.map(k=>[k,base[k]]));if(!/^[a-zA-Z0-9_-]{1,64}$/.test(b.id))throw new Error('봇 식별자를 확인해 주세요.');
@@ -126,10 +135,11 @@ export class TradingEngine {
     if(existing)this.state.bots[this.state.bots.indexOf(existing)]=b;else this.state.bots.push(b);
     this.note(existing?'봇 설정 저장':'봇 생성',`${b.name} · ${b.symbol} · 예산 ${b.budget} USDT · 신규 진입 일시정지`,b.id);await this.checkpoint();return this.decorate(b);
   });}
-  async removeBot(id){return this.serial(async()=>{const b=this.bot(id);if(b.runtime.quantity>0||this.ownOrders(b).some(active))throw new Error('포지션 또는 미해결 주문이 있는 봇은 삭제할 수 없습니다.');this.state.bots=this.state.bots.filter(item=>item!==b);this.note('봇 삭제',b.name+'의 설정을 삭제했습니다.',b.id);await this.checkpoint();});}
+  async removeBot(id){return this.serial(async()=>{if(this.multi.has(id))return this.multi.remove(id);const b=this.bot(id);if(b.multiBotId)throw Error('다중종목 봇에서 삭제하세요.');if(b.runtime.quantity>0||this.ownOrders(b).some(active))throw new Error('포지션 또는 미해결 주문이 있는 봇은 삭제할 수 없습니다.');this.state.bots=this.state.bots.filter(item=>item!==b);this.note('봇 삭제',b.name+'의 설정을 삭제했습니다.',b.id);await this.checkpoint();});}
   bot(id){const b=this.state.bots.find(item=>item.id===id);if(!b)throw new Error('봇을 찾을 수 없습니다.');return b;}
   requireTrading(){if(!this.connected)throw new Error('설정에서 API 키를 먼저 연결해 주세요.');if(!this.tradingEnabled)throw new Error('연결 설정에서 주문 실행을 허용해 주세요.');if(this.writeError)throw new Error(this.writeError);}
-  async startBot(id){return this.serial(async()=>{
+  async startBot(id){return this.serial(()=>{if(this.multi.has(id))return this.multi.start(id);if(this.bot(id).multiBotId)throw Error('다중종목 봇 전체를 시작하세요.');return this.startRuntime(id);});}
+  async startRuntime(id){
     this.requireTrading();const b=this.bot(id),r=b.runtime;if(r.runEnabled)return this.decorate(b);
     if(this.manual.records.some(order=>order.botId!==b.id&&active(order)&&order.parameters.symbol===b.symbol))throw new Error('같은 종목의 별도 수동 주문이 남아 있습니다. 먼저 수동 주문 상태를 확인하고 정리해 주세요.');
     if(this.state.bots.some(other=>other!==b&&other.symbol===b.symbol&&(other.runtime.runEnabled||other.runtime.quantity>0||this.ownOrders(other).some(active))))throw new Error('같은 종목은 한 봇만 운용할 수 있습니다. 다른 봇의 진입·포지션·주문을 먼저 정리해 주세요.');
@@ -151,8 +161,8 @@ export class TradingEngine {
     if(!Number.isInteger(Number(config?.leverage))||number(config.leverage)<1||number(config.leverage)>MAX_LEVERAGE||String(config?.marginType).toUpperCase()!==b.margin||r.quantity&&number(config.leverage)!==b.leverage)throw new Error('거래소의 증거금 모드·레버리지가 봇 설정과 일치하지 않습니다.');
     b.leverage=number(config.leverage);
     r.runEnabled=true;r.importPending=false;for(const rule of b.actionRules.filter(rule=>isStop(rule.action)))delete r.ruleSignals[rule.id];r.error=null;r.waiting=null;r.lastSignal=null;r.lastBar=null;r.syncHold=false;this.note('조건 감시 시작',`${b.name} · ${b.symbol} · ${this.state.environment==='live'?'실전':'테스트넷'}`,b.id);await this.checkpoint();return this.decorate(b);
-  });}
-  async pauseBot(id){return this.serial(()=>this.pauseRuntime(this.bot(id)));}
+  }
+  async pauseBot(id){return this.serial(()=>{if(this.multi.has(id))return this.multi.pause(id);const b=this.bot(id);if(b.multiBotId)throw Error('다중종목 봇 전체를 정지하세요.');return this.pauseRuntime(b);});}
   async pauseRuntime(b){b.runtime.runEnabled=false;await this.checkpoint();if(this.tradingEnabled)for(const o of this.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.cancelStandard(b,o,true);this.note('신규 진입 중지',`${b.name} · 미체결 진입 취소 확인 · 보유 포지션과 청산 주문은 계속 관리합니다.`,b.id);await this.checkpoint();return this.decorate(b);}
   async submit(b,parameters,{kind='standard',role='entry',margin=0,group=null,guardKey=null,parent=null,ruleId=null,direction=b.runtime.direction,orderPolicy=null,timeframe=null}={}){
     this.requireTrading();const sequence=this.state.nextIntent++;const id='fw_'+createHash('sha256').update(b.id+this.state.scope).digest('hex').slice(0,9)+'_'+sequence;
@@ -221,7 +231,7 @@ export class TradingEngine {
     if(r.error===pendingMessage)r.error=null;
     return true;
   }
-  async closeBot(id){return this.serial(async()=>{this.requireTrading();const b=this.bot(id);b.runtime.runEnabled=false;await this.closePosition(b,'사용자 전량 청산');return this.decorate(b);});}
+  async closeBot(id){return this.serial(async()=>{if(this.multi.has(id))return this.multi.close(id);this.requireTrading();const b=this.bot(id);b.runtime.runEnabled=false;await this.closePosition(b,'사용자 전량 청산');return this.decorate(b);});}
   async cancelBotOrder(id,orderId){return this.serial(async()=>{this.requireTrading();const b=this.bot(id),order=this.ownOrders(b).find(o=>o.id===orderId&&o.kind==='standard');if(!order)throw new Error('이 봇의 일반 주문을 찾을 수 없습니다.');await this.refreshOrder(b,order);if(order.status==='UNKNOWN')throw new Error('접수 여부 확인 후 취소할 수 있습니다.');if(active(order))await this.cancelStandard(b,order,true);await this.refreshAccount(true);await this.syncBotPosition(b,true);if(!b.runtime.syncHold)await this.ensureGuards(b,await this.symbolInfo(b.symbol));await this.checkpoint();return this.decorate(b);});}
   async closePosition(b,reason){
     this.requireTrading();const r=b.runtime;
@@ -247,6 +257,7 @@ export class TradingEngine {
         try{await this.tickBot(b);b.runtime.waiting=null;}
         catch(error){if(isTemporary(error)){this.defer(error);deferred=true;break;}b.runtime.runEnabled=false;b.runtime.waiting=null;b.runtime.error=this.client.redact?.(error.message)||error.message;this.note('봇 확인 필요',b.name+' · '+b.runtime.error,b.id,'error');}
       }
+      if(!deferred){for(const p of this.multi.groups){try{await this.multi.tick(p);}catch(error){if(isTemporary(error)){this.defer(error);deferred=true;break;}p.runtime.runEnabled=false;p.runtime.cancelEntries=true;p.runtime.error=this.client.redact?.(error.message)||error.message;for(const b of this.multi.workers(p))b.runtime.runEnabled=false;this.note('다중종목 확인 필요',p.name+' · '+p.runtime.error,p.id,'error');}}}
       if(!deferred)this.waiting=null;
     }catch(error){if(!isTemporary(error))throw error;this.defer(error);}
     await this.checkpoint();
@@ -279,7 +290,7 @@ export class TradingEngine {
     for(const rule of b.actionRules.filter(rule=>rule.enabled)){
       if(phase==='management'&&isEntry(rule.action)||phase==='entry'&&!isEntry(rule.action))continue;
       if(isEntry(rule.action)&&(!r.runEnabled||r.quantity&&r.direction!==actionDirection(rule.action)))continue;
-      if(cachedOnly&&(ruleIntervals(rule.formula).length?ruleIntervals(rule.formula):['1m']).some(interval=>!markets.has(interval)))continue;
+      if(cachedOnly&&formulaMarketRequests(b.symbol,rule.formula).some(item=>!markets.has(item.key)))continue;
       if(isStop(rule.action)&&!r.runEnabled)continue;
       if(!isStop(rule.action)&&!isEntry(rule.action)&&(!r.quantity||actionDirection(rule.action)&&actionDirection(rule.action)!==r.direction))continue;
       const snapshots=await this.formulaMarkets(b.symbol,rule.formula,markets),{market,result,bar,interval}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage});
@@ -346,6 +357,7 @@ export class TradingEngine {
       if(reference>0&&(take||stop)){await this.closePosition(b,take?'익절 조건':'손절 조건');return;}
     }
     const protectedPosition=await this.ensureGuards(b,info);if(r.quantity&&!protectedPosition)return;
+    if(b.multiBotId)return; // Shared conditions must run before pending-entry fallbacks.
     const markets=new Map(),management=await this.evaluateRules(b,{phase:'management',markets}),stops=management.filter(i=>i.ready&&isStop(i.rule.action)),exits=management.filter(i=>i.ready&&!isStop(i.rule.action));
     if(stops.length){await this.executeRule(b,stops[0],info);return;}
     const closing=this.ownOrders(b).some(o=>active(o)&&(o.role!=='entry'&&o.kind==='standard'||o.childOrderId||o.status==='UNKNOWN'));

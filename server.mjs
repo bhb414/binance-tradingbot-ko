@@ -39,10 +39,11 @@ export async function createServer({dataDirectory=process.env.WORKROOM_DATA_DIR|
         }
         if(req.method==='GET'&&pathname==='/api/status'){json(200,engine.snapshot());return;}
         if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkUpdate(appDirectory));return;}
-        if(req.method==='GET'&&pathname==='/api/positions/insights'){json(200,await engine.positionInsights.get());return;}
+        if(req.method==='GET'&&pathname==='/api/positions/insights'){json(200,engine.multi.insights(await engine.positionInsights.get()));return;}
         if(req.method==='GET'&&pathname==='/api/market-data/catalog'){json(200,await marketData.catalog());return;}
         if(req.method==='GET'&&pathname==='/api/market-data/quote'){json(200,await marketData.quote(url.searchParams.get('market')||'usdm',url.searchParams.get('symbol')||'BTCUSDT',url.searchParams.get('interval')||'15m'));return;}
         if(req.method==='GET'&&pathname==='/api/symbols'){const [symbols,tickers]=await Promise.all([engine.catalog(),engine.client.tickers()]);json(200,{environment:engine.state.environment,asOf:Date.now(),symbols:symbols.map(s=>({symbol:s.symbol,baseAsset:s.baseAsset})),tickers});return;}
+        if(req.method==='POST'&&pathname==='/api/formula/markets'){const aliases=body.aliases||{};if(typeof body.symbol!=='string'||!/^[A-Z0-9_]{2,40}$/.test(body.symbol)||typeof aliases!=='object'||Array.isArray(aliases))throw Error('종목을 확인하세요.');if(Object.entries(aliases).length>8||Object.entries(aliases).some(([key,value])=>!/^[A-Z]$/.test(key)||typeof value!=='string'||!/^[A-Z0-9_]{2,40}$/.test(value)))throw Error('종목 별칭을 확인하세요.');json(200,await engine.formulaMarkets(body.symbol,body.source,new Map(),aliases));return;}
         if(req.method==='GET'&&pathname==='/api/market'){json(200,await engine.market(url.searchParams.get('symbol')||'BTCUSDT',url.searchParams.get('interval')||'15m'));return;}
         if(req.method==='GET'&&pathname==='/api/leverage'){json(200,await engine.serial(()=>engine.leverageLimits(url.searchParams.get('symbol'))));return;}
         if(req.method==='GET'&&pathname==='/api/position-import/context'){json(200,await engine.serial(()=>engine.positionImports.context()));return;}

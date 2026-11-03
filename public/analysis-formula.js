@@ -41,9 +41,9 @@
         push('op', pair, position); index += 2; continue;
       }
       const singleMap = { '×': '*', '÷': '/', '≥': '>=', '≤': '<=', '≠': '!=', '＝': '=', '％': '%' };
-      if ('+-*/%><=!,()[]:@'.includes(char) || singleMap[char]) {
+      if ('+-*/%><=!,()[]:@'.includes(char) || char==='.'&&!/\d/.test(source[index+1]||'') || singleMap[char]) {
         const value = singleMap[char] || char;
-        const type = char === '@' ? 'at' : char === '(' ? 'lparen' : char === ')' ? 'rparen' : char === '[' ? 'lbracket' : char === ']' ? 'rbracket' : char === ',' ? 'comma' : char === ':' ? 'colon' : 'op';
+        const type = char === '.' ? 'dot' : char === '@' ? 'at' : char === '(' ? 'lparen' : char === ')' ? 'rparen' : char === '[' ? 'lbracket' : char === ']' ? 'rbracket' : char === ',' ? 'comma' : char === ':' ? 'colon' : 'op';
         push(type, value, position); index += 1; continue;
       }
       if (/\d/.test(char) || (char === '.' && /\d/.test(source[index + 1] || ''))) {
@@ -165,6 +165,7 @@
       if (number) return { type: 'number', value: number.value, position: number.position };
       const identifier = this.take('id');
       if (identifier) {
+        if(this.take('dot')){const metric=this.expect('id',null,'종목 뒤에는 A.종가처럼 데이터를 입력하세요');const symbol=identifier.value.toUpperCase();if(!/^[A-Z0-9_]{1,40}$/.test(symbol))throw new FormulaError('종목 이름 또는 A, B 같은 별칭을 확인하세요',identifier.position);return {type:'symbol',symbol,value:{type:'variable',name:metric.value,position:metric.position},position:identifier.position};}
         if (!this.take('lparen')) return { type: 'variable', name: identifier.value, position: identifier.position };
         const args = [];
         if (!this.take('rparen')) {
@@ -247,7 +248,7 @@
       node.args.forEach(validateAst);
     }
     if (node.type === 'binary') { validateAst(node.left); validateAst(node.right); }
-    if (node.type === 'unary' || node.type === 'lag' || node.type === 'range' || node.type==='timeframe') validateAst(node.value);
+    if (node.type === 'unary' || node.type === 'lag' || node.type === 'range' || node.type==='timeframe' || node.type==='symbol') validateAst(node.value);
   }
 
   function readWindowPeriod(node, context, index, fallback) {
@@ -400,6 +401,7 @@
       const target=context.frameContexts.get(node.interval);
       return evaluateNode(node.value,target,target.length-1);
     }
+    if(node.type==='symbol'){const feed=Object.hasOwn(context.symbols||{},node.symbol)?context.symbols[node.symbol]:null,series=feed?.[resolveVariable(node.value.name)];return series?series[index]:null;}
     if (node.type === 'variable') {
       const series = context.series[resolveVariable(node.name)];
       return series ? series[index] : null;
@@ -449,7 +451,7 @@
   }
 
   function makeContext(series,options={},budget={steps:0}){
-    const context={series,length:Number(options.length??Object.values(series)[0]?.length??0),maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),frames:options.frames,frameContexts:new Map(),budget};
+    const context={series,length:Number(options.length??Object.values(series)[0]?.length??0),maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),frames:options.frames,symbols:options.symbols||series.symbols,frameContexts:new Map(),budget};
     Object.defineProperty(context,'steps',{get:()=>budget.steps,set:value=>{budget.steps=value;}});
     return context;
   }

@@ -25,6 +25,12 @@ export function formulaTimeframes(formula){
   visit(ast);if(frames.size>6)throw new Error('조건 하나에는 봉 주기를 최대 6개까지 사용할 수 있습니다.');
   return [...frames].sort((a,b)=>minutes(a)-minutes(b));
 }
+export function formulaSymbols(formula){
+  const ast=typeof formula==='string'?compileFormula(formula).ast:formula.ast||formula,symbols=new Set();
+  const visit=node=>{if(node.type==='symbol')symbols.add(node.symbol);if(node.type==='binary'){visit(node.left);visit(node.right);}else if(node.type==='call')node.args.forEach(visit);else if(node.value&&typeof node.value==='object')visit(node.value);};visit(ast);
+  if(symbols.size>8)throw new Error('조건 하나에는 종목을 최대 8개까지 참조할 수 있습니다.');return [...symbols];
+}
+export function formulaMarketRequests(symbol,source,aliases={}){const frames=formulaTimeframes(source),names=formulaSymbols(source),pairs=[];for(const interval of frames.length?frames:['1m'])for(const target of new Set([symbol,...names.map(name=>aliases[name]||name)]))pairs.push({symbol:target,interval,key:target+'@'+interval});return pairs;}
 export function applyWholeTimeframe(source,interval){
   if(!FORMULA_TIMEFRAMES.includes(interval))throw new Error('봉 주기를 확인하세요.');
   const text=source.trim();if(!text)throw new Error('먼저 수식을 입력하세요.');

@@ -24,6 +24,7 @@ import {MARKET_FILTERS,productLabel,instrumentName,matchesMarket,isTradfi} from 
 import {marketKey} from './markets.js';
 import {FAVORITES_KEY,readFavorites,toggleFavorite} from './favorites.js';
 import {installManualUI} from './manual-ui.js';
+import {installMultiUI} from './multi-ui.js';
 import {positionRows} from './positions-ui.js';
 import {appearanceCard,installAppearanceUI} from './appearance-ui.js';
 import {workroomPerformance} from './workroom-metrics.js';
@@ -60,7 +61,7 @@ let bots=[],logs=[],legacyBots=[];
 try{const saved=JSON.parse(localStorage.getItem('fw-bots-v1')||'null');if(Array.isArray(saved))legacyBots=saved.map(upgradeBot);}catch{}
 let positionInsights=null,positionInsightsKey='',positionInsightsAt=0,positionInsightsPending=null;
 let serverState=null,marketSnapshot=null,marketError=null,chartRequest=0,formulaRequest=0,syncing=false;
-let manualUI,appearanceUI,favorites;try{favorites=readFavorites(localStorage.getItem(FAVORITES_KEY));}catch{favorites=readFavorites(null);}
+let manualUI,appearanceUI,multiUI,multiSymbolPick,favorites;try{favorites=readFavorites(localStorage.getItem(FAVORITES_KEY));}catch{favorites=readFavorites(null);}
 for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='—';}
 
 let chartStorage;try{chartStorage=localStorage;}catch{}
@@ -81,7 +82,7 @@ const positionImportUI=installPositionImportUI({api,getState:()=>serverState,ref
 function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
 async function syncWorkspace(refreshMarket=false){
   if(syncing)return;syncing=true;
-  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);renderRuntimeBanner();renderBots();loadPositionInsights();renderHomeTable();if($('#bot-dialog').open)renderEditorStatus();renderActivity();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
+  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);renderRuntimeBanner();renderBots();loadPositionInsights();renderHomeTable();if($('#bot-dialog').open)renderEditorStatus();renderActivity();multiUI?.setState();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
   catch(error){marketError=error.message;renderRuntimeBanner();throw error;}
   finally{syncing=false;}
 }
@@ -220,7 +221,7 @@ async function preparePositionClose(key){
   try{
     const [symbol,direction]=key.split(':'),position=serverState?.account?.positions.find(p=>p.symbol===symbol&&(['LONG','SHORT'].includes(p.positionSide)?p.positionSide:p.quantity>0?'LONG':'SHORT')===direction);
     if(!position){toast('현재 보유 포지션을 다시 확인해 주세요.',true);return;}
-    const known=()=>marketInstruments.some(item=>item.market==='usdm'&&item.symbol===symbol)||SYMBOLS.some(item=>item.symbol===symbol);if(!known()&&!marketCatalogReady)await loadMarkets();if(!known())throw new Error('해당 포지션의 주문 종목을 찾을 수 없습니다.');selectSymbol(symbol,'usdm');const owner=bots.find(b=>b.symbol===symbol&&b.quantity>0&&(serverState.positionMode!=='HEDGE'||b.positionDirection===direction));if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');manualUI.prepareClose(position,owner?.id||'');
+    const known=()=>marketInstruments.some(item=>item.market==='usdm'&&item.symbol===symbol)||SYMBOLS.some(item=>item.symbol===symbol);if(!known()&&!marketCatalogReady)await loadMarkets();if(!known())throw new Error('해당 포지션의 주문 종목을 찾을 수 없습니다.');selectSymbol(symbol,'usdm');const owner=(serverState.positionOwners||bots).find(b=>b.symbol===symbol&&b.quantity>0&&(serverState.positionMode!=='HEDGE'||b.positionDirection===direction));if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');manualUI.prepareClose(position,owner?.id||'');
     if(matchMedia('(max-width:900px)').matches)openMarket();
     $('#manual-order-ticket').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('#manual-amount').focus({preventScroll:true});
   }catch(error){toast(error.message,true);}
@@ -232,7 +233,7 @@ function renderHomeTable(){
   if(homeTab==='positions'){
     if(!positions.length){$('#home-table').innerHTML='<div class="empty-table">'+icon('check')+'보유 포지션이 없습니다.</div>';return;}
     const previousScroller=$('#home-table .position-table-scroll'),scrollLeft=previousScroller?.scrollLeft||0,restoreFocus=previousScroller&&document.activeElement===previousScroller;
-    $('#home-table').innerHTML=positionRows(positions,{bots,state:serverState,insights:positionInsights,symbolButton:positionSymbolButton,importButton:importPositionButton})+'<p class="position-data-note">매매손익·순손익은 최근 30일 종목 전체 기준(양방향 합산), 미실현 제외 · 비율은 현재 증거금 대비 참고율'+(!serverState.connectionId?' · 추가 조회 정보는 서버 갱신 후 표시됩니다.':'')+(positionInsights?.realized&&!positionInsights.realized.complete?' · 실현손익 조회 확인 필요':'')+'</p>';
+    $('#home-table').innerHTML=positionRows(positions,{bots:serverState.positionOwners||bots,state:serverState,insights:positionInsights,symbolButton:positionSymbolButton,importButton:importPositionButton})+'<p class="position-data-note">매매손익·순손익은 최근 30일 종목 전체 기준(양방향 합산), 미실현 제외 · 비율은 현재 증거금 대비 참고율'+(!serverState.connectionId?' · 추가 조회 정보는 서버 갱신 후 표시됩니다.':'')+(positionInsights?.realized&&!positionInsights.realized.complete?' · 실현손익 조회 확인 필요':'')+'</p>';
     const scroller=$('#home-table .position-table-scroll');scroller.scrollLeft=scrollLeft;if(restoreFocus)scroller.focus({preventScroll:true});
   }else if(homeTab==='orders'){
     const rows=[...(account.orders||[]),...(serverState.orders||[]).filter(o=>o.kind==='algo')];$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>종목</th><th>방향 / 유형</th><th>가격 / 조건가</th><th>수량</th><th>상태</th></tr></thead><tbody>'+rows.map(o=>'<tr><td>'+o.symbol+'</td><td>'+esc(o.side)+' · '+esc(o.type)+'</td><td>'+price(o.price)+'</td><td>'+fmt(o.quantity,6)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('check')+'미체결 주문이 없습니다.</div>';
@@ -353,7 +354,7 @@ async function updateFormulaFeedback() {
   if(!rule.enabled&&!source){feedback.className='formula-feedback';feedback.textContent='사용을 꺼 둔 조건입니다. 수식을 입력한 뒤 사용을 켜세요.';return;}
   try {
     const intervals=ruleIntervals(source);feedback.className='formula-feedback valid';feedback.innerHTML=icon('check')+'<div><strong>문법 정상</strong><span>거래소 봉으로 조건을 확인하는 중…</span></div>';
-    const snapshots=Object.fromEntries(await Promise.all((intervals.length?intervals:['1m']).map(async interval=>[interval,await api('/market?symbol='+encodeURIComponent(draft.symbol)+'&interval='+encodeURIComponent(interval))])));if(request!==formulaRequest||!$('#bot-dialog').open)return;
+    const snapshots=await api('/formula/markets',{method:'POST',body:{symbol:draft.symbol,source}});if(request!==formulaRequest||!$('#bot-dialog').open)return;
     const {result}=evaluateRuleFormula(source,snapshots,{quantity:draft.quantity,entryPrice:draft.entryPrice,direction:draft.positionDirection,leverage:draft.leverage});feedback.className='formula-feedback valid';
     let message=result.missing?'계산에 필요한 봉 또는 포지션 정보가 없습니다.':result.pass?'조회한 거래소 봉에서 조건 충족':'조회한 거래소 봉에서 조건 미충족';
     if(!result.ok)message=result.error;
@@ -391,7 +392,7 @@ function renderEditorStatus() {
 }
 function setEditorTab(tab){editorTab=tab;$$('[data-editor-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.editorTab===tab);b.setAttribute('aria-selected',b.dataset.editorTab===tab);});$$('.editor-panel').forEach(p=>p.hidden=p.id!==`editor-${tab}`);$('.editor-body').scrollTop=0;}
 function openBot(id=null,tab='basic') {
-  const b=bots.find(b=>b.id===id);draft=upgradeActions(structuredClone(b || makeBot()));selectedRuleId=draft.actionRules.find(r=>r.enabled)?.id||draft.actionRules[0]?.id;
+  const b=bots.find(b=>b.id===id);if(b?.kind==='multi'){multiUI.open(id,tab);return;}draft=upgradeActions(structuredClone(b || makeBot()));selectedRuleId=draft.actionRules.find(r=>r.enabled)?.id||draft.actionRules[0]?.id;
   $('#editor-title').textContent=b?b.name:'새 봇 만들기';$('#editor-eyebrow').textContent=b?'YOUR BOT WORKSPACE':'BUILD YOUR BOT';$('#delete-bot').hidden=!b;$('#form-errors').hidden=true;
   renderBasic();renderConditions();renderActions();renderEditorStatus();setEditorTab(tab);$('#bot-dialog').showModal();
 }
@@ -407,10 +408,10 @@ async function saveBot(event,confirmed=false){
 }
 
 function showSymbols(target='home'){
-  symbolPickerTarget=target==='bot'?'bot':'home';symbolResultLimit=100;$('#symbol-dialog h2').textContent=symbolPickerTarget==='bot'?'담당 종목 찾기':'바이낸스 상품 찾기';$('#symbol-dialog .eyebrow').textContent=symbolPickerTarget==='bot'?'BOT SYMBOL':'BINANCE MARKETS';$('#symbol-search').value='';$('#symbol-market-filters').hidden=symbolPickerTarget==='bot';renderSymbolResults('');$('#symbol-dialog').showModal();$('#symbol-search').focus();if(symbolPickerTarget==='home'&&!marketCatalogReady)loadMarkets().catch(error=>{marketError=error.message;renderSymbolResults($('#symbol-search').value);});
+  symbolPickerTarget=['bot','multi'].includes(target)?target:'home';symbolResultLimit=100;$('#symbol-dialog h2').textContent=symbolPickerTarget!=='home'?'담당 종목 찾기':'바이낸스 상품 찾기';$('#symbol-dialog .eyebrow').textContent=symbolPickerTarget!=='home'?'BOT SYMBOL':'BINANCE MARKETS';$('#symbol-search').value='';$('#symbol-market-filters').hidden=symbolPickerTarget!=='home';renderSymbolResults('');$('#symbol-dialog').showModal();$('#symbol-search').focus();if(symbolPickerTarget==='home'&&!marketCatalogReady)loadMarkets().catch(error=>{marketError=error.message;renderSymbolResults($('#symbol-search').value);});
 }
 function renderSymbolResults(query) {
-  const bot=symbolPickerTarget==='bot',normalize=text=>String(text).toLowerCase().replace(/[\s/\-]/g,''),term=normalize(query),current=bot?draft?.symbol:currentSymbol;
+  const bot=symbolPickerTarget!=='home',normalize=text=>String(text).toLowerCase().replace(/[\s/\-]/g,''),term=normalize(query),current=bot?draft?.symbol:currentSymbol;
   const candidates=bot?SYMBOLS.map(s=>({...s,market:'usdm',baseAsset:s.short,quoteAsset:'USDT',marginAsset:'USDT',contractType:'PERPETUAL',name:symbolName(s)})):marketInstruments;
   const rank=s=>s.symbol===current&&(bot||s.market===currentMarket)&&!term?-1:normalize(s.symbol)===term?0:normalize(s.symbol).startsWith(term)?1:2;
   const items=candidates.filter(s=>(bot|| (marketFilter==='favorites'?favorites.includes(marketKey(s)):matchesMarket(s,marketFilter)))&&normalize(s.symbol+' '+s.baseAsset+' '+(bot?s.name:instrumentName(s))+' '+productLabel(s)).includes(term)).sort((a,b)=>rank(a)-rank(b));
@@ -454,6 +455,7 @@ document.addEventListener('click',event=>{
   if(b.dataset.positionSymbol){showPositionChart(b.dataset.positionSymbol);return;}
   if(b.id==='bot-symbol-picker'){showSymbols('bot');return;}
   if(b.dataset.symbol){
+    if(b.closest('#symbol-results')&&symbolPickerTarget==='multi'){const callback=multiSymbolPick;multiSymbolPick=null;$('#symbol-dialog').close();callback?.(b.dataset.symbol);return;}
     if(b.closest('#symbol-results')&&symbolPickerTarget==='bot'){
       if(!draft||!SYMBOLS.some(s=>s.symbol===b.dataset.symbol))return;
       draft.symbol=b.dataset.symbol;renderBasic();updateFormulaFeedback();$('#form-errors').hidden=true;$('#symbol-dialog').close();$('#bot-symbol-picker').focus();return;
@@ -559,6 +561,7 @@ installConnectionUI({refresh:syncWorkspace,toast});
 installStudyUI({notify:toast});
 manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
 appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});
+multiUI=installMultiUI({api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>roomControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot)});
 $('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('wallet')+'계좌 정보';
 icons();syncChartButtons();renderMarket();renderHomeTable();renderBots();renderActivity();initChart();goPage(location.hash.slice(1)||'home');
 async function bootstrap(){
