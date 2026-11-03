@@ -90,13 +90,17 @@ async function loadSymbols(){
   renderMarket();if($('#symbol-dialog').open)renderSymbolResults($('#symbol-search').value);
 }
 function renderRuntimeBanner(){
-  const environment=serverState?.environment==='live'?'실전':'테스트넷';
-  $('.demo-pill').innerHTML='<span></span>'+environment+' · '+(serverState?.connected?(serverState.tradingEnabled?'주문 허용':'조회 전용'):'계좌 미연결');
-  const error=serverState?.error||marketError;
-  $('.demo-banner').innerHTML='<span>'+icon(error?'info':'shield')+esc(error||('바이낸스 '+environment+' · '+(serverState?.connected?'계좌 연결됨':'공개 시세 조회 중 · 계좌 키는 설정에서 등록하세요.')))+'</span><span>'+(serverState?.tradingEnabled?'수동 주문·봇 주문 허용':'주문 실행 꺼짐')+'</span>';
-  $('#runtime-footer').textContent=environment+' · '+(serverState?.connected?'계좌 연결':'API 키 미등록');
+  const connected=Boolean(serverState?.connected),enabled=Boolean(serverState?.tradingEnabled),environment=serverState?.environment==='live'?'실전':'테스트넷';
+  const botProblem=serverState?.bots?.find(bot=>bot.error);
+  const error=serverState?.error||(botProblem?botProblem.name+' · '+botProblem.error:null)||marketError,summary=error||('바이낸스 '+environment+' · '+(connected?'계좌 연결됨':'계좌 미연결')+' · '+(enabled?'주문 허용':'주문 실행 꺼짐'));
+  $('.rail').dataset.connectionState=error?'error':connected?(enabled?'trading':'readonly'):'disconnected';
+  const status=$('#workspace-connection');status.title=summary;status.setAttribute('aria-label',summary+' · 연결 설정 열기');
+  $('#rail-environment').textContent=connected?environment:'미연결';
+  $('#rail-order-state').textContent=error?'확인 필요':connected?(enabled?'주문 허용':'조회 전용'):'연결 설정';
+  const footer=$('#runtime-footer');footer.textContent=environment+' · '+(error?'확인 필요':connected?(enabled?'주문 허용':'조회 전용'):'계좌 미연결');footer.title=summary;
+  $('.rail [data-page="settings"].nav-item').title=summary;
   $('.office-local-tag').textContent='BINANCE · '+environment;
-  $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(serverState?.tradingEnabled?'주문 실행 가능':'API 연결·주문 허용 필요');
+  $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(enabled?'주문 실행 가능':'API 연결·주문 허용 필요');
 }
 
 function goPage(page) {
