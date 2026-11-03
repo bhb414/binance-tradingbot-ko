@@ -1,0 +1,29 @@
+name: Publish Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Validate version tag
+        run: node --input-type=module -e "import fs from 'node:fs';if(process.env.GITHUB_REF_NAME!=='v'+JSON.parse(fs.readFileSync('package.json')).version)throw Error('Version tag mismatch');"
+      - run: npm test
+      - run: npm run package
+      - name: Publish ZIP and checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $workroomZip = (Get-ChildItem -LiteralPath dist -Filter '*.zip').FullName
+          gh release create $env:GITHUB_REF_NAME $workroomZip dist/SHA256SUMS.txt --verify-tag --title "바이낸스 자동매매 $env:GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md --latest

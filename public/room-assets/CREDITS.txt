@@ -15,3 +15,7 @@ are included solely for the application's avatar customizer. No generator
 executable is included or executed. License checked 2026-11-03.
 
 SVG files contain the original PNG pixels, without resampling or recolouring.
+
+Author terms for free materials (additional primary source):
+https://pipoya.net/sozai/terms-of-use/
+Third-party images remain under the author terms, not the app code license.

@@ -383,3 +383,16 @@ test('a shared chart cooldown is visible without outgoing requests and never re-
  await h.engine.tick();assert.equal(reads,0);assert.equal(h.engine.snapshot().waiting.kind,'rate-limit');
  h.exchange.now+=5000;await h.engine.tick();assert.equal(b.runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
 });
+
+test('entry-only data failures cannot block a ready position exit or trigger entry reads while paused',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG','종가 > 0'),marketRule('EXIT_LONG','FALSE')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();assert.ok(b.runtime.quantity>0);
+ b.actionRules[0].formula='(종가 > 0)@4h';b.actionRules[1].formula='TRUE@15m';
+ const original=h.engine.client.klines.bind(h.engine.client),calls=[];h.engine.client.klines=async(symbol,interval)=>{calls.push(interval);if(interval==='4h')throw new BinanceError('entry history unavailable',{temporary:true});return original(symbol,interval);};
+ await h.engine.tick();assert.equal(b.runtime.quantity,0);assert.equal(calls.includes('4h'),false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);
+ await h.engine.pauseBot(h.id);calls.length=0;await h.engine.tick();assert.equal(calls.length,0);
+});
+test('a stop condition is handled before reading a failing entry timeframe',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG','종가 > 0'),marketRule('STOP_BOT','TRUE')]),b=h.engine.bot(h.id);await h.engine.startBot(h.id);b.actionRules[0].formula='(종가 > 0)@4h';
+ const original=h.engine.client.klines.bind(h.engine.client);h.engine.client.klines=async(symbol,interval)=>{if(interval==='4h')throw Error('should not read entry');return original(symbol,interval);};
+ await h.engine.tick();assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,0);
+});

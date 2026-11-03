@@ -5,6 +5,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawn} from 'node:child_process';
 import {git,repositoryInfo,checkUpdate,BRANCH} from '../backend/app-update.mjs';
 import {acquireLock,lockActive,serverAt} from '../backend/app-lifecycle.mjs';
+import {bootstrapRepository,protectedSourcePath} from '../backend/source-package.mjs';
 export function validateUpdate({branch,dirty,protectedPaths}){
   if(branch!==BRANCH)throw Error('main 브랜치에서만 업데이트할 수 있습니다. 현재 브랜치를 먼저 확인해 주세요.');
   if(dirty)throw Error('로컬 소스 변경이 있습니다. 변경을 커밋하거나 별도로 보관한 뒤 다시 실행해 주세요. 자동으로 덮어쓰지 않습니다.');
@@ -22,11 +23,12 @@ export async function updateApplication(root,{checkOnly=false,dataDirectory=proc
   const release=await acquireLock(path.join(root,'.runtime','update.lock'));let stage=null;
   try{
     await ensureStopped(root,dataDirectory,port);
+    await bootstrapRepository(root,{onProgress});
     const local=await repositoryInfo(root),dirty=await git(root,['status','--porcelain','--untracked-files=normal']),tracked=(await git(root,['ls-files','-z'])).split('\0');
-    validateUpdate({...local,dirty,protectedPaths:tracked.filter(file=>/^\.runtime\/|(?:^|\/)\.env(?:\.|$)|\.(?:dpapi|pem|key)$/.test(file))});
+    validateUpdate({...local,dirty,protectedPaths:tracked.filter(file=>protectedSourcePath(file))});
     onProgress('GitHub에서 업데이트를 확인합니다…');await git(root,['fetch','origin',BRANCH]);
     const target=await git(root,['rev-parse','refs/remotes/origin/'+BRANCH]);if(target===local.revision){onProgress('이미 최신 버전입니다.');return {updated:false,revision:local.revision};}
-    const incoming=(await git(root,['ls-tree','-r','--name-only',target])).split('\n');validateUpdate({branch:BRANCH,dirty:'',protectedPaths:incoming.filter(file=>/^\.runtime\/|(?:^|\/)\.env(?:\.|$)|\.(?:dpapi|pem|key)$/.test(file))});
+    const incoming=(await git(root,['ls-tree','-r','--name-only',target])).split('\n');validateUpdate({branch:BRANCH,dirty:'',protectedPaths:incoming.filter(file=>protectedSourcePath(file))});
     try{await git(root,['merge-base','--is-ancestor',local.revision,target]);}catch{throw Error('로컬과 GitHub 기록이 갈라져 자동 업데이트할 수 없습니다. 현재 파일을 유지합니다.');}
     stage=await mkdtemp(path.join(os.tmpdir(),'binance-workroom-update-'));const candidate=path.join(stage,'candidate');
     await git(root,['clone','--quiet','--no-hardlinks','--no-checkout',root,candidate]);await git(candidate,['checkout','--quiet','--detach',target]);

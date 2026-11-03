@@ -1,0 +1,25 @@
+name: 오류 신고
+description: 버전과 재현 방법을 알려 주세요. 키·계좌 자료는 올리지 마세요.
+body:
+  - type: markdown
+    attributes:
+      value: "API Key, Secret, .runtime 파일, 계좌 잔고·주문 내역을 첨부하지 마세요."
+  - type: input
+    id: version
+    attributes:
+      label: 앱 버전과 Node.js 버전
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 순서와 기대한 동작
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작과 오류 문구
+      description: 민감정보를 지운 문구만 넣어 주세요.
+    validations:
+      required: true

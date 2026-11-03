@@ -17,7 +17,7 @@ test('local server serves the app on Windows, restricts methods and confines sta
       child.once('error',error=>{clearTimeout(timeout);reject(error);});
       child.once('exit',code=>{clearTimeout(timeout);reject(new Error(`Server exited with ${code}`));});
     });
-    const health=await fetch(base+'/health');assert.deepEqual(await health.json(),{ok:true,mode:'testnet',trading:false});
+    const health=await fetch(base+'/health');assert.deepEqual(await health.json(),{ok:true,mode:'live',trading:false});
     const home=await fetch(base+'/');assert.equal(home.status,200);assert.match(home.headers.get('content-type'),/text\/html/);assert.match(await home.text(),/봇 작업실/);
     const script=await fetch(base+'/app.js');assert.equal(script.status,200);assert.match(script.headers.get('content-type'),/javascript/);
     const vendor=await fetch(base+'/vendor/lightweight-charts.js');assert.equal(vendor.status,200);

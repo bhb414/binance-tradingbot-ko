@@ -12,3 +12,5 @@ QA.md
 .env.*
 coverage/
 .migration-backup/
+dist/
+.git-bootstrap-*/

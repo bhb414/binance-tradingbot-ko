@@ -274,9 +274,12 @@ export class TradingEngine {
       }else if(!active(o))o.fallbackDone=true;
     }
   }
-  async evaluateRules(b){
-    const r=b.runtime,results=[],markets=new Map();r.ruleSignals||={};
+  async evaluateRules(b,{phase='all',markets=new Map(),append=false,cachedOnly=false}={}){
+    const r=b.runtime,results=[];r.ruleSignals||={};
     for(const rule of b.actionRules.filter(rule=>rule.enabled)){
+      if(phase==='management'&&isEntry(rule.action)||phase==='entry'&&!isEntry(rule.action))continue;
+      if(isEntry(rule.action)&&(!r.runEnabled||r.quantity&&r.direction!==actionDirection(rule.action)))continue;
+      if(cachedOnly&&(ruleIntervals(rule.formula).length?ruleIntervals(rule.formula):['1m']).some(interval=>!markets.has(interval)))continue;
       if(isStop(rule.action)&&!r.runEnabled)continue;
       if(!isStop(rule.action)&&!isEntry(rule.action)&&(!r.quantity||actionDirection(rule.action)&&actionDirection(rule.action)!==r.direction))continue;
       const snapshots=await this.formulaMarkets(b.symbol,rule.formula,markets),{market,result,bar,interval}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage});
@@ -288,7 +291,7 @@ export class TradingEngine {
       const eligible=isStop(rule.action)?r.runEnabled:isEntry(rule.action)?r.runEnabled&&(!r.quantity||r.direction===actionDirection(rule.action))&&(!b.maxEntries||r.entries<b.maxEntries)&&this.now()-r.lastExitAt>=(rule.reentry.afterExitCooldown??rule.reentry.cooldown)*1000:true;
       results.push({rule,signal,market,bar,interval,ready:eligible&&ready&&!result.missing&&result.pass});
     }
-    r.lastEvaluation={at:this.now(),rules:results.map(x=>({id:x.rule.id,action:x.rule.action,...x.signal.lastEvaluation,ready:x.ready}))};return results;
+    r.lastEvaluation={at:this.now(),rules:[...(append?r.lastEvaluation?.rules||[]:[]),...results.map(x=>({id:x.rule.id,action:x.rule.action,...x.signal.lastEvaluation,ready:x.ready}))]};return results;
   }
   async prepareEntryLeverage(b,target){
     this.requireTrading();
@@ -343,13 +346,13 @@ export class TradingEngine {
       if(reference>0&&(take||stop)){await this.closePosition(b,take?'익절 조건':'손절 조건');return;}
     }
     const protectedPosition=await this.ensureGuards(b,info);if(r.quantity&&!protectedPosition)return;
-    const items=await this.evaluateRules(b),stops=items.filter(i=>i.ready&&isStop(i.rule.action)),exits=items.filter(i=>i.ready&&!isEntry(i.rule.action)&&!isStop(i.rule.action));
+    const markets=new Map(),management=await this.evaluateRules(b,{phase:'management',markets}),stops=management.filter(i=>i.ready&&isStop(i.rule.action)),exits=management.filter(i=>i.ready&&!isStop(i.rule.action));
     if(stops.length){await this.executeRule(b,stops[0],info);return;}
     const closing=this.ownOrders(b).some(o=>active(o)&&(o.role!=='entry'&&o.kind==='standard'||o.childOrderId||o.status==='UNKNOWN'));
     if(closing){await this.settlePending(b,info);await this.refreshAccount(true);await this.syncBotPosition(b);await this.ensureGuards(b,info);return;}
-    if(exits.length){await this.executeRule(b,exits[0],info);return;}
+    if(exits.length){await this.evaluateRules(b,{phase:'entry',markets,append:true,cachedOnly:true});await this.executeRule(b,exits[0],info);return;}
     if(this.ownOrders(b).some(o=>o.kind==='standard'&&(active(o)||o.parameters.type==='LIMIT'&&!o.fallbackDone&&['CANCELED','EXPIRED'].includes(o.status)))){await this.settlePending(b,info);await this.refreshAccount(true);await this.syncBotPosition(b);await this.ensureGuards(b,info);return;}
-    const entries=items.filter(i=>i.ready&&isEntry(i.rule.action));
+    const items=await this.evaluateRules(b,{phase:'entry',markets,append:true}),entries=items.filter(i=>i.ready&&isEntry(i.rule.action));
     if(new Set(entries.map(i=>actionDirection(i.rule.action))).size>1){this.note('진입 신호 충돌',b.name+' · 롱과 숏 진입이 동시에 충족되어 보류합니다.',b.id);r.lastEvaluation.conflict=true;return;}
     if(entries.length){const limits=await this.leverageLimits(b.symbol),leverage=r.quantity?b.leverage:entries[0].rule.leverage;if(leverage>leverageCap(limits,effectiveBudget(b))){r.lastEvaluation.budgetBlocked=true;return;}const usage=this.decorate(b);if(usage.used+usage.reserved>=effectiveBudget(b)){r.lastEvaluation.budgetBlocked=true;return;}await this.executeRule(b,entries[0],info);}
   }
