@@ -57,7 +57,7 @@ export async function createServer({dataDirectory=process.env.WORKROOM_DATA_DIR|
         if(req.method==='POST'&&pathname==='/api/connection'){json(200,await engine.connect(body));return;}
         if(req.method==='POST'&&pathname==='/api/connection/reconnect'){json(200,await engine.restoreConnection());return;}
         if(req.method==='DELETE'&&pathname==='/api/connection'){json(200,await engine.disconnect());return;}
-        if(req.method==='POST'&&pathname==='/api/trading'){json(200,await engine.setTrading(body.enabled,body.liveAcknowledgement));return;}
+        if(req.method==='POST'&&pathname==='/api/trading'){json(200,await engine.setTrading(body.enabled));return;}
         if(req.method==='POST'&&pathname==='/api/bots'){json(200,await engine.saveBot(body));return;}
         const cancelBotOrder=/^\/api\/bots\/([A-Za-z0-9_-]+)\/orders\/([A-Za-z0-9_-]{1,60})\/cancel$/.exec(pathname);
         if(req.method==='POST'&&cancelBotOrder){json(200,await engine.cancelBotOrder(cancelBotOrder[1],cancelBotOrder[2]));return;}
@@ -79,7 +79,7 @@ if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.m
     const port=Number(process.env.PORT||8896),dataDirectory=process.env.WORKROOM_DATA_DIR||path.join(appDirectory,'.runtime');
     release=await acquireServerLock(appDirectory,dataDirectory,port);
     const {server,engine}=await createServer({dataDirectory});
-    server.listen(port,'127.0.0.1',()=>{const url=`http://127.0.0.1:${server.address().port}`;console.log(`Futures Workroom\nLocal: ${url}\nBinance ${engine.state.environment}; ${engine.connected?'saved account reconnected; order execution off.':'account not connected. Check Settings.'}\nCtrl+C to stop.`);if(process.argv.includes('--open')&&process.platform==='win32')execFile('cmd.exe',['/c','start','',url],{windowsHide:true});});
+    server.listen(port,'127.0.0.1',()=>{const url=`http://127.0.0.1:${server.address().port}`;console.log(`Futures Workroom\nLocal: ${url}\nBinance ${engine.state.environment}; ${engine.connected?'saved account reconnected; order execution '+(engine.tradingEnabled?'on (saved preference).':'off (saved preference).'):'account not connected. Check Settings.'}\nCtrl+C to stop.`);if(process.argv.includes('--open')&&process.platform==='win32')execFile('cmd.exe',['/c','start','',url],{windowsHide:true});});
     server.on('error',async error=>{console.error(error.code==='EADDRINUSE'?`Port ${port} is in use. Set PORT to another port.`:error.message);await release();process.exitCode=1;});
     let closing=false;const close=async()=>{if(closing)return;closing=true;clearInterval(engine.timer);await engine.serial(async()=>{for(const b of engine.state.bots)b.runtime.runEnabled=false;await engine.checkpoint();});server.close(async()=>{await release();});server.closeIdleConnections();};process.once('SIGINT',close);process.once('SIGTERM',close);
   }catch(error){await release();console.error(error.message);process.exitCode=1;}

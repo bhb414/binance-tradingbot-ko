@@ -1,6 +1,6 @@
 import { mkdir, readFile, open, rename } from 'node:fs/promises';
 import path from 'node:path';
-export const emptyState=()=>({version:2,environment:'testnet',scope:null,nextIntent:1,bots:[],orders:[],fills:[],logs:[]});
+export const emptyState=()=>({version:2,environment:'testnet',scope:null,orderPermission:null,nextIntent:1,bots:[],orders:[],fills:[],logs:[]});
 export class StateStore {
   constructor(directory){this.directory=path.resolve(directory);this.filename=path.join(this.directory,'state.json');this.state=emptyState();this.tail=Promise.resolve();}
   async load(){await mkdir(this.directory,{recursive:true});try{const parsed=JSON.parse(await readFile(this.filename,'utf8'));if(parsed.version!==2||!['testnet','live'].includes(parsed.environment)||!Array.isArray(parsed.bots)||!Array.isArray(parsed.orders)||!Array.isArray(parsed.fills)||!Array.isArray(parsed.logs))throw new Error('저장된 실행 원장 형식을 확인해 주세요. 원본 파일은 보존했습니다.');this.state=parsed;}catch(e){if(e.code!=='ENOENT')throw e;}return this.state;}

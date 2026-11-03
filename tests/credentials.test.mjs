@@ -36,14 +36,14 @@ test('Windows DPAPI saves only ciphertext, survives a new store instance, preser
   await store.clear();assert.equal(store.saved,false);assert.equal(await store.load(),null);assert.deepEqual(await readdir(directory),[]);
 }));
 
-test('restoring credentials always turns orders and bot starts off and never includes secrets in status or the journal',async()=>{
+test('same-account permission survives restart while bot starts stay paused and keys stay private',async()=>{
   const vault=memoryCredentials(),fake=clientHarness(),store=memoryStore(),engine=await new TradingEngine(store,{clientFactory:fake.factory,credentialStore:vault}).init();
   await engine.connect({...credentials,allowTrading:true,liveAcknowledgement:'실전 주문 허용'});assert.equal(engine.tradingEnabled,true);assert.equal(vault.saved,true);
-  // Even a malicious extra field in a decrypted payload cannot restore order permission.
+  // Permission comes from the scoped journal preference, not extra fields in the key vault.
   vault.value.allowTrading=true;vault.value.liveAcknowledgement='실전 주문 허용';
   store.state.bots.push(makeBot({runtime:{runEnabled:true,quantity:0}}));
   const recovered=await new TradingEngine(memoryStore(store.state),{clientFactory:fake.factory,credentialStore:vault}).init();
-  assert.equal(recovered.connected,true);assert.equal(recovered.tradingEnabled,false);assert.equal(recovered.state.bots[0].runtime.runEnabled,false);
+  assert.equal(recovered.connected,true);assert.equal(recovered.tradingEnabled,true);assert.equal(recovered.state.bots[0].runtime.runEnabled,false);
   await recovered.tick();assert.ok(fake.calls.every(call=>['syncTime','account','positions','positionMode','openOrders'].includes(call)));
   const serialized=JSON.stringify({status:recovered.snapshot(),journal:recovered.state});assert.ok(!serialized.includes(credentials.apiKey));assert.ok(!serialized.includes(credentials.secret));
   await recovered.disconnect();assert.equal(vault.saved,false);assert.equal(recovered.connected,false);assert.equal(await vault.load(),null);
@@ -70,7 +70,7 @@ test('failed startup connections can retry safely and corrupt credentials keep t
   await corrupt.disconnect();assert.equal(vault.saved,false);
 });
 
-test('HTTP connect persists encrypted keys, a restarted server auto-connects read-only, and deletion prevents the next auto-connect',{skip:process.platform!=='win32'},()=>temporary(async directory=>{
+test('HTTP permission toggle persists across restart and key deletion clears it',{skip:process.platform!=='win32'},()=>temporary(async directory=>{
   const fake=clientHarness();let app,base,headers;
   const start=async()=>{app=await createServer({dataDirectory:directory,clientFactory:fake.factory});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+app.server.address().port;const {token}=await(await fetch(base+'/api/session')).json();headers={'X-Workroom-Token':token,'Content-Type':'application/json'};};
   const stop=async()=>{await new Promise(resolve=>app.server.close(resolve));await app.engine.stopTimer();app=null;};
@@ -80,10 +80,28 @@ test('HTTP connect persists encrypted keys, a restarted server auto-connects rea
     const connected=await fetch(base+'/api/connection',{method:'POST',headers,body:JSON.stringify({...credentials,allowTrading:true,liveAcknowledgement:'실전 주문 허용'})});assert.equal(connected.status,200);assert.equal((await status()).credentials.saved,true);
     assert.equal((await fetch(base+'/.runtime/credentials.dpapi')).status,404);assert.equal((await fetch(base+'/../backend/credentials.mjs')).status,404);
     const journal=await readFile(path.join(directory,'state.json'),'utf8');assert.ok(!journal.includes(credentials.apiKey));assert.ok(!journal.includes(credentials.secret));
-    await stop();await start();const restored=await status();assert.equal(restored.connected,true);assert.equal(restored.environment,'live');assert.equal(restored.tradingEnabled,false);assert.equal(restored.credentials.saved,true);
+    await stop();await start();const restored=await status();assert.equal(restored.connected,true);assert.equal(restored.environment,'live');assert.equal(restored.tradingEnabled,true);assert.equal(restored.credentials.saved,true);
     assert.equal(restored.credentials.storagePath,path.join(directory,'credentials.dpapi'));
     assert.ok(!JSON.stringify(restored).includes(credentials.apiKey));assert.ok(!JSON.stringify(restored).includes(credentials.secret));
     const deleted=await fetch(base+'/api/connection',{method:'DELETE',headers,body:'{}'});assert.equal(deleted.status,200);assert.equal((await status()).credentials.saved,false);
     await stop();const before=fake.calls.length;await start();assert.equal((await status()).connected,false);assert.equal(fake.calls.length,before);
   }finally{if(app)await stop();}
 }));
+
+test('permission is never granted by vault extras or carried into a different account, and off survives reconnect',async()=>{
+ const vault=memoryCredentials(),fake=clientHarness(),store=memoryStore(),engine=await new TradingEngine(store,{clientFactory:fake.factory,credentialStore:vault}).init();
+ await engine.connect(credentials);vault.value.allowTrading=true;vault.value.liveAcknowledgement='실전 주문 허용';
+ let recovered=await new TradingEngine(memoryStore(store.state),{clientFactory:fake.factory,credentialStore:vault}).init();assert.equal(recovered.tradingEnabled,false);
+ await recovered.setTrading(true);await recovered.connect(credentials);assert.equal(recovered.tradingEnabled,true);
+ await recovered.setTrading(false);recovered=await new TradingEngine(memoryStore(recovered.state),{clientFactory:fake.factory,credentialStore:vault}).init();assert.equal(recovered.tradingEnabled,false);
+ await recovered.setTrading(true);await recovered.connect({...credentials,apiKey:'a-different-fabricated-key-0000'});assert.equal(recovered.tradingEnabled,false);assert.equal(recovered.state.orderPermission.enabled,false);
+ await recovered.disconnect();assert.equal(recovered.state.orderPermission,null);
+});
+test('toggle enable is idempotent, disable is local even offline with exposure, and failed enable cannot grant permission',async()=>{
+ const vault=memoryCredentials(),fake=clientHarness(),store=memoryStore(),engine=await new TradingEngine(store,{clientFactory:fake.factory,credentialStore:vault}).init();
+ await engine.connect(credentials);await assert.rejects(()=>engine.setTrading('true'),/켜짐 또는 꺼짐/);
+ await engine.setTrading(true);const bot=makeBot({runtime:{runEnabled:true,quantity:1,entryPrice:100}});engine.state.bots.push(bot);
+ const calls=fake.calls.length;await engine.setTrading(true);assert.equal(bot.runtime.runEnabled,true);assert.equal(fake.calls.length,calls);
+ fake.setFail(true);await engine.setTrading(false);assert.equal(engine.tradingEnabled,false);assert.equal(bot.runtime.runEnabled,false);assert.equal(bot.runtime.quantity,1);assert.equal(fake.calls.length,calls);
+ await assert.rejects(()=>engine.setTrading(true));assert.equal(engine.tradingEnabled,false);assert.equal(engine.state.orderPermission.enabled,false);
+});

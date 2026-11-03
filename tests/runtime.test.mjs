@@ -71,10 +71,10 @@ test('unknown protection registration is reconciled, and a storage failure preve
   const {engine,exchange,store,id}=await harness();exchange.guardUncertain=true;await engine.startBot(id);await engine.tick();await engine.tick();assert.equal(exchange.calls.filter(c=>c.method==='placeAlgo'&&c.parameters.type==='STOP_MARKET').length,1);
   const h=await harness();await h.engine.startBot(h.id);h.store.fail=true;await assert.rejects(()=>h.engine.tick());assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,0);
 });
-test('manual positions, duplicate symbol ownership, and live arming without acknowledgement are rejected',async()=>{
+test('manual positions and duplicate symbol ownership are rejected; permission accepts boolean only',async()=>{
   const h=await harness();h.exchange.quantity=1;await assert.rejects(()=>h.engine.startBot(h.id),/포지션/);assert.equal(h.exchange.calls.length,0);
   h.exchange.quantity=0;await h.engine.startBot(h.id);const second=await h.engine.saveBot(makeBot({formula:'TRUE',budget:100}));await assert.rejects(()=>h.engine.startBot(second.id),/한 봇/);
-  await assert.rejects(()=>h.engine.connect({environment:'live',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true}),/확인 문구/);
+  await assert.rejects(()=>h.engine.connect({environment:'live',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:'true'}),/켜짐 또는 꺼짐/);
 });
 test('an exchange-triggered protective fill closes the owned position and cancels its sibling without a new entry',async()=>{
   const {engine,exchange,id}=await harness();await engine.startBot(id);await engine.tick();

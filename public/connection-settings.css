@@ -1,2 +1,13 @@
 .credential-details{margin:22px 0 14px;border-top:1px solid #e5ebde;padding-top:15px;color:#77856a;font-size:11px;line-height:1.9}.credential-details summary{cursor:pointer;color:#6b7f5c;font-size:11px}.credential-details p{margin:12px 0}.credential-details code{display:block;padding:10px 12px;border:1px solid #e5ebdc;border-radius:4px;background:#f7faf3;font:11px/1.7 Consolas,'Malgun Gothic',monospace;color:#6d7b5e;overflow-wrap:anywhere;word-break:break-all}.credential-details[open]{margin-bottom:20px}@media(max-width:540px){.credential-details{font-size:10px}.credential-details code{font-size:10px}}
 .connection-target strong{display:block;padding:12px 14px;border:1px solid #e3eadb;border-radius:5px;background:#f7faf3;color:#617b52;font-size:12px;font-weight:500}
+
+.order-permission-row{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:22px 0 0;padding:20px 0 12px;border-top:1px solid #e4ebe3}
+.order-permission-row>div{min-width:0}.order-permission-row h3{font-size:14px;color:#344f43;font-weight:600}.order-permission-row p{margin-top:7px;font-size:11px;color:#7b8b80;line-height:1.6}
+.trading-switch{display:flex;align-items:center;gap:9px;flex:none;padding:8px 0 8px 8px;min-height:44px;color:#7e8b83;font-size:12px;font-weight:600}
+.trading-switch-track{display:block;width:44px;height:25px;background:#d4dcd6;border-radius:20px;position:relative;transition:background .15s}
+.trading-switch-track i{position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #213c2926;transition:transform .15s}
+.trading-switch[aria-checked="true"]{color:#2d8964}.trading-switch[aria-checked="true"] .trading-switch-track{background:#3b9d78}.trading-switch[aria-checked="true"] .trading-switch-track i{transform:translateX(19px)}
+.trading-switch:disabled{opacity:.55}.trading-permission-help{font-size:10px;line-height:1.9;color:#7c8a7f;margin:0 0 18px}
+.api-key-editor{border-top:1px solid #e4ebe3;padding-top:17px;margin:8px 0}.api-key-editor>summary{font-size:12px;color:#637c6b;cursor:pointer}.api-key-editor form{margin-top:18px}
+@media(max-width:540px){.order-permission-row{gap:10px}.trading-switch{gap:6px;font-size:11px}.order-permission-row h3{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.trading-switch-track,.trading-switch-track i{transition:none}}

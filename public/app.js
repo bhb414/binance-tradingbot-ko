@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
 import {botPerformance} from './performance.js';
 import {botStatusMarkup} from './bot-status.js';
@@ -91,20 +92,16 @@ async function loadSymbols(){
   renderMarket();if($('#symbol-dialog').open)renderSymbolResults($('#symbol-search').value);
 }
 function renderRuntimeBanner(){
-  const connected=Boolean(serverState?.connected),enabled=Boolean(serverState?.tradingEnabled),environment=serverState?.environment==='live'?'실전':'테스트넷';
-  const botProblem=serverState?.bots?.find(bot=>bot.error);
-  const waiting=serverState?.waiting,waitText=waiting?.message||'';
-  const error=serverState?.error||(botProblem?botProblem.name+' · '+botProblem.error:null)||(!waiting?marketError:null),summary=error||waitText||('바이낸스 '+environment+' · '+(connected?'계좌 연결됨':'계좌 미연결')+' · '+(enabled?'주문 허용':'주문 실행 꺼짐'));
-  $('.rail').dataset.connectionState=error?'error':connected?(enabled?'trading':'readonly'):'disconnected';
+  const view=connectionView(serverState,marketError),{connected,enabled,environment,summary}=view;
+  $('.rail').dataset.connectionState=view.connectionState;$('.rail').dataset.healthState=view.warning?'warning':'ok';
   const status=$('#workspace-connection');status.title=summary;status.setAttribute('aria-label',summary+' · 연결 설정 열기');
-  $('#rail-environment').textContent=connected?environment:'미연결';
-  $('#rail-order-state').textContent=error?'확인 필요':waiting?'자동 재개 대기':connected?(enabled?'주문 허용':'조회 전용'):'연결 설정';
-  const footer=$('#runtime-footer');footer.textContent=environment+' · '+(error?'확인 필요':waiting?'자동 재개 대기':connected?(enabled?'주문 허용':'조회 전용'):'계좌 미연결');footer.title=summary;
+  $('#rail-environment').textContent=connected?environment:'미연결';$('#rail-order-state').textContent=view.orderLabel;
+  const health=$('#rail-health-state');health.hidden=!view.warning;health.textContent=view.healthLabel;health.title=view.warning;
+  const footer=$('#runtime-footer');footer.textContent=environment+' · '+view.orderLabel+(view.warning?' · '+view.healthLabel:'');footer.title=summary;
   $('.rail [data-page="settings"].nav-item').title=summary;
   $('.office-local-tag').textContent='BINANCE · '+environment;
   $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(enabled?'주문 실행 가능':'API 연결·주문 허용 필요');
 }
-
 function goPage(page) {
   if (!['home','bots','activity','settings'].includes(page)) page='home';
   if(currentPage==='home'&&page!=='home')persistChartView();
