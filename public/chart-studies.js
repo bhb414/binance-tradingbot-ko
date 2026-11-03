@@ -1,3 +1,4 @@
+import {randomId} from './id.js';
 import {heikinAshi,formulaSeries} from './indicators.js';
 import {compileFormula} from './formula.js';
 
@@ -23,7 +24,7 @@ export const STUDIES={
 
 export function createStudy(type,overrides={}){
   const definition=STUDIES[type];if(!definition)throw new Error('지원하지 않는 지표입니다.');
-  return validateStudy({id:'study-'+crypto.randomUUID(),type,visible:true,source:definition.defaultSource||'close',candle:'chart',timeframes:TIMEFRAMES.map(([key])=>key),params:Object.fromEntries(definition.fields.map(field=>[field.key,field.value])),styles:Object.fromEntries(definition.plots.map(item=>[item.key,{color:item.color,negative:item.negative||'#d98e9a',width:1,lineStyle:item.lineStyle||0,visible:true}])),...overrides});
+  return validateStudy({id:'study-'+randomId(),type,visible:true,source:definition.defaultSource||'close',candle:'chart',timeframes:TIMEFRAMES.map(([key])=>key),params:Object.fromEntries(definition.fields.map(field=>[field.key,field.value])),styles:Object.fromEntries(definition.plots.map(item=>[item.key,{color:item.color,negative:item.negative||'#d98e9a',width:1,lineStyle:item.lineStyle||0,visible:true}])),...overrides});
 }
 export function validateStudy(value){
   const definition=STUDIES[value?.type];if(!definition||typeof value.id!=='string'||!/^[\w-]{1,80}$/.test(value.id))throw new Error('지표 설정 형식을 확인해 주세요.');

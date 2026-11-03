@@ -1,10 +1,11 @@
+import {randomId} from './id.js';
 export const ACTIONS = Object.freeze({ENTER_LONG:'롱 진입',ENTER_SHORT:'숏 진입',EXIT_LONG:'롱 정리',EXIT_SHORT:'숏 정리',CLOSE_ALL:'전체 정리',STOP_BOT:'봇 정지'});
 export const isEntry = action => action==='ENTER_LONG'||action==='ENTER_SHORT';
 export const isStop = action => action==='STOP_BOT';
 export const actionDirection = action => action.endsWith('_LONG')?'LONG':action.endsWith('_SHORT')?'SHORT':null;
 export const defaultOrder = () => ({type:'LIMIT',price:'bid',ticks:0,timeout:15,remainder:'cancel',postOnly:true});
 export function makeActionRule(overrides={}) {
-  return {id:globalThis.crypto.randomUUID(),enabled:true,action:'ENTER_LONG',formula:'',formulaVersion:2,sizePercent:25,leverage:3,order:defaultOrder(),reentry:{mode:'rearm',cooldown:60,afterExitCooldown:0},...overrides};
+  return {id:randomId(),enabled:true,action:'ENTER_LONG',formula:'',formulaVersion:2,sizePercent:25,leverage:3,order:defaultOrder(),reentry:{mode:'rearm',cooldown:60,afterExitCooldown:0},...overrides};
 }
 export function upgradeActions(bot) {
   if(Array.isArray(bot.actionRules)&&bot.actionRules.some(rule=>rule&&isEntry(rule.action)&&rule.leverage==null))bot={...bot,actionRules:bot.actionRules.map(rule=>rule&&isEntry(rule.action)&&rule.leverage==null?{...rule,leverage:bot.leverage||3}:rule)};

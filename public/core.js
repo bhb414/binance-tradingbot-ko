@@ -1,3 +1,4 @@
+import {randomId} from './id.js';
 import { compileFormula, DEFAULT_FORMULA, formulaTimeframes, FORMULA_TIMEFRAMES } from './formula.js';
 import { ACTIONS, isEntry, isStop } from './actions.js';
 import { BUDGET_MODES,effectiveBudget } from './budget.js';
@@ -16,7 +17,7 @@ export const SYMBOLS = [
 export const METRICS = { close: '종가', open: '시가', high: '고가', low: '저가', volume: '거래량', sma: '단순이동평균', ema: '지수이동평균', rsi: 'RSI', bb_upper: '볼린저 상단', bb_lower: '볼린저 하단', atr: 'ATR', profit: '포지션 수익률' };
 export const OPERATORS = { gt: '>', gte: '≥', lt: '<', lte: '≤', eq: '=', cross_up: '상향돌파', cross_down: '하향돌파' };
 export const INTERVALS = FORMULA_TIMEFRAMES;
-export const uid = () => globalThis.crypto.randomUUID();
+export const uid = () => randomId();
 export const makeCondition = () => ({ id: uid(), type: 'condition', metric: 'close', period: 20, timeframe: '15m', offset: 0, candle: 'closed', operator: 'cross_up', targetType: 'metric', targetMetric: 'ema', targetPeriod: 20, targetTimeframe: '15m', targetOffset: 0, targetCandle: 'closed', value: 30 });
 export const makeGroup = () => ({ id: uid(), type: 'group', logic: 'AND', children: [makeCondition()] });
 export function makeBot(overrides = {}) {

@@ -3,7 +3,8 @@ import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
 import {botPerformance} from './performance.js';
 import {botStatusMarkup} from './bot-status.js';
-import { installConnectionUI,renderConnection } from './connection-ui.js';
+import { installConnectionUI,renderConnection,setConnectionLocal } from './connection-ui.js';
+import {installNetworkUI} from './network-ui.js';
 import { SYMBOLS, makeBot, validateBot, describeRule, budgetUsage, BUDGET_MODES, effectiveBudget } from './core.js';
 import { upgradeBot, applyWholeTimeframe } from './formula.js';
 import {ruleIntervals,evaluateRuleFormula} from './formula-runtime.js';
@@ -558,6 +559,7 @@ $('#check-app-update').addEventListener('click',async()=>{
 $$('dialog:not(#bot-dialog)').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}}));
 window.addEventListener('hashchange',()=>goPage(location.hash.slice(1)));
 installConnectionUI({refresh:syncWorkspace,toast});
+installNetworkUI({toast,onContext:setConnectionLocal});
 installStudyUI({notify:toast});
 manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
 appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});

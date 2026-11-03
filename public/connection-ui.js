@@ -1,6 +1,7 @@
 import {api} from './api.js';
 import {connectionView} from './connection-state.js';
-let state=null,tradingBusy=false,connectionBusy=false,lastConnected=null;
+let state=null,tradingBusy=false,connectionBusy=false,lastConnected=null,remote=false;
+export function setConnectionLocal(local){remote=local===false;if(state)renderConnection(state);}
 const $=s=>document.querySelector(s);
 function showError(message){$('#connection-error').textContent=message;$('#connection-error').hidden=!message;}
 export function renderConnection(value){
@@ -10,15 +11,17 @@ export function renderConnection(value){
  $('#credential-storage-path').textContent=state.credentials?.storagePath||'프로그램 폴더/.runtime/credentials.dpapi';
  $('#connection-position-mode').textContent=view.connected?(state.positionMode==='HEDGE'?'헤지 모드':'단방향 모드'):'연결 후 자동 확인';
  $('#connection-balance').textContent=state.account?state.account.walletBalance.toLocaleString('en-US')+' USDT':'연결 후 조회';
- $('#disconnect-account').disabled=connectionBusy||!state.connected&&!state.credentials?.saved;
+ $('#disconnect-account').disabled=remote||connectionBusy||!state.connected&&!state.credentials?.saved;
  $('#reconnect-account').hidden=state.connected||!state.credentials?.saved||state.environment!=='live';
- $('#reconnect-account').disabled=connectionBusy;
- $('#connect-account').disabled=connectionBusy;$('#connect-account').textContent=connectionBusy?'연결 확인 중…':state.connected?'새 키 연결·저장':'연결·암호화 저장';
+ $('#reconnect-account').disabled=remote||connectionBusy;
+ $('#connect-account').disabled=remote||connectionBusy;$('#connect-account').textContent=connectionBusy?'연결 확인 중…':state.connected?'새 키 연결·저장':'연결·암호화 저장';
  const toggle=$('#trading-toggle');toggle.setAttribute('aria-checked',String(view.permission));toggle.setAttribute('aria-busy',String(tradingBusy));toggle.disabled=tradingBusy||connectionBusy||!view.connected&&!view.permission;
  $('#trading-toggle-state').textContent=tradingBusy?'변경 중…':view.permission?'켜짐':'꺼짐';
  $('#trading-permission-status').textContent=view.connected?(view.enabled?'수동 주문·봇 주문 실행 가능':'새 주문 전송·봇 조건식 매매 중지'):view.permission?'허용 설정 저장됨 · 계좌 재연결 대기':'계좌 연결 후 켤 수 있습니다.';
  if(lastConnected!==view.connected){$('#connection-key-editor').open=!view.connected;lastConnected=view.connected;}
  $('#connection-key-summary').textContent=view.connected?'API 키 변경':'API 키 등록';
+ $('#connection-key-editor').hidden=remote;const details=$('.credential-details');if(details)details.hidden=remote;
+ let note=$('#connection-remote-note');if(!note){note=document.createElement('p');note.id='connection-remote-note';note.className='connection-remote-note';note.textContent='API 키 등록·변경·삭제는 서버 PC에서 해 주세요.';$('#connection-key-editor').before(note);}note.hidden=!remote;
 }
 export function installConnectionUI({refresh,toast}){
  $('#trading-toggle').addEventListener('click',async()=>{
