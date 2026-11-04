@@ -281,3 +281,14 @@ test('shared native fills track each owner excursion once and retain linkage thr
  const report=buildTradeHistory({state:h.e.state,now:h.x.now});assert.equal(report.summary.excursions.collected,2);for(const t of report.trades){assert.equal(t.excursion.status,'observed');assert.ok(Math.abs(t.excursion.maxProfit-q*10)<1e-7);assert.ok(Math.abs(t.excursion.maxLoss)<1e-7);}
  const before=JSON.stringify(h.e.state.tradeExcursions);await h.e.tick();assert.equal(JSON.stringify(h.e.state.tradeExcursions),before);
 });
+
+test('a shared reduce-only race waits for delayed native fills and allocates the completed close once',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.a.actionRules=[rule('EXIT_LONG')];h.b.runtime.runEnabled=false;const send=h.client.placeOrder,load=h.client.tradesAfter;let hidden=false;
+ h.client.placeOrder=async p=>{if(p.reduceOnly==='true'){h.x.calls.push({...p});h.trade('SELL',h.x.quantity,{reduceOnly:true});hidden=true;throw new BinanceError('ReduceOnly Order is rejected.',{code:-2022,status:400});}return send(p);};h.client.tradesAfter=async(...args)=>hidden?[]:load(...args);
+ await h.e.tick();assert.equal(h.a.runtime.runEnabled,true);assert.ok(h.a.runtime.closeRecovery);assert.equal(h.a.runtime.error,null);assert.ok(h.a.runtime.syncHold);const calls=h.x.calls.length;await h.e.tick();assert.equal(h.x.calls.length,calls);
+ hidden=false;h.x.now+=4000;await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.b.runtime.runEnabled,false);assert.equal(h.a.runtime.error,null);assert.equal(h.a.runtime.closeRecovery,undefined);const exits=h.e.state.fills.filter(f=>f.role==='exit'&&f.quantity);assert.equal(exits.length,2);await h.e.tick();assert.equal(h.e.state.fills.filter(f=>f.role==='exit'&&f.quantity).length,exits.length);assert.equal(h.x.calls.length,calls);assert.ok(q>0);
+});
+test('an account-scoped rejection is not dismissed because the requesting bot itself is flat',async()=>{
+ const h=await twoBots();h.trade('SELL',h.a.runtime.quantity,{reduceOnly:true});await h.e.tick(); // Close all remaining holdings, then create a manual-only share.
+ h.trade('SELL',h.x.quantity,{reduceOnly:true});await h.e.tick();h.trade('BUY',1);await h.e.tick();assert.equal(h.a.runtime.quantity,0);h.a.actionRules=[rule('EXIT_LONG','account')];const send=h.client.placeOrder;h.client.placeOrder=async p=>{if(p.reduceOnly==='true'){h.x.calls.push({...p});throw new BinanceError('ReduceOnly Order is rejected.',{code:-2022,status:400});}return send(p);};await h.e.tick();assert.ok(h.a.runtime.closeRecovery);assert.equal(h.a.runtime.runEnabled,true);h.x.now+=16000;await h.e.tick();assert.equal(h.a.runtime.runEnabled,false);assert.match(h.a.runtime.error,/ReduceOnly/);assert.equal(h.x.quantity,1);
+});
