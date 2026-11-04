@@ -178,3 +178,10 @@ test('a single held leg blocks archiving the group and its entire allocation rem
  const {engine:e}=await harness(),p=await e.saveBot(config({budget:100}));await e.startBot(p.id);await e.tick();await e.pauseBot(p.id);
  await assert.rejects(()=>e.serial(()=>e.budgetSelection.set(p.id,false)),/보유 포지션/);assert.equal(e.allocatedBudget(),100);assert.notEqual(e.multi.get(p.id).budgetIncluded,false);
 });
+
+test('maker rejection on one multi target keeps the group running and retries only that unaccepted target',async()=>{
+ const {engine:e,x,client}=await harness(),p=config(),r=p.actionRules[0];r.targets[0].order={type:'LIMIT',price:'bid',ticks:0,timeout:10,remainder:'cancel',postOnly:true};const saved=await e.saveBot(p),send=client.placeOrder.bind(client),attempts=[];
+ client.placeOrder=async parameters=>{attempts.push({...parameters});if(parameters.symbol==='BTCUSDT'&&attempts.filter(p=>p.symbol==='BTCUSDT').length===1)throw new BinanceError('maker',{code:-5022,status:400});return send(parameters);};await e.startBot(saved.id);await e.tick();const root=e.multi.get(saved.id),workers=e.multi.workers(root);
+ assert.equal(root.runtime.runEnabled,true);assert.equal(root.runtime.error,null);assert.equal(workers[0].runtime.error,null);assert.equal(workers[0].runtime.quantity,0);assert.ok(workers[1].runtime.quantity>0);assert.ok(e.multi.view(root).runtime.orderRetry);
+ x.now+=4999;await e.tick();assert.equal(attempts.length,2);x.now++;await e.tick();assert.equal(attempts.length,3);assert.equal(attempts.filter(p=>p.symbol==='ETHUSDT').length,1);assert.ok(workers[0].runtime.quantity>0);assert.equal(e.multi.view(root).runtime.orderRetry,null);assert.equal(root.runtime.runEnabled,true);
+});

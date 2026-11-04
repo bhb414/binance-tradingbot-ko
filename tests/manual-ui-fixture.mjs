@@ -127,5 +127,10 @@ if(process.argv.includes('--storage-outage')){
  process.stdin.setEncoding('utf8');process.stdin.on('data',input=>{if(input.trim()==='recover'){blocked=false;app.engine.serial(()=>app.engine.storage.recover({force:true})).then(ok=>console.log('Mock storage recovery: '+ok));}});
 }
 if(process.argv.includes('--shared')){for(const b of state.bots.filter(b=>!b.multiBotId))b.actionRules=[makeActionRule({action:'EXIT_LONG',formula:'FALSE@1m',sizePercent:100,closeScope:'bot'})];for(const p of state.multiBots||[])for(const rule of p.actionRules)for(const target of rule.targets||[]){target.action='EXIT_LONG';target.sizePercent=100;target.closeScope='bot';}}
+if(process.argv.includes('--post-only')){
+ const {BinanceError}=await import('../backend/binance.mjs');
+ const bot=await app.engine.saveBot(makeBot({id:'ui-post-only',name:'메이커 재시도 예시',symbol:'BTCUSDT',budget:40,exit:{takeProfitEnabled:false,stopLossEnabled:false},actionRules:[makeActionRule({formula:'TRUE@1m',order:{type:'LIMIT',price:'bid',ticks:0,timeout:5,remainder:'cancel',postOnly:true}})]}));
+ app.engine.client.placeOrder=async()=>{throw new BinanceError('Post Only rejected',{code:-5022,status:400});};await app.engine.startBot(bot.id);await app.engine.tick();
+}
 app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
 process.once('SIGINT',()=>{process.stdin.pause();app.server.close();});

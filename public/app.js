@@ -267,7 +267,7 @@ function renderHomeTable(){
 }
 
 function pixelScene(bot,mini=false){return `<svg class="${mini?'pixel-mini':'pixel-scene'}" viewBox="0 0 260 165" role="img" aria-label="${esc(bot.name)} 사람 캐릭터"><rect x="25" y="130" width="210" height="3" fill="#dbe4d2"/>${roomAvatar(bot,130,84)}</svg>`;}
-function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(b.runtime?.runEnabled&&b.runtime.entryBlocked)return b.quantity>0?"조건 감시·보유 포지션 관리 중":"조건 감시 중";if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
+function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(b.runtime?.orderRetry)return b.runtime.orderRetry.label;if(b.runtime?.runEnabled&&b.runtime.entryBlocked)return b.quantity>0?"조건 감시·보유 포지션 관리 중":"조건 감시 중";if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
 function renderBots(){
   const operating=bots.filter(budgetIncluded),assigned=operating.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=operating.filter(b=>b.status==='running').length;
   $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=operating.length;$('#running-count').textContent=running;$('#paused-count').textContent=operating.length-running;
@@ -408,7 +408,7 @@ function renderEditorStatus() {
   if(!draft)return;const stored=bots.find(b=>b.id===draft.id)||draft;
   const saved=bots.some(b=>b.id===draft.id),controls=$('#editor-run-controls');controls.hidden=!saved;
   $('#editor-start-bot').disabled=!saved||stored.budgetIncluded===false||!!stored.runtime?.runEnabled;$('#editor-pause-bot').disabled=!stored.runtime?.runEnabled;
-  $('#editor-run-state').textContent=stored.budgetIncluded===false?'보관 · 운용예산 미포함':stored.runtime?.runEnabled?(stored.runtime.entryBlocked?.label||'신규 진입 허용'):stored.quantity>0?'신규 진입 정지 · 보유 관리 중':'시작 대기';
+  $('#editor-run-state').textContent=stored.budgetIncluded===false?'보관 · 운용예산 미포함':stored.runtime?.runEnabled?(stored.runtime.orderRetry?.label||stored.runtime.entryBlocked?.label||'신규 진입 허용'):stored.quantity>0?'신규 진입 정지 · 보유 관리 중':'시작 대기';
   $('#editor-status').innerHTML='<div class="editor-status-top">'+pixelScene(stored,true)+'<div><h3>'+esc(stored.name)+' · '+esc(stored.symbol)+'</h3><p>'+esc(taskLabel(stored))+'</p></div></div>'+botStatusMarkup(stored,serverState,positionInsights)+(stored.budgetWarning?'<p class="budget-overflow-note">'+esc(stored.budgetWarning)+'</p>':'')+'<div class="bot-log">'+(logs.filter(l=>l.botId===stored.id&&(!stored.statsReset||l.at>=stored.statsReset.at)).slice(0,15).map(l=>'<p><time>'+time(l.at)+'</time>'+esc(l.message)+'</p>').join('')||'<p>아직 이 봇의 활동 기록이 없습니다.</p>')+'</div>';
 }
 function setEditorTab(tab){editorTab=tab;$$('[data-editor-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.editorTab===tab);b.setAttribute('aria-selected',b.dataset.editorTab===tab);});$$('.editor-panel').forEach(p=>p.hidden=p.id!==`editor-${tab}`);$('.editor-body').scrollTop=0;}

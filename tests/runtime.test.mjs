@@ -682,3 +682,47 @@ test('rate-limited external-close history resumes and records the confirmed redu
 });
 
 test('legacy externally closed holdings migrate to sharing without claiming a later manual position',async()=>{const h=await externalCloseHarness('SHORT');await h.engine.pauseBot(h.id);h.close(h.original,110,.1);h.rows.push({...h.rows[0],id:9001,orderId:9001,side:'BUY',qty:'10',price:'100',time:h.exchange.now+1});h.exchange.quantity=10;h.exchange.now+=100;h.engine.client.tradesAfter=async(s,id)=>h.rows.filter(t=>Number(t.id)>=id);await h.engine.refreshAccount(true);await h.engine.syncBotPosition(h.b,true);assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.error,null);assert.equal(h.b.runtime.runEnabled,false);assert.equal(h.engine.shared.book(h.b.symbol).manual.LONG.quantity,10);});
+
+const makerRule=(action='ENTER_LONG',formula='TRUE',extra={})=>marketRule(action,formula,{order:{type:'LIMIT',price:action==='ENTER_LONG'?'bid':'ask',ticks:0,timeout:2,remainder:'market',postOnly:true},...extra});
+test('definite maker rejection keeps all reentry modes running and retries a fresh price without consuming the signal',async()=>{
+ for(const mode of ['rearm','bar','cooldown']){
+  const entry=makerRule('ENTER_LONG','TRUE',{reentry:{mode,cooldown:1,afterExitCooldown:0}}),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};
+  const send=h.engine.client.placeOrder.bind(h.engine.client),attempts=[];h.engine.client.placeOrder=async p=>{attempts.push({...p});if(attempts.length===1)throw new BinanceError('Post Only rejected',{code:-5022,status:400});return send(p);};
+  await h.engine.startBot(h.id);await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(b.runtime.ruleSignals[entry.id].fired,false);assert.equal(b.runtime.lastEntryAt,0);assert.equal(b.runtime.entries,0);
+  const rejected=h.engine.ownOrders(b)[0];assert.equal(rejected.status,'REJECTED');for(const state of h.store.saved.filter(s=>s.orders.some(o=>o.id===rejected.id&&o.status==='REJECTED')))assert.equal(state.bots.find(x=>x.id===b.id).runtime.ruleSignals[entry.id].fired,false);assert.equal(rejected.errorCode,-5022);assert.equal(rejected.appliedQty,0);assert.equal(rejected.fallbackDone,true);assert.equal(h.engine.decorate(b).reserved,0);assert.match(h.engine.decorate(b).runtime.orderRetry.label,/메이커/);
+  h.exchange.now+=4999;await h.engine.tick();assert.equal(attempts.length,1);
+  h.engine.client.book=async()=>({bids:[['99.5','10']],asks:[['99.6','10']]});h.exchange.now++;await h.engine.tick();assert.equal(attempts.length,2);assert.equal(attempts[1].price,'99.5');assert.equal(attempts[1].timeInForce,'GTX');assert.notEqual(attempts[0].newClientOrderId,attempts[1].newClientOrderId);
+  assert.equal(h.engine.decorate(b).runtime.orderRetry,null);assert.equal(b.runtime.ruleSignals[entry.id].fired,true);assert.equal(h.engine.state.orders.filter(o=>o.parent===rejected.id).length,0);
+  await h.engine.tick();assert.equal(attempts.length,2);
+ }
+});
+test('maker retry backoff is bounded and repeated rejected orders never reserve capital or spam each tick',async()=>{
+ const entry=makerRule(),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};let attempts=0;
+ h.engine.client.placeOrder=async()=>{attempts++;throw new BinanceError('Post Only rejected',{code:-5022,status:400});};await h.engine.startBot(h.id);await h.engine.tick();
+ for(const seconds of [5,10,20,30,30]){const r=b.runtime.orderRetries[entry.id];assert.equal(r.retryAt-h.exchange.now,seconds*1000);h.exchange.now=r.retryAt-1;await h.engine.tick();const before=attempts;h.exchange.now++;await h.engine.tick();assert.equal(attempts,before+1);}
+ assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(h.engine.decorate(b).reserved,0);assert.ok(h.engine.state.logs.filter(l=>l.title==='메이커 주문 재시도 대기').length<=3);
+});
+test('a false condition cancels a deferred maker attempt instead of sending at its deadline',async()=>{
+ const entry=makerRule('ENTER_LONG','종가 > 99'),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};let attempts=0;
+ h.engine.client.placeOrder=async()=>{attempts++;throw new BinanceError('maker',{code:-5022,status:400});};await h.engine.startBot(h.id);await h.engine.tick();h.exchange.signalClose=98;h.exchange.now+=6000;await h.engine.tick();
+ assert.equal(attempts,1);assert.equal(b.runtime.runEnabled,true);assert.equal(h.engine.decorate(b).runtime.orderRetry,null);assert.equal(b.runtime.orderRetries[entry.id],undefined);
+});
+test('an exit maker retry retains the holding, blocks fresh entries and preserves the accepted limit timeout policy',async()=>{
+ const entry=marketRule('ENTER_LONG','TRUE',{reentry:{mode:'cooldown',cooldown:0,afterExitCooldown:0}}),exit=makerRule('EXIT_LONG','종가 > 100'),h=await actionHarness([entry,exit]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();const held=b.runtime.quantity;
+ const send=h.engine.client.placeOrder.bind(h.engine.client),attempts=[];let rejected=false;h.engine.client.placeOrder=async p=>{attempts.push({...p});if(p.side==='SELL'&&!rejected){rejected=true;throw new BinanceError('maker',{code:-5022,status:400});}return send(p);};
+ h.exchange.signalClose=101;h.exchange.now+=1000;await h.engine.tick();assert.equal(b.runtime.quantity,held);assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);
+ h.exchange.now+=4000;await h.engine.tick();assert.equal(attempts.length,1);assert.equal(b.runtime.quantity,held);
+ h.exchange.now+=1000;await h.engine.tick();assert.equal(attempts.length,2);assert.equal(attempts[1].type,'LIMIT');
+ h.exchange.now+=3000;await h.engine.tick();assert.equal(attempts.length,3);assert.equal(attempts[2].type,'MARKET');assert.equal(attempts[2].quantity,String(held));assert.equal(b.runtime.quantity,0);assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);
+});
+test('maker retry timestamps survive restart without an early resend',async()=>{
+ const entry=makerRule(),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};h.engine.client.placeOrder=async()=>{throw new BinanceError('maker',{code:-5022,status:400});};
+ await h.engine.startBot(h.id);await h.engine.tick();const recovered=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});await recovered.startBot(h.id);await recovered.tick();assert.equal(h.exchange.calls.length,0);
+ h.exchange.now+=5000;await recovered.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(recovered.bot(h.id).runtime.error,null);
+});
+test('an uncertain maker response still pauses and reconciles acceptance without resending',async()=>{
+ const entry=makerRule(),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};const send=h.engine.client.placeOrder.bind(h.engine.client);
+ h.engine.client.placeOrder=async p=>{await send(p);throw new BinanceError('unknown acceptance',{code:-5022,status:503,uncertain:true});};await h.engine.startBot(h.id);await h.engine.tick();const order=h.engine.ownOrders(b)[0];
+ assert.equal(order.status,'UNKNOWN');assert.equal(order.errorKind,undefined);assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.orderRetries?.[entry.id],undefined);
+ h.exchange.fill(order.id,Number(order.parameters.quantity));h.exchange.now+=60000;await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(b.runtime.quantity,Number(order.parameters.quantity));
+});

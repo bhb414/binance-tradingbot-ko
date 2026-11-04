@@ -180,3 +180,10 @@ test('saved profiles cannot bypass budget selection with a direct bot-attributed
  assert.throws(()=>h.e.manual.validateBotPlan({action:'OPEN',margin:'CROSSED',leverage:2,direction:'LONG'}, {botId:b.id}),/보관/);
  await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(b.id,'true')),/선택/);assert.equal(h.x.calls.length,0);
 });
+
+test('maker rejection during a shared-position exit keeps all bots running and retries only the owner share',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity,exit=makeActionRule({action:'EXIT_LONG',formula:'TRUE@1m',sizePercent:100,closeScope:'bot',order:{type:'LIMIT',price:'ask',ticks:0,timeout:5,remainder:'cancel',postOnly:true}});h.a.actionRules=[exit];
+ const send=h.client.placeOrder.bind(h.client),attempts=[];h.client.placeOrder=async p=>{attempts.push({...p});if(attempts.length===1)throw new BinanceError('maker',{code:-5022,status:400});return send(p);};
+ await h.e.tick();assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.a.runtime.error,null);assert.equal(h.a.runtime.quantity,q);assert.equal(h.b.runtime.quantity,q);assert.equal(h.e.decorate(h.a).runtime.orderRetry.role,'exit');
+ h.x.now+=4999;await h.e.tick();assert.equal(attempts.length,1);h.x.now++;await h.e.tick();assert.equal(attempts.length,2);assert.equal(Number(attempts[1].quantity),q);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,q);assert.equal(h.a.runtime.error,null);assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.e.decorate(h.a).runtime.orderRetry,null);
+});

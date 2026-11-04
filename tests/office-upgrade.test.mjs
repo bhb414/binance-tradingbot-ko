@@ -29,3 +29,9 @@ test('minimum-order entry waits remain running and show their specific reason in
  const html=officeRosterMarkup([bot],{icon:name=>{names.push(name);return '<svg/>';}});
  assert.match(html,/진입 대기 · 최소 금액/);assert.doesNotMatch(html,/확인 필요/);assert.ok(names.includes('pause'));assert.doesNotMatch(html,/has-error/);
 });
+
+test('maker retries appear as waiting information while actual bot errors retain priority',()=>{
+ const bot={id:'maker',name:'메이커',symbol:'BTCUSDT',quantity:0,runtime:{runEnabled:true,orderRetry:{label:'롱 진입 · 메이커 주문 대기',message:'5초 뒤에도 조건이 충족되면 최신 호가로 다시 시도합니다.'}}};
+ const html=officeRosterMarkup([bot],{icon:()=>'<svg/>'});assert.match(html,/메이커 주문 대기/);assert.match(html,/최신 호가/);assert.doesNotMatch(html,/확인 필요|has-error/);
+ assert.match(officeRosterMarkup([{...bot,error:'접수 여부 미확인'}],{icon:()=>'<svg/>'}),/확인 필요/);
+});

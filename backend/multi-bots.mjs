@@ -22,7 +22,7 @@ export class MultiBots{
  syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;b.budgetIncluded=p.budgetIncluded;}}return allocations;}
  view(p){
   const members=this.workers(p).map(b=>({...this.e.decorate(b),alias:b.multiAlias,parentId:p.id})),held=members.filter(b=>b.quantity>0),realized=members.reduce((s,b)=>s+Number(b.runtime.realized||0),0),used=members.reduce((s,b)=>s+b.used,0),reserved=members.reduce((s,b)=>s+b.reserved,0),pnl=members.reduce((s,b)=>s+b.pnl,0),orders=members.some(b=>this.e.ownOrders(b).some(active));
-  return {...p,statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
+  return {...p,statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,orderRetry:members.find(b=>b.runtime.orderRetry)?.runtime.orderRetry||null,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
@@ -36,7 +36,7 @@ export class MultiBots{
   const keep=new Set(p.legs.map(leg=>memberId(p,leg)));e.state.bots=e.state.bots.filter(b=>!oldIds.has(b.id)||keep.has(b.id));
   for(const leg of p.legs){
    let b=e.state.bots.find(b=>b.id===memberId(p,leg));if(!b){b={...makeBot({id:memberId(p,leg),symbol:leg.symbol,actionRules:[],exit:p.exit}),runtime:{runEnabled:false,quantity:0,entryPrice:0,entries:0,realized:0,lastExitAt:0,lastEntryAt:0,ruleSignals:{},positionEpoch:0,error:null,syncHold:false}};e.state.bots.push(b);}
-   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;if(!budgetIncluded(p))b.runtime.managementEnabled=false;
+   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;b.runtime.orderRetries={};if(!budgetIncluded(p))b.runtime.managementEnabled=false;
    for(const rule of p.actionRules)if(JSON.stringify(old?.actionRules.find(r=>r.id===rule.id))!==JSON.stringify(rule))delete b.runtime.ruleSignals[rule.id];
   }
   if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}this.syncBudgets(p);
@@ -66,11 +66,11 @@ export class MultiBots{
  targetItem(p,rule,target,evaluation){
   const b=this.e.state.bots.find(b=>b.id===memberId(p,{alias:target.alias})),r=b.runtime,entry=isEntry(target.action),direction=actionDirection(target.action),position=this.e.rulePosition(b,target);
   const signal=r.ruleSignals[rule.id]||={fired:false,lastBar:null,lastExecutionAt:0,epoch:position.positionEpoch};if(!entry&&signal.epoch!==position.positionEpoch){signal.fired=false;signal.lastBar=null;signal.epoch=position.positionEpoch;}
-  if(!evaluation.result.missing&&!evaluation.result.pass){signal.fired=false;if(entry&&r.entryBlocked?.ruleId===rule.id)r.entryBlocked=null;}
+  this.e.postOnly.observe(b,{id:rule.id},evaluation.result);if(!evaluation.result.missing&&!evaluation.result.pass){signal.fired=false;if(entry&&r.entryBlocked?.ruleId===rule.id)r.entryBlocked=null;}
   signal.lastEvaluation={at:this.e.now(),bar:evaluation.bar,interval:evaluation.interval,pass:evaluation.result.pass,missing:evaluation.result.missing};
   const ready=rule.reentry.mode==='bar'?signal.lastBar!==evaluation.bar:rule.reentry.mode==='cooldown'?this.e.now()-signal.lastExecutionAt>=rule.reentry.cooldown*1000:!signal.fired;
   const eligible=entry?p.runtime.runEnabled&&(!r.quantity||r.direction===direction)&&(!p.maxEntries||r.entries<p.maxEntries)&&this.e.now()-Number(r.lastExitAt||0)>=Number(rule.reentry.afterExitCooldown||0)*1000:position.quantity>0&&(!direction||position.direction===direction);
-  return {worker:b,rule:{...target,id:rule.id,reentry:rule.reentry},signal,bar:evaluation.bar,interval:evaluation.interval,ready:eligible&&ready&&!evaluation.result.missing&&evaluation.result.pass};
+  return {worker:b,rule:{...target,id:rule.id,reentry:rule.reentry},signal,bar:evaluation.bar,interval:evaluation.interval,ready:eligible&&ready&&!evaluation.result.missing&&evaluation.result.pass&&this.e.postOnly.ready(b,rule)};
  }
  async execute(p,item){
   const e=this.e,b=item.worker;if(isEntry(item.rule.action)&&e.ownOrders(b).some(o=>active(o)&&o.kind==='standard'))return;
@@ -97,7 +97,7 @@ export class MultiBots{
   if(!p.runtime.runEnabled)return;
   const batches=[],directions=new Map();
   for(const rule of p.actionRules.filter(r=>r.enabled&&r.action==='MULTI')){
-   const targets=rule.targets.filter(t=>t.enabled&&isEntry(t.action));if(!targets.length)continue;const evaluation=await evaluate(rule),items=targets.map(t=>this.targetItem(p,rule,t,evaluation)).filter(item=>item.ready&&!managed.has(item.worker.id)&&!e.ownOrders(item.worker).some(o=>active(o)&&o.kind==='standard'));
+   const targets=rule.targets.filter(t=>t.enabled&&isEntry(t.action));if(!targets.length)continue;const evaluation=await evaluate(rule),items=targets.map(t=>this.targetItem(p,rule,t,evaluation)).filter(item=>item.ready&&!managed.has(item.worker.id)&&!e.postOnly.pending(item.worker).some(record=>record.role==='exit')&&!e.ownOrders(item.worker).some(o=>active(o)&&o.kind==='standard'));
    p.runtime.lastEvaluation.rules.push({id:rule.id,...evaluation.result,at:e.now()});for(const item of items){const list=directions.get(item.worker.id)||new Set();list.add(actionDirection(item.rule.action));directions.set(item.worker.id,list);}batches.push(items);
   }
   for(const batch of batches){
