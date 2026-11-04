@@ -573,7 +573,7 @@ $('#export-bots').addEventListener('click',()=>download('futures-workroom-bots.j
 $('#help-button').addEventListener('click',()=>{goPage('settings');});
 $('#check-app-update').addEventListener('click',async()=>{
  const button=$('#check-app-update'),status=$('#app-update-status');button.disabled=true;status.textContent='새 버전을 확인하는 중…';
- try{const result=await api('/app/update');status.textContent='현재 '+result.version+(result.revision?' ('+result.revision+')':' · ZIP 설치')+' · '+(result.requiresVerification?'프로그램 종료 후 update.cmd를 실행하면 설치본을 확인하고 업데이트합니다.':result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
+ try{const result=await api('/app/update');status.textContent='현재 v'+result.version+' · 정식 릴리즈 v'+result.latest+' · '+(result.available?'새 버전이 있습니다.':result.ahead?'설치 버전이 정식 릴리즈보다 앞서 있습니다.':'최신 릴리즈입니다.');const link=document.createElement('a');link.href=result.downloadUrl||result.releaseUrl;link.target='_blank';link.rel='noreferrer';link.textContent=result.downloadUrl?'Windows ZIP 다운로드 ↗':'릴리즈 보기 ↗';status.append(document.createTextNode(' '),link);}
  catch(error){status.textContent='확인하지 못했습니다: '+error.message;}finally{button.disabled=false;}
 });
 $$('dialog:not(#bot-dialog)').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}}));

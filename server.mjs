@@ -11,7 +11,7 @@ import { TradingEngine } from './backend/engine.mjs';
 import { MarketData } from './backend/market-data.mjs';
 import { CredentialStore } from './backend/credentials.mjs';
 import {acquireServerLock} from './backend/app-lifecycle.mjs';
-import {checkUpdate} from './backend/app-update.mjs';
+import {checkReleaseUpdate} from './backend/release-update.mjs';
 const appDirectory=fileURLToPath(new URL('./',import.meta.url));
 
 const root=path.resolve(fileURLToPath(new URL('./public/',import.meta.url)));
@@ -46,7 +46,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(pathname==='/api/data-transport'&&req.method==='POST'){const state=await engine.setDataTransport(body);marketData.configureDataTransport?.(state.dataTransport.settings);json(200,state.dataTransport);return;}
         if(req.method==='GET'&&pathname==='/api/status'){const state=engine.snapshot();if(!local)state.credentials={saved:state.credentials.saved,error:state.credentials.error,storagePath:null};json(200,state);return;}
         if(req.method==='GET'&&pathname==='/api/chart-executions'){json(200,{...chartExecutions(engine.state,{symbol:url.searchParams.get('symbol'),startTime:Number(url.searchParams.get('startTime')||0),endTime:Number(url.searchParams.get('endTime')||engine.now()),now:engine.now()}),connectionId:engine.connectionId});return;}
-        if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkUpdate(appDirectory));return;}
+        if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkReleaseUpdate(appDirectory));return;}
         if(req.method==='GET'&&pathname==='/api/trade-history'){json(200,await engine.tradeHistory.get(url.searchParams.get('botId')||null,{range:url.searchParams.get('range')||'all',page:Number(url.searchParams.get('page')||1)}));return;}
         const historyMatch=/^\/api\/bots\/([A-Za-z0-9_-]+)\/history$/.exec(pathname);
         if(req.method==='GET'&&historyMatch){json(200,await engine.tradeHistory.get(historyMatch[1],{range:url.searchParams.get('range')||'all',page:Number(url.searchParams.get('page')||1)}));return;}
