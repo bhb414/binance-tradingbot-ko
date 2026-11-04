@@ -14,3 +14,9 @@ const refresh=process.argv.includes('--refresh'),started=Date.now();
 app.engine.snapshot=()=>{if(refresh){const phase=Math.floor((Date.now()-started)/3000)%8,bot=bots[0];bot.pnl=bot.runtime.realized+[20,-20,5,-1,0,12,-8,2][phase];bot.quantity=phase===4?0:1;bot.runtime.quantity=bot.quantity;bot.status=phase===5?'paused':'running';bot.task=phase%2?'position':'watching';}return {...snapshot(),bots,error:'맵 화면 검증용 · 가상 캐릭터 · 실제 계좌·주문 없음'};};
 app.server.listen(8897,'127.0.0.1',()=>console.log('Read-only room preview: http://127.0.0.1:8897/#bots'));
 process.once('SIGINT',()=>app.server.close());
+
+if(process.argv.includes('--roster-probe')){
+ const handle=app.server.listeners('request')[0];app.server.removeAllListeners('request');
+ const probe="const root=document.querySelector('#office-roster-list');root.dataset.probeUpdates=0;root.dataset.probeAvatarRemovals=0;new MutationObserver(rows=>{root.dataset.probeUpdates=Number(root.dataset.probeUpdates)+1;for(const row of rows)for(const node of row.removedNodes)if(node.nodeType===1&&(node.matches('.office-roster-avatar')||node.querySelector('.office-roster-avatar')))root.dataset.probeAvatarRemovals=Number(root.dataset.probeAvatarRemovals)+1;}).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','class','aria-label']});";
+ app.server.on('request',(req,res)=>{if(req.url==='/__roster_probe.js'){res.writeHead(200,{'Content-Type':'text/javascript'});res.end(probe);return;}if(req.url==='/'||req.url==='/index.html'){const end=res.end;res.end=function(body,...args){return end.call(this,typeof body==='string'||Buffer.isBuffer(body)?body.toString().replace('</body>','<script type="module" src="/__roster_probe.js"></script></body>'):body,...args);};}handle(req,res);});
+}

@@ -144,3 +144,39 @@ test('legacy started managers recover management state while newly copied manage
  assert.equal(e.bot('legacy-manager').runtime.managementEnabled,true);assert.equal(e.bot('never-started').runtime.managementEnabled,false);
  h.trade('BUY',1);await e.refreshAccount(true);await e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,1);
 });
+
+test('saved profiles do not reserve wallet capital and legacy bots remain included',async()=>{
+ const h=await harness(),b=await h.e.saveBot(makeBot({id:'live-budget',budget:100,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));
+ const profile=await h.e.saveBot(makeBot({id:'saved-profile',budget:9000,budgetIncluded:false,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));
+ assert.equal(h.e.allocatedBudget(),100);assert.equal(b.budgetIncluded,undefined);assert.equal(profile.budgetIncluded,false);
+ await assert.rejects(()=>h.e.startBot(profile.id),/보관/);await h.e.tick();assert.equal(h.x.calls.length,0);
+ const oldClient={...profile,budget:15000};delete oldClient.budgetIncluded;await h.e.saveBot(oldClient);assert.equal(h.e.bot(profile.id).budgetIncluded,false);assert.equal(h.e.allocatedBudget(),100);
+});
+test('moving into operation checks a fresh wallet and leaves settings and flags unchanged on refusal',async()=>{
+ const h=await harness(),b=await h.e.saveBot(makeBot({id:'candidate',budget:100,budgetIncluded:false,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));
+ h.client.account=async()=>({canTrade:true,assets:[{asset:'USDT',walletBalance:'90',availableBalance:'90'}]});
+ const preview=await h.e.budgetSelection.preview({...b,budgetIncluded:true});assert.equal(preview.allowed,false);assert.equal(preview.available,90);assert.match(preview.message,/90.00/);
+ await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(b.id,true)),/운용예산/);assert.equal(h.e.bot(b.id).budgetIncluded,false);assert.equal(h.e.bot(b.id).runtime.runEnabled,false);
+ await assert.rejects(()=>h.e.saveBot({...b,budgetIncluded:true}),/운용예산/);assert.equal(h.e.allocatedBudget(),0);
+ await h.e.saveBot({...b,budget:50});await h.e.serial(()=>h.e.budgetSelection.set(b.id,true));assert.equal(h.e.allocatedBudget(),50);assert.equal(h.e.bot(b.id).runtime.runEnabled,false);assert.equal(h.x.calls.length,0);
+});
+test('archiving an idle running bot disarms account-wide management and re-inclusion does not restart it',async()=>{
+ const h=await harness(),exit=rule('CLOSE_ALL','account'),b=await h.e.saveBot(makeBot({id:'idle-manager',budget:100,leverage:2,margin:'CROSSED',exit:off,actionRules:[exit]}));await h.e.startBot(b.id);
+ await h.e.serial(()=>h.e.budgetSelection.set(b.id,false));const saved=h.e.bot(b.id);assert.equal(saved.runtime.runEnabled,false);assert.equal(saved.runtime.managementEnabled,false);assert.equal(h.e.allocatedBudget(),0);
+ h.trade('BUY',1);await h.e.tick();assert.equal(h.x.calls.length,0);
+ await h.e.serial(()=>h.e.budgetSelection.set(b.id,true));await h.e.tick();assert.equal(h.x.calls.length,0);assert.equal(saved.runtime.managementEnabled,false);
+});
+test('owned holdings and unsettled orders prevent archiving without changing ownership or placing orders',async()=>{
+ const h=await twoBots(),calls=h.x.calls.length;
+ await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(h.a.id,false)),/보유 포지션/);assert.notEqual(h.a.budgetIncluded,false);assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.x.calls.length,calls);
+ const idle=await h.e.saveBot(makeBot({id:'unsettled',budget:100,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));
+ const order={id:'unsettled-order',botId:idle.id,scope:h.e.state.scope,status:'UNKNOWN',parameters:{symbol:'BTCUSDT',type:'LIMIT'},orderPolicy:{remainder:'market'},appliedQty:0};h.e.state.orders.push(order);
+ await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(idle.id,false)),/미체결/);order.status='CANCELED';
+ await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(idle.id,false)),/잔량/);order.fallbackDone=true;
+ await h.e.serial(()=>h.e.budgetSelection.set(idle.id,false));assert.equal(h.e.bot(idle.id).budgetIncluded,false);assert.equal(h.x.calls.length,calls);
+});
+test('saved profiles cannot bypass budget selection with a direct bot-attributed entry',async()=>{
+ const h=await harness(),b=await h.e.saveBot(makeBot({id:'manual-profile',budget:100,budgetIncluded:false,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));
+ assert.throws(()=>h.e.manual.validateBotPlan({action:'OPEN',margin:'CROSSED',leverage:2,direction:'LONG'}, {botId:b.id}),/보관/);
+ await assert.rejects(()=>h.e.serial(()=>h.e.budgetSelection.set(b.id,'true')),/선택/);assert.equal(h.x.calls.length,0);
+});

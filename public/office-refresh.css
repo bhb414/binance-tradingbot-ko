@@ -48,3 +48,14 @@
 .office-roster-cost-help{margin-top:5px}.office-roster-cost-help summary{cursor:pointer;color:#688371}.office-roster-cost-help p{margin:5px 0 0}
 
 @media(max-width:760px){.office-roster:has(.office-roster-cost-help[open]){max-height:none}}
+
+.office-roster-tabs{display:flex;gap:4px;padding:0 12px 10px;flex:none;border-bottom:1px solid #edf2ec}
+.office-roster-tabs button{flex:1;padding:8px 10px;border-radius:7px;font-size:12px;color:#8a9a8d}
+.office-roster-tabs button[aria-selected="true"]{background:#eaf3e7;color:#42654d;font-weight:600}
+.office-roster-tabs span{margin-left:5px;font-size:10px;opacity:.7}
+.budget-selection{padding:13px 15px;margin:12px 0 18px;background:#f5f8f2;border:1px solid #e2eadf;border-radius:9px}
+.budget-selection label{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13px;cursor:pointer}
+.budget-selection input{width:17px;height:17px;accent-color:#59816a}
+.budget-selection small{display:block;margin-top:7px;font-size:11px;line-height:1.7;color:#8a9989}
+.budget-selection p{margin:9px 0 0;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.budget-selection-note{color:#9b7250}

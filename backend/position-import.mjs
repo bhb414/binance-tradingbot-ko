@@ -18,7 +18,7 @@ export class PositionImports{
       const owner=e.state.bots.find(bot=>bot.symbol===position.symbol&&bot.runtime.quantity>0&&(!e.hedge||bot.runtime.direction===sideOf(position)));
       const pool=e.shared.book(position.symbol)?.manual[sideOf(position)],shared=e.shared.active(position.symbol);if(shared){const quantity=pool?.quantity||0,ratio=quantity/Math.abs(position.quantity);return {...position,quantity,entryPrice:pool?.entryPrice||position.entryPrice,initialMargin:position.initialMargin*ratio,isolatedMargin:position.isolatedMargin*ratio,key:keyOf(position),direction:sideOf(position),supported:symbols.has(position.symbol),owner:null,shared:true};}
       return {...position,key:keyOf(position),direction:sideOf(position),quantity:Math.abs(position.quantity),supported:symbols.has(position.symbol),owner:owner?{id:owner.id,name:owner.name,pending:owner.runtime.importPending===true}:null};
-    }).filter(p=>p.quantity>0),bots:e.state.bots.filter(bot=>!bot.multiBotId).map(bot=>({id:bot.id,name:bot.name,symbol:bot.symbol,budget:bot.budget,eligible:!bot.runtime.runEnabled&&(e.shared.supported||!bot.runtime.quantity||bot.runtime.importPending===true)&&!e.ownOrders(bot).some(active)}))};
+    }).filter(p=>p.quantity>0),bots:e.state.bots.filter(bot=>!bot.multiBotId).map(bot=>({id:bot.id,name:bot.name,symbol:bot.symbol,budget:bot.budget,eligible:bot.budgetIncluded!==false&&!bot.runtime.runEnabled&&(e.shared.supported||!bot.runtime.quantity||bot.runtime.importPending===true)&&!e.ownOrders(bot).some(active)}))};
   }
   async inspect(input,newCandidate=null){
     this.requireAccount();const e=this.engine;
@@ -28,6 +28,7 @@ export class PositionImports{
     if(position&&e.shared.supported){await e.shared.ensure(position.symbol);await e.shared.sync(position.symbol,{force:true});const current=e.accountSnapshot.positions.find(item=>keyOf(item)===input.positionKey),pool=e.shared.book(position.symbol)?.manual[sideOf(position)];if(!current||!pool?.quantity)throw Error('봇에 아직 배정하지 않은 수동 보유분이 없습니다.');const ratio=pool.quantity/Math.abs(current.quantity);position={...current,quantity:pool.quantity*(sideOf(current)==='LONG'?1:-1),entryPrice:pool.entryPrice,initialMargin:current.initialMargin*ratio,isolatedMargin:current.isolatedMargin*ratio};}
     if(!position||!Number.isFinite(position.entryPrice)||position.entryPrice<=0||!Number.isFinite(position.quantity)||!position.quantity)throw new Error('포지션이 없거나 수량·평균 진입가를 확인할 수 없습니다.');
     const info=await e.symbolInfo(position.symbol),direction=sideOf(position),target=input.botId?e.bot(input.botId):null;
+    if(target?.budgetIncluded===false)throw Error('보관 중인 봇은 먼저 운용으로 이동한 뒤 포지션을 연결하세요.');
     if(target&&(target.symbol!==position.symbol||target.runtime.runEnabled||target.runtime.quantity>0&&!target.runtime.importPending&&!e.shared.active(position.symbol)||e.ownOrders(target).some(active)))throw new Error('같은 종목의 관리 시작 전 봇이나 포지션이 없는 정지 봇을 선택하세요.');
     if(target?.runtime.quantity>0&&target.runtime.direction!==direction)throw new Error('기존에 가져온 포지션과 방향이 다릅니다.');
     if(!e.shared.active(position.symbol)&&e.state.bots.some(bot=>bot!==target&&bot.symbol===position.symbol&&(bot.runtime.runEnabled||bot.runtime.quantity>0||e.ownOrders(bot).some(active))))throw new Error('이 종목을 이미 담당하는 다른 봇이 있습니다.');
@@ -40,7 +41,7 @@ export class PositionImports{
     const errors=validateBot(candidate,e.state.bots,{balance:Infinity,symbols:[position.symbol],maxLeverage:125,enforceAllocationLimit:false});if(errors.length)throw new Error(errors.join('\n'));
     const quantity=Math.abs(position.quantity),estimatedMargin=positionMargin(position,leverage,margin),combinedMargin=estimatedMargin+(target&&e.shared.active(position.symbol)?e.decorate(target).used:0),warnings=[];
     if(combinedMargin>effectiveBudget(candidate))warnings.push(`연결 후 보유 포지션 증거금 약 ${money(combinedMargin)} USDT가 운용예산 ${money(effectiveBudget(candidate))} USDT를 초과합니다. 가져오기는 가능하며 새 진입은 남은 예산 안에서만 가능합니다.`);
-    if(e.state.bots.filter(bot=>bot.id!==candidate.id).reduce((sum,bot)=>sum+effectiveBudget(bot),0)+effectiveBudget(candidate)>e.accountSnapshot.walletBalance)warnings.push('봇 운용예산 합계가 계좌 잔고보다 큽니다. 새 진입 전 예산을 확인하세요.');
+    if(e.allocatedBudget(candidate.id)+effectiveBudget(candidate)>e.accountSnapshot.walletBalance)warnings.push('봇 운용예산 합계가 계좌 잔고보다 큽니다. 새 진입 전 예산을 확인하세요.');
     if(orders.length)warnings.push(`이 종목에 미체결·조건부 주문 ${orders.length}건이 남아 있습니다. 기존 주문은 그대로 유지하며, 봇 시작 전 확인·정리가 필요합니다.`);
     if(target&&(target.margin!==margin||target.leverage!==leverage))warnings.push(`봇의 설정값을 현재 계좌의 ${margin==='ISOLATED'?'격리':'크로스'} · ${leverage}배로 맞춥니다. 거래소 설정은 변경하지 않습니다.`);
     const original=target?{name:target.name,symbol:target.symbol,budget:target.budget,budgetMode:target.budgetMode,margin:target.margin,leverage:target.leverage,actionRules:target.actionRules,exit:target.exit,quantity:target.runtime.quantity,entryPrice:target.runtime.entryPrice,realized:target.runtime.realized,direction:target.runtime.direction,pending:target.runtime.importPending,epoch:target.runtime.positionEpoch}:null;

@@ -14,12 +14,13 @@ import { SYMBOLS, makeBot, validateBot, describeRule, budgetUsage, BUDGET_MODES,
 import { upgradeBot, applyWholeTimeframe } from './formula.js';
 import {ruleIntervals,evaluateRuleFormula} from './formula-runtime.js';
 import {leverageCap,notionalCap} from './leverage.js';
-import {BUDGET_OPTIONS} from './budget.js';
+import {BUDGET_OPTIONS,budgetIncluded,allocatedAmount} from './budget.js';
+import {budgetSelectionMarkup,createBudgetEditor} from './budget-editor.js';
 import {installSignatureHelp} from './formula-signature.js';
 import { heikinAshi } from './indicators.js';
 import { roomAvatar } from './room.js';
 import {RoomScene} from './room-motion.js';
-import {officeRosterMarkup} from './office-roster.js';
+import {renderOfficeRoster} from './office-roster.js';
 import {installRoomControls} from './room-controls.js';
 import {installPositionImportUI} from './position-import-ui.js';
 import { formulaEditorMarkup, formulaExamples } from './formula-editor.js';
@@ -74,7 +75,7 @@ for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='�
 let chartStorage;try{chartStorage=localStorage;}catch{}
 const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
 let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
-let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', draft=null, editorTab='basic', chart, candleSeries, homeStudies, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
 let toastTimer, selectedRuleId, symbolPickerTarget='home';
 let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
 const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
@@ -268,28 +269,29 @@ function renderHomeTable(){
 function pixelScene(bot,mini=false){return `<svg class="${mini?'pixel-mini':'pixel-scene'}" viewBox="0 0 260 165" role="img" aria-label="${esc(bot.name)} 사람 캐릭터"><rect x="25" y="130" width="210" height="3" fill="#dbe4d2"/>${roomAvatar(bot,130,84)}</svg>`;}
 function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(b.runtime?.runEnabled&&b.runtime.entryBlocked)return b.quantity>0?"조건 감시·보유 포지션 관리 중":"조건 감시 중";if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
 function renderBots(){
-  const assigned=bots.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=bots.filter(b=>b.status==='running').length;
-  $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=bots.length;$('#running-count').textContent=running;$('#paused-count').textContent=bots.length-running;
+  const operating=bots.filter(budgetIncluded),assigned=operating.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=operating.filter(b=>b.status==='running').length;
+  $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=operating.length;$('#running-count').textContent=running;$('#paused-count').textContent=operating.length-running;
   $('.budget-summary>div:first-child strong').innerHTML=fmt(balance,2)+'<span>USDT</span>';
   $('#total-assigned').innerHTML=fmt(assigned,0)+'<span>USDT</span>';$('#total-available').innerHTML=fmt(balance==null?null:balance-assigned,2)+'<span>USDT</span>';$('#allocated-bar').style.width=(balance?Math.min(100,assigned/balance*100):0)+'%';
-  const performance=workroomPerformance(bots),pnl=performance.pnl;$('#total-pnl').innerHTML=(serverState?.connected&&pnl!==null?signed(pnl):'—')+'<span>USDT</span>';$('#total-pnl').className=pnl>=0?'positive':'negative';
+  const performance=workroomPerformance(operating),pnl=performance.pnl;$('#total-pnl').innerHTML=(serverState?.connected&&pnl!==null?signed(pnl):'—')+'<span>USDT</span>';$('#total-pnl').className=pnl>=0?'positive':'negative';
   $('#total-roi').textContent=serverState?.connected&&performance.roi!==null?(performance.roi>=0?'+':'')+fmt(performance.roi,2)+'%':'—%';$('#total-roi').className='workroom-roi '+(pnl>=0?'positive':'negative');$('#total-roi').title='현재 등록된 봇의 (누적 실현손익 + 현재 미실현손익) ÷ 기준예산 합계 '+fmt(performance.baseBudget,2)+' USDT. 확인된 USDT 수수료 포함, 펀딩 제외.';
-  const performances=bots.map(b=>botPerformance(b,positionInsights,serverState?.fills)),gross=performances.every(p=>p.gross!==null)?performances.reduce((sum,p)=>sum+p.gross,0):null,net=performances.every(p=>p.net!==null)?performances.reduce((sum,p)=>sum+p.net,0):null,base=performance.baseBudget;
+  const performances=operating.map(b=>botPerformance(b,positionInsights,serverState?.fills)),gross=performances.every(p=>p.gross!==null)?performances.reduce((sum,p)=>sum+p.gross,0):null,net=performances.every(p=>p.net!==null)?performances.reduce((sum,p)=>sum+p.net,0):null,base=performance.baseBudget;
   $('#total-pnl').innerHTML=(serverState?.connected?signed(gross):'—')+'<span>USDT</span>';$('#total-pnl').className=gross>=0?'positive':'negative';$('#total-roi').textContent=serverState?.connected&&gross!==null&&base>0?signed(gross/base*100)+'%':'—%';$('#total-roi').title='매매손익(비용 차감 전) ÷ 기준예산 합계';
   $('#total-net-pnl').textContent=serverState?.connected&&net!==null?signed(net)+' USDT':'— USDT';$('#total-net-roi').textContent=serverState?.connected&&net!==null&&base>0?signed(net/base*100)+'%':'—%';$('#total-net-pnl').className=net>=0?'positive':'negative';$('#total-net-roi').className='workroom-roi '+(net>=0?'positive':'negative');
-  const visible=bots.filter(b=>botFilter==='all'||b.status===botFilter);if(!visible.some(b=>b.id===selectedBotId))selectedBotId=visible[0]?.id;renderOffice();
+  const visible=operating.filter(b=>botFilter==='all'||b.status===botFilter);if(!visible.some(b=>b.id===selectedBotId))selectedBotId=visible[0]?.id;renderOffice();
 }
 
 function renderOffice(){
-  if(bots.length&&!roomHasBots)mapCameraReady=false;roomHasBots=bots.length>0;
-  roomScene.update(bots,{selectedId:selectedBotId,filter:botFilter});
-  const roster=$('#office-roster-list'),markup=officeRosterMarkup(bots,{selectedId:selectedBotId,filter:botFilter,icon,costs:positionCosts&&positionCosts.connectionId===serverState?.connectionId?positionCosts.byBot:{}});
-  if(roster.innerHTML!==markup){const key=roster.contains(document.activeElement)?document.activeElement.dataset.officeKey:null,scroll=roster.scrollTop;roster.innerHTML=markup;roster.scrollTop=scroll;if(key)roster.querySelector('[data-office-key="'+CSS.escape(key)+'"]')?.focus({preventScroll:true});}
-  const count=bots.filter(b=>botFilter==='all'||b.status===botFilter).length;$('#office-roster-count').textContent=count===bots.length?String(count):count+' / '+bots.length;
-
+  const operating=bots.filter(budgetIncluded),archived=bots.filter(b=>!budgetIncluded(b));
+  if(operating.length&&!roomHasBots)mapCameraReady=false;roomHasBots=operating.length>0;
+  roomScene.update(operating,{selectedId:selectedBotId,filter:botFilter});
+  const visible=rosterTab==='archive'?archived:operating,filter=rosterTab==='archive'?'all':botFilter;
+  renderOfficeRoster($('#office-roster-list'),visible,{selectedId:selectedBotId,filter,icon,costs:positionCosts&&positionCosts.connectionId===serverState?.connectionId?positionCosts.byBot:{}});
+  $('#office-roster-count').textContent=visible.filter(b=>filter==='all'||b.status===filter).length;
+  for(const button of $$('[data-roster-tab]')){const active=button.dataset.rosterTab===rosterTab;button.setAttribute('aria-selected',String(active));button.classList.toggle('active',active);button.querySelector('span').textContent=button.dataset.rosterTab==='archive'?archived.length:operating.length;}
   if(mapAutoFit)fitOfficeMap();else $('#office-map').style.setProperty('--map-zoom',mapZoom);
   if(!mapCameraReady&&$('#office-map-viewport').clientWidth){mapCameraReady=true;requestAnimationFrame(()=>focusMapBot());}
-  $('.room-note').textContent=bots.length?'캐릭터에 마우스를 올려 시작·정지 또는 설정':'새 봇을 만들면 캐릭터가 이 맵에 나타나요.';
+  $('.room-note').textContent=operating.length?'캐릭터에 마우스를 올려 시작·정지 또는 설정':'보관한 봇을 운용으로 이동하면 이 맵에 나타나요.';
   $('#map-focus-bot').disabled=!selectedBotId;
   roomControls.sync();
 }
@@ -324,9 +326,10 @@ function botSymbolField(){
   return '<div class="field"><span>담당 종목</span><button type="button" id="bot-symbol-picker" class="bot-symbol-picker" aria-label="담당 종목 검색" aria-haspopup="dialog"><span><strong>'+esc(draft.symbol)+'</strong><small>'+esc(selected?symbolName(selected):'USDT 무기한 선물')+'</small></span>'+icon('search')+'</button><small>심볼이나 종목명을 검색해 선택하세요.</small></div>';
 }
 function botConfigLocked(){return Boolean(draft.quantity>0||serverState?.orders?.some(order=>order.botId===draft.id));}
+const budgetEditor=createBudgetEditor({root:$('#bot-dialog'),api,getDraft:()=>draft,getState:()=>serverState,onUpdate(){for(const key of ['budget','budgetMode']){const el=$('[data-bind="'+key+'"]');if(el)el.value=draft[key];}updateBudgetPreview();}});
 function renderBasic() {
-  $('#editor-basic').innerHTML=`<div class="form-section"><h3>봇의 이름과 담당 종목</h3><div class="form-grid">${bindInput('봇 이름','name',draft.name,{type:'text',full:true})}${botSymbolField()}<div class="field full" id="bot-appearance-summary">${appearanceCard(draft)}</div></div></div><div class="form-section"><h3>이 봇의 운용 예산</h3><div class="editor-wallet-summary"><span>선물지갑 USDT 잔고 <strong>${fmt(serverState?.account?.walletBalance)} USDT</strong></span><span>현재 주문 가능 <strong>${fmt(serverState?.account?.availableBalance)} USDT</strong></span></div><div class="form-grid">${bindInput('운용예산 · 증거금 한도','budget',draft.budget,{unit:'USDT',min:10,max:100000000,step:1,note:`다른 봇 배정 후 남은 한도: ${fmt(serverState?.account?serverState.account.walletBalance-bots.filter(b=>b.id!==draft.id).reduce((s,b)=>s+effectiveBudget(b),0):NaN)} USDT · 자금을 따로 이체하지 않습니다.`})}${bindSelect('손익에 따른 예산 운용','budgetMode',draft.budgetMode||'fixed',BUDGET_OPTIONS)}${bindSelect('포지션당 진입 횟수','maxEntries',draft.maxEntries,[[0,'제한 없음 (기본)'],...Array.from({length:20},(_,i)=>[i+1,'최대 '+(i+1)+'회'])],'처음 진입과 추가 진입의 체결 횟수입니다. 전량 정리하면 0회로 초기화합니다.')}${bindSelect('증거금 모드','margin',draft.margin,[['ISOLATED','아이솔레이트 (격리)'],['CROSSED','크로스 (교차)']])}</div><div class="budget-preview" id="budget-preview"></div><div class="field-note">${icon('info')}<span>레버리지는 조건·행동 탭에서 롱·숏 진입 조건마다 정합니다. 봇 예산은 주문 운용 한도이며 최대 손실 보장은 아닙니다. 크로스는 계좌의 담보를 공유합니다.</span></div></div>`;
-  renderLeverage();loadLeverageLimits();updateBudgetPreview();
+  $('#editor-basic').innerHTML=`<div class="form-section"><h3>봇의 이름과 담당 종목</h3><div class="form-grid">${bindInput('봇 이름','name',draft.name,{type:'text',full:true})}${botSymbolField()}<div class="field full" id="bot-appearance-summary">${appearanceCard(draft)}</div></div></div><div class="form-section"><h3>이 봇의 운용 예산</h3><div class="editor-wallet-summary"><span>선물지갑 USDT 잔고 <strong>${fmt(serverState?.account?.walletBalance)} USDT</strong></span><span>현재 주문 가능 <strong>${fmt(serverState?.account?.availableBalance)} USDT</strong></span></div>${budgetSelectionMarkup(draft)}<div class="form-grid">${bindInput('운용예산 · 증거금 한도','budget',draft.budget,{unit:'USDT',min:10,max:100000000,step:1,note:`다른 봇 배정 후 남은 한도: ${fmt(serverState?.account?serverState.account.walletBalance-bots.filter(b=>b.id!==draft.id).reduce((s,b)=>s+allocatedAmount(b),0):NaN)} USDT · 자금을 따로 이체하지 않습니다.`})}${bindSelect('손익에 따른 예산 운용','budgetMode',draft.budgetMode||'fixed',BUDGET_OPTIONS)}${bindSelect('포지션당 진입 횟수','maxEntries',draft.maxEntries,[[0,'제한 없음 (기본)'],...Array.from({length:20},(_,i)=>[i+1,'최대 '+(i+1)+'회'])],'처음 진입과 추가 진입의 체결 횟수입니다. 전량 정리하면 0회로 초기화합니다.')}${bindSelect('증거금 모드','margin',draft.margin,[['ISOLATED','아이솔레이트 (격리)'],['CROSSED','크로스 (교차)']])}</div><div class="budget-preview" id="budget-preview"></div><div class="field-note">${icon('info')}<span>레버리지는 조건·행동 탭에서 롱·숏 진입 조건마다 정합니다. 봇 예산은 주문 운용 한도이며 최대 손실 보장은 아닙니다. 크로스는 계좌의 담보를 공유합니다.</span></div></div>`;
+  budgetEditor.paint();renderLeverage();loadLeverageLimits();updateBudgetPreview();
   const savedBot=bots.find(bot=>bot.id===draft.id);if(savedBot)$('#editor-basic .form-section').insertAdjacentHTML('beforeend','<div class="import-bot-shortcut"><button type="button" class="button secondary" data-import-for-bot="'+esc(savedBot.id)+'">기존 포지션 연결</button><small>계좌의 '+esc(savedBot.symbol)+' 포지션을 이 봇에 맡깁니다. 현재 저장된 조건과 예산을 유지합니다.</small></div>');
   if(botConfigLocked()){$('#bot-symbol-picker').disabled=true;$('#editor-basic [data-bind="margin"]').disabled=true;}
 }
@@ -404,25 +407,25 @@ function updateActionPreview() {
 function renderEditorStatus() {
   if(!draft)return;const stored=bots.find(b=>b.id===draft.id)||draft;
   const saved=bots.some(b=>b.id===draft.id),controls=$('#editor-run-controls');controls.hidden=!saved;
-  $('#editor-start-bot').disabled=!saved||!!stored.runtime?.runEnabled;$('#editor-pause-bot').disabled=!stored.runtime?.runEnabled;
-  $('#editor-run-state').textContent=stored.runtime?.runEnabled?(stored.runtime.entryBlocked?.label||'신규 진입 허용'):stored.quantity>0?'신규 진입 정지 · 보유 관리 중':'시작 대기';
+  $('#editor-start-bot').disabled=!saved||stored.budgetIncluded===false||!!stored.runtime?.runEnabled;$('#editor-pause-bot').disabled=!stored.runtime?.runEnabled;
+  $('#editor-run-state').textContent=stored.budgetIncluded===false?'보관 · 운용예산 미포함':stored.runtime?.runEnabled?(stored.runtime.entryBlocked?.label||'신규 진입 허용'):stored.quantity>0?'신규 진입 정지 · 보유 관리 중':'시작 대기';
   $('#editor-status').innerHTML='<div class="editor-status-top">'+pixelScene(stored,true)+'<div><h3>'+esc(stored.name)+' · '+esc(stored.symbol)+'</h3><p>'+esc(taskLabel(stored))+'</p></div></div>'+botStatusMarkup(stored,serverState,positionInsights)+(stored.budgetWarning?'<p class="budget-overflow-note">'+esc(stored.budgetWarning)+'</p>':'')+'<div class="bot-log">'+(logs.filter(l=>l.botId===stored.id&&(!stored.statsReset||l.at>=stored.statsReset.at)).slice(0,15).map(l=>'<p><time>'+time(l.at)+'</time>'+esc(l.message)+'</p>').join('')||'<p>아직 이 봇의 활동 기록이 없습니다.</p>')+'</div>';
 }
 function setEditorTab(tab){editorTab=tab;$$('[data-editor-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.editorTab===tab);b.setAttribute('aria-selected',b.dataset.editorTab===tab);});$$('.editor-panel').forEach(p=>p.hidden=p.id!==`editor-${tab}`);$('.editor-body').scrollTop=0;}
 function openBot(id=null,tab='basic',initial=null) {
-  const b=bots.find(b=>b.id===id);if(b?.kind==='multi'||initial?.kind==='multi'){multiUI.open(id,tab,initial);return;}draft=upgradeActions(structuredClone(initial || b || makeBot()));selectedRuleId=draft.actionRules.find(r=>r.enabled)?.id||draft.actionRules[0]?.id;
+  const b=bots.find(b=>b.id===id);if(b?.kind==='multi'||initial?.kind==='multi'){multiUI.open(id,tab,initial);return;}draft=upgradeActions(structuredClone(initial || b || makeBot({budgetIncluded:false})));selectedRuleId=draft.actionRules.find(r=>r.enabled)?.id||draft.actionRules[0]?.id;
   $('#editor-title').textContent=b?b.name:initial?.name||'새 봇 만들기';$('#editor-eyebrow').textContent=b?'YOUR BOT WORKSPACE':'BUILD YOUR BOT';$('#delete-bot').hidden=!b;$('#bot-editor-tools').hidden=!b;$('#form-errors').hidden=true;
-  renderBasic();renderConditions();renderActions();renderEditorStatus();setEditorTab(tab);$('#bot-dialog').showModal();
+  budgetEditor.reset();renderBasic();renderConditions();renderActions();renderEditorStatus();setEditorTab(tab);$('#bot-dialog').showModal();
 }
 function confirmAction(title,message,callback,label='확인') { $('#confirm-title').textContent=title;$('#confirm-message').textContent=message;$('#confirm-action').textContent=label;confirmCallback=callback;$('#confirm-dialog').showModal(); }
 async function saveBot(event,confirmed=false){
-  event.preventDefault();const stored=bots.find(bot=>bot.id===draft.id),errors=validateBot(draft,bots,{balance:serverState?.account?.walletBalance??Infinity,symbols:SYMBOLS.map(s=>s.symbol),enforceAllocationLimit:!stored||draft.budget>stored.budget,maxLeverage:botConfigLocked()?(leverageLimits?.maxLeverage||125):leverageCap(leverageLimits,effectiveBudget(draft))});
+  event.preventDefault();if(!await budgetEditor.validate())return;const stored=bots.find(bot=>bot.id===draft.id),errors=validateBot(draft,bots,{balance:serverState?.account?.walletBalance??Infinity,symbols:SYMBOLS.map(s=>s.symbol),enforceAllocationLimit:!stored||draft.budget>stored.budget,maxLeverage:botConfigLocked()?(leverageLimits?.maxLeverage||125):leverageCap(leverageLimits,effectiveBudget(draft))});
   if(draft.actionRules.some(r=>r.enabled&&r.closeScope==='account'&&!isEntry(r.action)&&!isStop(r.action))&&!serverState?.capabilities?.sharedPositions)errors.push('서버 갱신 후 계좌 보유분 정리를 저장해 주세요.');
   if(draft.exit?.basis==='leveraged'&&!serverState?.capabilities?.leveragedProtection)errors.push('서버가 아직 진입 증거금 기준 TP·SL을 지원하지 않습니다. 서버 갱신 후 다시 저장해 주세요.');
   if(errors.length){$('#form-errors').innerHTML='<ul>'+errors.map(e=>'<li>'+esc(e)+'</li>').join('')+'</ul>';$('#form-errors').hidden=false;return;}
   if(stored?.quantity>0&&!stored.runtime?.importPending&&!confirmed&&JSON.stringify([stored.actionRules,stored.exit])!==JSON.stringify([draft.actionRules,draft.exit])){confirmAction('보유 포지션 관리 조건 변경',stored.name+' · 변경한 정리 조건과 TP·SL이 보유 포지션에 적용됩니다. 이미 충족된 조건은 바로 실행될 수 있습니다. 저장 후 신규 진입은 정지됩니다.',()=>saveBot({preventDefault(){}},true),'저장·적용');return;}
   const submit=$('#bot-form [type="submit"]');submit.disabled=true;
-  try{const saved=await api('/bots',{method:'POST',body:draft});selectedBotId=saved.id;$('#bot-dialog').close();await syncWorkspace();toast('설정을 저장했습니다. 신규 진입은 일시정지 상태입니다.');}
+  try{const saved=await api('/bots',{method:'POST',body:draft});selectedBotId=saved.id;rosterTab=saved.budgetIncluded===false?'archive':'operating';$('#bot-dialog').close();await syncWorkspace();toast('설정을 저장했습니다. 신규 진입은 일시정지 상태입니다.');}
   catch(error){$('#form-errors').textContent=error.message;$('#form-errors').hidden=false;$('#form-errors').scrollIntoView({block:'nearest'});}
   finally{submit.disabled=false;}
 }
@@ -452,6 +455,8 @@ document.addEventListener('click',event=>{
   if(b.dataset.importForBot){positionImportUI.open(null,b.dataset.importForBot);return;}
   if(b.id==='import-position-button'||b.dataset.importPosition){positionImportUI.open(b.dataset.importPosition||null);return;}
   if(b.dataset.prepareClose){preparePositionClose(b.dataset.prepareClose,b.dataset.closeOwner||'');return;}
+  if(b.dataset.rosterTab){rosterTab=b.dataset.rosterTab;renderOffice();return;}
+  if(b.dataset.officeFocus&&bots.find(item=>item.id===b.dataset.officeFocus)?.budgetIncluded===false){openBot(b.dataset.officeFocus);return;}
   if(b.dataset.officeFocus){selectedBotId=b.dataset.officeFocus;roomControls.close();renderOffice();focusMapBot();return;}
   if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)roomControls.action(target.runtime?.runEnabled?'pause':'start',target.id);return;}
   if(b.dataset.botTools){botTools.open(b.dataset.botTools);return;}
@@ -517,12 +522,14 @@ document.addEventListener('click',event=>{
 document.addEventListener('input',event=>{
   const el=event.target;
   if(el.id==='rule-leverage-range'){currentRule().leverage=el.valueAsNumber;renderLeverage();updateBudgetPreview();$('#form-errors').hidden=true;return;}
+  if(el.hasAttribute('data-budget-included')&&el.closest('#bot-dialog')){draft.budgetIncluded=el.checked;budgetEditor.changed('budgetIncluded');return;}
   if(el.dataset.bind || el.dataset.rule) $('#form-errors').hidden=true;
   if(el.dataset.bind){
     const previous=currentRule()?.action,val=el.type==='checkbox'?el.checked:el.type==='number'?el.valueAsNumber:el.dataset.bind==='maxEntries'?Number(el.value):el.dataset.bind.endsWith('.postOnly')?el.value==='true':el.value;setPath(draft,el.dataset.bind,val);
     if(el.dataset.bind.startsWith('actionRules.')&&el.dataset.bind.endsWith('.action')){const rule=currentRule();if(rule.action==='CLOSE_ALL')rule.sizePercent=100;else if(isEntry(previous)!==isEntry(rule.action))rule.sizePercent=isEntry(rule.action)?25:100;if(isEntry(rule.action))rule.leverage??=draft.leverage||3;renderConditions();}
     else if(el.dataset.bind.endsWith('.enabled')||el.dataset.bind.endsWith('.reentry.mode'))renderConditions();
     else if(el.dataset.bind.includes('.order.')||el.dataset.bind.endsWith('.sizePercent'))updateActionPreview();
+    if(['budget','budgetMode'].includes(el.dataset.bind))budgetEditor.changed(el.dataset.bind);
     if(['budget','budgetMode','leverage'].includes(el.dataset.bind)||el.dataset.bind.startsWith('actionRules.'))updateBudgetPreview();
     if(['budget','budgetMode','leverage'].includes(el.dataset.bind)||el.dataset.bind.endsWith('.leverage')){renderLeverage();updateActionPreview();}
     if(el.dataset.bind.endsWith('.timeframe')||el.dataset.bind.endsWith('.candle')||el.dataset.bind==='symbol')updateFormulaFeedback();
@@ -587,8 +594,8 @@ installStudyUI({notify:toast});
 installTradeHistoryUI({getState:()=>serverState,notify:toast});
 manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
 appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});
-botTools=installBotTools({api,getState:()=>serverState,refresh:()=>syncWorkspace(),toast,onCopy(source){const copied=copyBotSettings(source);try{saveAppearance(copied,appearanceFor(source));}catch(error){toast('외형 복사: '+error.message,true);}if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(null,'basic',copied);toast('복사본을 불러왔습니다. 종목·예산을 확인한 뒤 저장하세요.');},onSettingsReset(source){if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(source.id,'basic',resetBotSettings(source));}});
-multiUI=installMultiUI({api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>roomControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot),onTools:id=>botTools.open(id)});
+botTools=installBotTools({api,getState:()=>serverState,refresh:()=>syncWorkspace(),toast,onBudgetMoved(included){rosterTab=included?'operating':'archive';renderBots();if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();},onCopy(source){const copied=copyBotSettings(source);try{saveAppearance(copied,appearanceFor(source));}catch(error){toast('외형 복사: '+error.message,true);}if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(null,'basic',copied);toast('복사본을 불러왔습니다. 종목·예산을 확인한 뒤 저장하세요.');},onSettingsReset(source){if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(source.id,'basic',resetBotSettings(source));}});
+multiUI=installMultiUI({onSaved(bot){rosterTab=bot.budgetIncluded===false?'archive':'operating';},api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>roomControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot),onTools:id=>botTools.open(id)});
 $('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('wallet')+'계좌 정보';
 icons();syncChartButtons();renderMarket();renderHomeTable();renderBots();renderActivity();initChart();goPage(location.hash.slice(1)||'home');
 async function bootstrap(){

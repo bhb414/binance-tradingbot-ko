@@ -165,3 +165,16 @@ test('group statistics reset covers every leg, preserves capital and rejects a s
 });
 
 test('statistics reset refuses a group with a missing worker record',async()=>{const h=await harness(),p=await h.engine.saveBot(config());h.engine.state.bots=h.engine.state.bots.filter(b=>b.id!==p.id+'_B');await assert.rejects(()=>h.engine.resetBotStatistics(p.id),/누락/);assert.equal(h.engine.multi.get(p.id).statsReset,null);});
+
+test('multi profiles exclude the whole parent budget, propagate membership, and reject member-level moves',async()=>{
+ const {engine:e,x}=await harness(),p=await e.saveBot(config({budget:30000,budgetIncluded:false}));
+ assert.equal(e.allocatedBudget(),0);assert.ok(e.multi.workers(e.multi.get(p.id)).every(b=>b.budgetIncluded===false));
+ await assert.rejects(()=>e.startBot(p.id),/보관/);await assert.rejects(()=>e.serial(()=>e.budgetSelection.set(p.members[0].id,true)),/다중종목/);
+ await assert.rejects(()=>e.serial(()=>e.budgetSelection.set(p.id,true)),/운용예산/);assert.equal(e.multi.get(p.id).budgetIncluded,false);
+ await e.saveBot({...p,budget:100});await e.serial(()=>e.budgetSelection.set(p.id,true));assert.equal(e.allocatedBudget(),100);assert.ok(e.multi.workers(e.multi.get(p.id)).every(b=>b.budgetIncluded===true&&!b.runtime.runEnabled));
+ await e.startBot(p.id);await e.serial(()=>e.budgetSelection.set(p.id,false));assert.equal(e.multi.get(p.id).runtime.runEnabled,false);assert.equal(e.allocatedBudget(),0);await e.tick();assert.equal(x.calls.length,0);
+});
+test('a single held leg blocks archiving the group and its entire allocation remains included',async()=>{
+ const {engine:e}=await harness(),p=await e.saveBot(config({budget:100}));await e.startBot(p.id);await e.tick();await e.pauseBot(p.id);
+ await assert.rejects(()=>e.serial(()=>e.budgetSelection.set(p.id,false)),/보유 포지션/);assert.equal(e.allocatedBudget(),100);assert.notEqual(e.multi.get(p.id).budgetIncluded,false);
+});

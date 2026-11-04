@@ -7,13 +7,13 @@ import {botStatusMarkup} from '../public/bot-status.js';
 import {workroomPerformance,positionEmotion} from '../public/workroom-metrics.js';
 test('single copies receive independent IDs and settings without position, PnL, history, or reset ownership',()=>{
  const source=makeBot({name:'원본',budget:40,actionRules:[makeActionRule({formula:'TRUE@1h',leverage:20})],runtime:{runEnabled:true,quantity:3,realized:12},statsReset:{at:1,scope:'live:x',realized:12},fees:2,orders:[{}],imported:{}}),copy=copyBotSettings(source);
- assert.notEqual(copy.id,source.id);assert.notEqual(copy.actionRules[0].id,source.actionRules[0].id);assert.notEqual(copy.rules.id,source.rules.id);assert.equal(copy.budget,40);assert.equal(copy.actionRules[0].leverage,20);assert.match(copy.name,/복사본$/);
+ assert.notEqual(copy.id,source.id);assert.notEqual(copy.actionRules[0].id,source.actionRules[0].id);assert.notEqual(copy.rules.id,source.rules.id);assert.equal(copy.budget,40);assert.equal(copy.budgetIncluded,false);assert.equal(copy.actionRules[0].leverage,20);assert.match(copy.name,/복사본$/);
  for(const key of ['runtime','statsReset','fees','orders','imported','quantity','used','pnl'])assert.equal(copy[key],undefined);copy.actionRules[0].order.ticks=7;assert.equal(source.actionRules[0].order.ticks,0);
  assert.deepEqual(validateBot(copy,[],{symbols:['BTCUSDT'],balance:Infinity}),[]);
 });
 test('multi copies preserve allocations, symbols and per-leg policies with independent rules',()=>{
  const source=makeMultiBot();source.actionRules=[multiRule(source.legs,{formula:'(A.종가>B.종가)@1h',targets:[multiTarget('A',{action:'ENTER_SHORT',leverage:12}),multiTarget('B',{leverage:5})]})];source.runtime={runEnabled:true};source.members=[{quantity:3}];
- const copy=copyBotSettings(source);assert.notEqual(copy.id,source.id);assert.notEqual(copy.actionRules[0].id,source.actionRules[0].id);assert.deepEqual(copy.legs,source.legs);assert.deepEqual(copy.actionRules[0].targets,source.actionRules[0].targets);assert.equal(copy.members,undefined);assert.equal(copy.runtime,undefined);assert.deepEqual(validateMulti(copy,{symbols:['BTCUSDT','ETHUSDT']}),[]);copy.legs[0].weight=30;assert.equal(source.legs[0].weight,50);
+ const copy=copyBotSettings(source);assert.notEqual(copy.id,source.id);assert.notEqual(copy.actionRules[0].id,source.actionRules[0].id);assert.deepEqual(copy.legs,source.legs);assert.deepEqual(copy.actionRules[0].targets,source.actionRules[0].targets);assert.equal(copy.members,undefined);assert.equal(copy.budgetIncluded,false);assert.equal(copy.runtime,undefined);assert.deepEqual(validateMulti(copy,{symbols:['BTCUSDT','ETHUSDT']}),[]);copy.legs[0].weight=30;assert.equal(source.legs[0].weight,50);
 });
 test('settings defaults preserve identity and capital while disabling entry conditions and protections',()=>{
  for(const source of [makeBot({name:'단일',symbol:'ETHUSDT',budget:40,budgetMode:'pnl',margin:'CROSSED',actionRules:[makeActionRule({formula:'TRUE@1h',leverage:20})]}),makeMultiBot({name:'여러 종목',budget:40})]){

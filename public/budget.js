@@ -10,3 +10,6 @@ export function effectiveBudget(bot){
   const current=Math.max(0,base+realized);
   return mode==='capped'?Math.min(base,current):current;
 }
+
+export const budgetIncluded=bot=>bot?.budgetIncluded!==false;
+export const allocatedAmount=bot=>budgetIncluded(bot)?effectiveBudget(bot):0;

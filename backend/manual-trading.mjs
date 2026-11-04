@@ -74,6 +74,7 @@ export class ManualTrading {
     if(plan.margin!==b.margin||r.quantity>0&&plan.leverage!==b.leverage)throw new Error('봇의 증거금 모드와 보유 포지션 레버리지를 사용해 주세요.');
     if(r.quantity>0&&r.direction!==plan.direction)throw new Error('현재 봇의 반대 방향 포지션을 먼저 정리해 주세요.');
     if(plan.action==='OPEN'){
+      if(b.budgetIncluded===false)throw Error('보관 중인 봇입니다. 운용으로 이동한 뒤 진입해 주세요.');
       if(b.maxEntries&&r.entries>=b.maxEntries)throw new Error('봇의 포지션당 진입 횟수 한도에 도달했습니다.');
       if(plan.estimatedMargin*1.01>context.botBudget)throw new Error('수수료 여유분을 포함한 증거금이 봇의 남은 운용예산을 초과합니다.');
       const quantity=r.quantity+Number(plan.quantity),price=(r.quantity*r.entryPrice+Number(plan.quantity)*plan.referencePrice)/quantity;

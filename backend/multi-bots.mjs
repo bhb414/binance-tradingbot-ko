@@ -1,4 +1,5 @@
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
+import {budgetIncluded} from '../public/budget.js';
 import {managementWasEnabled} from './management-state.mjs';
 import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
@@ -18,24 +19,24 @@ export class MultiBots{
  init(){this.e.state.multiBots||=[];for(const p of this.groups){p.runtime={...initial(),...p.runtime,managementEnabled:managementWasEnabled(p.runtime)||this.workers(p).some(b=>b.runtime.managementEnabled),runEnabled:false};for(const b of this.workers(p))b.runtime.runEnabled=false;}}
  stopFlags(){for(const p of this.groups){p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;}}
  realized(p){return this.workers(p).reduce((s,b)=>s+Number(b.runtime.realized||0),0);}
- syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;}}return allocations;}
+ syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;b.budgetIncluded=p.budgetIncluded;}}return allocations;}
  view(p){
   const members=this.workers(p).map(b=>({...this.e.decorate(b),alias:b.multiAlias,parentId:p.id})),held=members.filter(b=>b.quantity>0),realized=members.reduce((s,b)=>s+Number(b.runtime.realized||0),0),used=members.reduce((s,b)=>s+b.used,0),reserved=members.reduce((s,b)=>s+b.reserved,0),pnl=members.reduce((s,b)=>s+b.pnl,0),orders=members.some(b=>this.e.ownOrders(b).some(active));
   return {...p,statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
-  const e=this.e,old=this.groups.find(p=>p.id===input.id),base=makeMultiBot(),p={...base,...Object.fromEntries(['id','name','budget','budgetMode','maxEntries','margin','color','legs','exit','actionRules'].filter(k=>input[k]!==undefined).map(k=>[k,structuredClone(input[k])]))};p.kind='multi';
+  const e=this.e,old=this.groups.find(p=>p.id===input.id),base=makeMultiBot(),p={...base,...Object.fromEntries(['id','name','budget','budgetMode','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'].filter(k=>input[k]!==undefined).map(k=>[k,structuredClone(input[k])]))};p.kind='multi';p.budgetIncluded=input.budgetIncluded===undefined?old?.budgetIncluded:input.budgetIncluded;
   if(e.state.bots.some(b=>b.id===p.id)||p.legs?.some?.(leg=>e.state.bots.some(b=>b.id===memberId(p,leg)&&b.multiBotId!==p.id)))throw Error('다른 봇과 식별자가 중복됩니다.');
   const before=structuredClone(e.state),symbols=(await e.catalog()).map(s=>s.symbol),oldIds=new Set(old?this.workers(old).map(b=>b.id):[]),others=e.allocatedBudget(p.id);
-  const errors=validateMulti(p,{symbols,balance:e.accountSnapshot?.walletBalance??Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));
+  const errors=validateMulti(p,{symbols,balance:Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));await e.budgetSelection.assertSave(p,old);
   const locked=old&&this.workers(old).some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active));
   if(locked&&(old.margin!==p.margin||JSON.stringify(old.legs.map(l=>[l.alias,l.symbol]))!==JSON.stringify(p.legs.map(l=>[l.alias,l.symbol]))))throw Error('보유·미해결 주문이 있을 때는 종목·별칭·증거금 모드를 바꿀 수 없습니다.');
-  p.statsReset=old?.statsReset||null;p.runtime={...initial(),...old?.runtime,runEnabled:false,cancelEntries:true};
+  p.statsReset=old?.statsReset||null;p.runtime={...initial(),...old?.runtime,runEnabled:false,cancelEntries:true};if(!budgetIncluded(p))p.runtime.managementEnabled=false;
   const keep=new Set(p.legs.map(leg=>memberId(p,leg)));e.state.bots=e.state.bots.filter(b=>!oldIds.has(b.id)||keep.has(b.id));
   for(const leg of p.legs){
    let b=e.state.bots.find(b=>b.id===memberId(p,leg));if(!b){b={...makeBot({id:memberId(p,leg),symbol:leg.symbol,actionRules:[],exit:p.exit}),runtime:{runEnabled:false,quantity:0,entryPrice:0,entries:0,realized:0,lastExitAt:0,lastEntryAt:0,ruleSignals:{},positionEpoch:0,error:null,syncHold:false}};e.state.bots.push(b);}
-   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;
+   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;if(!budgetIncluded(p))b.runtime.managementEnabled=false;
    for(const rule of p.actionRules)if(JSON.stringify(old?.actionRules.find(r=>r.id===rule.id))!==JSON.stringify(rule))delete b.runtime.ruleSignals[rule.id];
   }
   if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}this.syncBudgets(p);
@@ -43,7 +44,7 @@ export class MultiBots{
   try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}e.positionInsights.cache=null;return this.view(p);
  }
  async start(id){
-  const e=this.e,p=this.get(id);e.requireTrading();if(p.runtime.runEnabled)return this.view(p);const workers=this.workers(p);if(workers.length!==p.legs.length)throw Error('종목별 운용 기록이 누락되었습니다.');
+  const e=this.e,p=this.get(id);e.requireTrading();if(!budgetIncluded(p))throw Error('보관 중인 봇입니다. 운용으로 이동한 뒤 시작하세요.');if(p.runtime.runEnabled)return this.view(p);const workers=this.workers(p);if(workers.length!==p.legs.length)throw Error('종목별 운용 기록이 누락되었습니다.');
   this.syncBudgets(p);
   try{
    for(const rule of p.actionRules.filter(r=>r.enabled))await e.formulaMarkets(p.legs[0].symbol,rule.formula,new Map(),multiAliases(p));
@@ -78,7 +79,7 @@ export class MultiBots{
   return outcome;
  }
  async tick(p){
-  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
+  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
   const accountManagement=p.runtime.managementEnabled&&p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
   if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
   if(workers.some(b=>e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))return;

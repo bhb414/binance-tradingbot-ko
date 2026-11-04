@@ -1,3 +1,4 @@
+import {budgetIncluded,allocatedAmount} from './budget.js';
 import {randomId} from './id.js';
 import {makeBot,validateBot,effectiveBudget} from './core.js';
 import {makeActionRule,isEntry,isStop} from './actions.js';
@@ -14,7 +15,7 @@ export function makeMultiBot(extra={}){
 }
 export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,previous=null}={}){
  if(!bot||typeof bot!=='object')return ['봇 설정 형식을 확인하세요.'];
- const errors=[],known=new Set(symbols||[]),aliases=new Set(),assets=new Set();
+ const errors=[];if(bot.budgetIncluded!==undefined&&typeof bot.budgetIncluded!=='boolean')errors.push('운용예산 포함 여부를 확인하세요.');const known=new Set(symbols||[]),aliases=new Set(),assets=new Set();
  if(typeof bot.id!=='string'||!/^[A-Za-z0-9_-]{1,48}$/.test(bot.id))errors.push('봇 식별자를 확인하세요.');
  if(typeof bot.name!=='string'||!bot.name.trim()||bot.name.length>30)errors.push('이름은 1~30자로 입력하세요.');
  if(!Number.isFinite(bot.budget)||bot.budget<10||bot.budget>100000000)errors.push('운용예산은 10 USDT 이상으로 입력하세요.');
@@ -29,7 +30,7 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
   if(!Number.isFinite(leg.weight)||leg.weight<=0||leg.weight>100)errors.push('종목 비중은 0 초과~100%로 입력하세요.');
  }
  if(bot.legs.reduce((s,l)=>s+l.weight,0)>100+1e-9)errors.push('종목 비중 합계는 100% 이하여야 합니다.');
- if((!previous||bot.budget>previous.budget)&&bot.budget+otherAllocated>balance+1e-8)errors.push('다른 봇 예산을 포함한 배정액이 지갑 잔고를 초과합니다.');
+ if(budgetIncluded(bot)&&(!previous||!budgetIncluded(previous)||allocatedAmount({...bot,runtime:previous.runtime})>allocatedAmount(previous))&&allocatedAmount({...bot,runtime:previous?.runtime})+otherAllocated>balance+1e-8)errors.push('다른 봇 예산을 포함한 배정액이 지갑 잔고를 초과합니다.');
  if(!Array.isArray(bot.actionRules)||!bot.actionRules.length||bot.actionRules.length>20)return [...errors,'조건은 1~20개로 지정하세요.'];
  if(!bot.actionRules.some(r=>r?.enabled))errors.push('실행할 조건을 하나 이상 켜세요.');
  const ids=new Set();
