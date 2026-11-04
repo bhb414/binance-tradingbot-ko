@@ -89,3 +89,19 @@ test('pagination includes every completed round-trip once and old verified fundi
  const reports=[1,2,3].map(page=>report(s,{page}));assert.deepEqual(reports.map(r=>r.trades.length),[20,20,5]);assert.equal(new Set(reports.flatMap(r=>r.trades.map(t=>t.id))).size,45);
  s.fundingLedger=[{id:'old',scope,symbol:'BTCUSDT',at:1200,amount:-.5,asset:'USDT'}];const restored=JSON.parse(JSON.stringify(s));const result=report(restored,{now:now+200*86400000,funding:{scope,complete:false,startTime:now,endTime:now,rows:[]}});assert.equal(result.summary.confirmed,45);assert.ok(Math.abs(result.summary.net-(45*.8-.5))<1e-7);
 });
+
+test('reset periods hide earlier completed trades in bot and combined reports without deleting ledger rows',()=>{
+ const s=state();fill(s,{id:'old-e',at:1000});fill(s,{id:'old-x',at:2000,role:'exit',price:110});fill(s,{id:'new-e',at:4000});fill(s,{id:'new-x',at:5000,role:'exit',price:95});s.bots[0].statsReset={scope,at:3000,realized:9.8};const rows=s.fills.length;
+ for(const botId of ['b',null]){const r=buildTradeHistory({state:s,botId,now});assert.equal(r.trades.length,1);assert.equal(r.trades[0].openedAt,4000);assert.equal(r.summary.closed,1);assert.ok(Math.abs(r.summary.net+5.2)<1e-8);assert.equal(r.curve.at(-1).net,r.summary.net);}assert.equal(s.fills.length,rows);
+ s.bots[0].statsReset.scope='another-account';assert.equal(report(s).trades.length,2);
+});
+test('multi reset periods also hide archived member trades in both group and combined reports',()=>{
+ const s=state();s.bots[0].id='parent_A';s.bots[0].multiBotId='parent';s.multiBots=[{id:'parent',kind:'multi',name:'다중',budget:100,legs:[{alias:'A',symbol:'BTCUSDT'}],statsReset:{scope,at:3000,realized:0}}];
+ fill(s,{id:'e',botId:'parent_A',at:1000});fill(s,{id:'x',botId:'parent_A',at:2000,role:'exit',price:110});s.bots=[];
+ for(const botId of ['parent',null])assert.equal(buildTradeHistory({state:s,botId,now}).trades.length,0);assert.equal(s.orders.length,2);
+});
+test('funding displayed after a statistics reset excludes earlier ownership income',()=>{
+ const s=state();s.bots[0].runtime.quantity=0;s.bots[0].statsReset={scope,at:3000,realized:0};s.fills=[{scope,botId:'b',at:1000,quantity:1,role:'entry'},{scope,botId:'b',at:2000,quantity:1,role:'exit'},{scope,botId:'b',at:4000,quantity:1,role:'entry'}];
+ const e={state:s,hedge:false,now:()=>6000},insights=new PositionInsights(e),rows=[{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',time:1500,asset:'USDT',income:5},{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',time:4500,asset:'USDT',income:-.2}];
+ assert.equal(insights.botFunding(rows,0,true).b.funding,-.2);assert.equal(insights.botFunding(rows,0,true).b.startTime,3000);
+});

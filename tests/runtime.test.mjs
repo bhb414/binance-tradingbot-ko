@@ -632,3 +632,23 @@ test('a 20x bot can fill two entries then wait on sub-lot dust instead of creati
  await h.engine.startBot(h.id);for(let n=0;n<3;n++){h.exchange.now+=1000;await h.engine.tick();}
  assert.equal(b.runtime.entries,2);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);assert.equal(b.runtime.entryBlocked.reason,'min-quantity');assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.ok(h.exchange.quantity<0);
 });
+
+test('statistics reset preserves the trading ledger and loss-adjusted capital and survives a subsequent save',async()=>{
+ const h=await harness();await h.engine.saveBot({...h.engine.bot(h.id),budgetMode:'pnl'});const b=h.engine.bot(h.id);b.runtime.realized=-25;
+ h.engine.state.fills.push({id:'old-fee',scope:h.engine.state.scope,botId:b.id,symbol:b.symbol,fee:.2,feeAsset:'USDT',at:h.exchange.now-100});await h.engine.checkpoint();
+ const oldLedger=structuredClone({fills:h.engine.state.fills,orders:h.engine.state.orders}),before=h.engine.decorate(b).effectiveBudget,view=await h.engine.resetBotStatistics(b.id);
+ assert.equal(view.runtime.realized,-25);assert.equal(view.effectiveBudget,before);assert.equal(view.statsReset.realized,-25);assert.equal(view.statsReset.at,h.exchange.now);assert.equal(view.fees,0);assert.equal(view.runtime.runEnabled,false);assert.deepEqual({fills:h.engine.state.fills,orders:h.engine.state.orders},oldLedger);assert.equal(h.exchange.calls.length,0);assert.equal(h.exchange.mutations.length,0);
+ const saved=await h.engine.saveBot({...view,statsReset:{at:1,realized:500},runtime:{quantity:99}});assert.deepEqual(saved.statsReset,view.statsReset);assert.equal(saved.runtime.realized,-25);assert.equal(saved.runtime.quantity,0);
+ const restarted=await new TradingEngine(h.store,{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.deepEqual(restarted.bot(b.id).statsReset,view.statsReset);
+});
+test('statistics reset refuses running bots, held or external positions, uncertain orders and offline accounts',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);b.runtime.runEnabled=true;await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/정지/);b.runtime.runEnabled=false;b.runtime.quantity=1;await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/보유/);b.runtime.quantity=0;
+ h.exchange.quantity=1;await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/실제 보유/);h.exchange.quantity=0;
+ h.engine.state.orders.push({id:'unknown',scope:h.engine.state.scope,botId:b.id,status:'UNKNOWN',parameters:{symbol:b.symbol,type:'MARKET'}});await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/미해결/);h.engine.state.orders.pop();
+ h.exchange.orders.set('outside',{symbol:b.symbol,status:'NEW',clientOrderId:'outside'});await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/미체결/);h.exchange.orders.clear();
+ h.engine.connected=false;await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/계좌/);assert.equal(b.statsReset,null);assert.equal(h.exchange.calls.length,0);assert.equal(h.exchange.mutations.length,0);
+});
+
+test('saving a copy never inherits exposure and still rejects competing ownership on start',async()=>{const {copyBotSettings}=await import('../public/bot-tools.js'),h=await harness(),original=h.engine.bot(h.id);Object.assign(original.runtime,{runEnabled:true,quantity:2,entryPrice:100,direction:'LONG',realized:10});h.exchange.quantity=2;const copied=await h.engine.saveBot(copyBotSettings(h.engine.decorate(original)));assert.equal(copied.runtime.quantity,0);assert.equal(copied.runtime.realized,0);assert.equal(copied.runtime.runEnabled,false);assert.equal(original.runtime.quantity,2);assert.equal(original.runtime.runEnabled,true);await assert.rejects(()=>h.engine.startBot(copied.id),/한 봇/);assert.equal(h.exchange.calls.length,0);});
+
+test('past cancel-only orders allow statistics reset while an unconsumed market fallback still blocks it',async()=>{const h=await harness(),b=h.engine.bot(h.id),o={id:'past-limit',scope:h.engine.state.scope,botId:b.id,status:'CANCELED',appliedQty:0,parameters:{symbol:b.symbol,type:'LIMIT'},orderPolicy:{remainder:'cancel'}};h.engine.state.orders.push(o);await h.engine.resetBotStatistics(b.id);h.exchange.now++;o.orderPolicy.remainder='market';await assert.rejects(()=>h.engine.resetBotStatistics(b.id),/미해결/);assert.equal(b.statsReset.at,h.exchange.now-1);assert.equal(h.exchange.calls.length,0);});

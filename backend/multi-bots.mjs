@@ -20,7 +20,7 @@ export class MultiBots{
  syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;}}return allocations;}
  view(p){
   const members=this.workers(p).map(b=>({...this.e.decorate(b),alias:b.multiAlias,parentId:p.id})),held=members.filter(b=>b.quantity>0),realized=members.reduce((s,b)=>s+Number(b.runtime.realized||0),0),used=members.reduce((s,b)=>s+b.used,0),reserved=members.reduce((s,b)=>s+b.reserved,0),pnl=members.reduce((s,b)=>s+b.pnl,0),orders=members.some(b=>this.e.ownOrders(b).some(active));
-  return {...p,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
+  return {...p,statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
@@ -30,7 +30,7 @@ export class MultiBots{
   const errors=validateMulti(p,{symbols,balance:e.accountSnapshot?.walletBalance??Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));
   const locked=old&&this.workers(old).some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active));
   if(locked&&(old.margin!==p.margin||JSON.stringify(old.legs.map(l=>[l.alias,l.symbol]))!==JSON.stringify(p.legs.map(l=>[l.alias,l.symbol]))))throw Error('보유·미해결 주문이 있을 때는 종목·별칭·증거금 모드를 바꿀 수 없습니다.');
-  p.runtime={...initial(),...old?.runtime,runEnabled:false,cancelEntries:true};
+  p.statsReset=old?.statsReset||null;p.runtime={...initial(),...old?.runtime,runEnabled:false,cancelEntries:true};
   const keep=new Set(p.legs.map(leg=>memberId(p,leg)));e.state.bots=e.state.bots.filter(b=>!oldIds.has(b.id)||keep.has(b.id));
   for(const leg of p.legs){
    let b=e.state.bots.find(b=>b.id===memberId(p,leg));if(!b){b={...makeBot({id:memberId(p,leg),symbol:leg.symbol,actionRules:[],exit:p.exit}),runtime:{runEnabled:false,quantity:0,entryPrice:0,entries:0,realized:0,lastExitAt:0,lastEntryAt:0,ruleSignals:{},positionEpoch:0,error:null,syncHold:false}};e.state.bots.push(b);}
@@ -39,7 +39,7 @@ export class MultiBots{
   }
   if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}this.syncBudgets(p);
   e.note(old?'다중종목 봇 저장':'다중종목 봇 생성',p.name+' · '+p.legs.map(l=>l.symbol+' '+l.weight+'%').join(' / '),p.id);
-  try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}return this.view(p);
+  try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}e.positionInsights.cache=null;return this.view(p);
  }
  async start(id){
   const e=this.e,p=this.get(id);e.requireTrading();if(p.runtime.runEnabled)return this.view(p);const workers=this.workers(p);if(workers.length!==p.legs.length)throw Error('종목별 운용 기록이 누락되었습니다.');
@@ -113,5 +113,5 @@ export class MultiBots{
    for(const item of items){managed.add(item.worker.id);const outcome=await this.execute(p,item);if(!p.runtime.runEnabled||outcome?.blocked)break;}if(!p.runtime.runEnabled)break;
   }
  }
- insights(value){const botFunding={...value.botFunding};for(const p of this.groups){const parts=this.workers(p).map(b=>botFunding[b.id]);botFunding[p.id]={complete:parts.length>0&&parts.every(v=>v?.complete),funding:parts.every(v=>v?.complete)?parts.reduce((s,v)=>s+v.funding,0):null,reason:'일부 종목의 수수료·펀딩 조회 확인 필요'};}return {...value,botFunding};}
+ insights(value){const botFunding={...value.botFunding};for(const p of this.groups){const parts=this.workers(p).map(b=>botFunding[b.id]);botFunding[p.id]={statsResetAt:p.statsReset?.scope===this.e.state.scope?p.statsReset.at:null,complete:parts.length>0&&parts.every(v=>v?.complete),funding:parts.every(v=>v?.complete)?parts.reduce((s,v)=>s+v.funding,0):null,reason:'일부 종목의 수수료·펀딩 조회 확인 필요'};}return {...value,botFunding};}
 }

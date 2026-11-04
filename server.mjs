@@ -71,6 +71,8 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='POST'&&pathname==='/api/storage/retry'){await engine.serial(()=>engine.storage.recover({force:true}));json(200,engine.snapshot());return;}
         if(req.method==='POST'&&pathname==='/api/trading'){json(200,await engine.setTrading(body.enabled));return;}
         if(req.method==='POST'&&pathname==='/api/bots'){json(200,await engine.saveBot(body));return;}
+        const resetStatistics=/^\/api\/bots\/([A-Za-z0-9_-]+)\/reset-statistics$/.exec(pathname);
+        if(req.method==='POST'&&resetStatistics){json(200,await engine.resetBotStatistics(resetStatistics[1]));return;}
         const cancelBotOrder=/^\/api\/bots\/([A-Za-z0-9_-]+)\/orders\/([A-Za-z0-9_-]{1,60})\/cancel$/.exec(pathname);
         if(req.method==='POST'&&cancelBotOrder){json(200,await engine.cancelBotOrder(cancelBotOrder[1],cancelBotOrder[2]));return;}
         const match=/^\/api\/bots\/([A-Za-z0-9_-]+)(?:\/(start|pause|close))?$/.exec(pathname);

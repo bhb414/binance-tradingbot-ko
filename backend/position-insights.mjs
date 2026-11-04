@@ -55,13 +55,13 @@ export class PositionInsights{
     const e=this.engine,result={};
     for(const bot of e.state.bots||[]){
       const events=[...(e.state.fills||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id&&f.quantity).map(f=>({at:f.at,delta:(f.role==='entry'?1:-1)*f.quantity})),...(e.state.positionImports||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id).map(f=>({at:f.at,quantity:f.quantity}))].sort((a,b)=>a.at-b.at);
-      const valid=complete&&(!events.length?!bot.runtime.quantity:events[0].at>=startTime)&&!e.hedge;
+      const resetAt=bot.statsReset?.scope===e.state.scope?bot.statsReset.at:0,valid=complete&&(resetAt?resetAt>=startTime:!events.length?!bot.runtime.quantity:events[0].at>=startTime)&&!e.hedge;
       let funding=0,known=valid;
-      for(const row of rows.filter(row=>row.symbol===bot.symbol&&row.incomeType==='FUNDING_FEE')){
+      for(const row of rows.filter(row=>row.symbol===bot.symbol&&row.incomeType==='FUNDING_FEE'&&row.time>resetAt)){
         let quantity=0;for(const event of events){if(event.at>row.time)break;quantity=event.quantity??Math.max(0,quantity+event.delta);}
         if(quantity>1e-10){if(row.asset!=='USDT')known=false;else funding+=row.income;}
       }
-      result[bot.id]={complete:known,funding:known?funding:null,startTime:events[0]?.at||e.now(),endTime:e.now(),reason:known?null:e.hedge?'헤지 모드의 종목 펀딩은 봇별 귀속을 구분할 수 없습니다.':'펀딩 조회 범위 또는 포지션 인수 기록 확인이 필요합니다.'};
+      result[bot.id]={statsResetAt:resetAt||null,complete:known,funding:known?funding:null,startTime:resetAt||events[0]?.at||e.now(),endTime:e.now(),reason:known?null:e.hedge?'헤지 모드의 종목 펀딩은 봇별 귀속을 구분할 수 없습니다.':'펀딩 조회 범위 또는 포지션 인수 기록 확인이 필요합니다.'};
     }
     return result;
   }

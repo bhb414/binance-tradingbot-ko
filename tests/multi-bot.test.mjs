@@ -155,3 +155,13 @@ test('a multi-symbol balance race after preflight cannot submit only later legs 
  const account=h.client.account.bind(h.client);h.client.account=async()=>{const value=await account();value.assets[0].availableBalance='0';return value;};
  await h.engine.tick();const view=h.engine.multi.view(h.engine.multi.get(saved.id));assert.equal(h.x.calls.length,0);assert.equal(view.runtime.runEnabled,true);assert.equal(view.error,null);assert.equal(view.runtime.entryBlocked.reason,'no-margin');
 });
+
+test('group statistics reset covers every leg, preserves capital and rejects a single held member',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config({budgetMode:'pnl'})),root=h.engine.multi.get(p.id),workers=h.engine.multi.workers(root);workers[0].runtime.realized=-20;workers[1].runtime.realized=5;h.engine.multi.syncBudgets(root);
+ workers[1].runtime.quantity=1;await assert.rejects(()=>h.engine.resetBotStatistics(p.id),/보유/);workers[1].runtime.quantity=0;
+ const before=h.engine.multi.view(root).effectiveBudget,view=await h.engine.resetBotStatistics(p.id);assert.equal(view.statsReset.realized,-15);assert.equal(view.effectiveBudget,before);assert.deepEqual(view.members.map(b=>b.statsReset.realized),[-20,5]);assert.equal(view.runtime.runEnabled,false);assert.equal(h.x.calls.length,0);
+ const saved=await h.engine.saveBot({...view,statsReset:{at:1,realized:100}});assert.deepEqual(saved.statsReset,view.statsReset);assert.deepEqual(saved.members.map(b=>b.statsReset),view.members.map(b=>b.statsReset));
+ await assert.rejects(()=>h.engine.resetBotStatistics(workers[0].id),/전체/);
+});
+
+test('statistics reset refuses a group with a missing worker record',async()=>{const h=await harness(),p=await h.engine.saveBot(config());h.engine.state.bots=h.engine.state.bots.filter(b=>b.id!==p.id+'_B');await assert.rejects(()=>h.engine.resetBotStatistics(p.id),/누락/);assert.equal(h.engine.multi.get(p.id).statsReset,null);});
