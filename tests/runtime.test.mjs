@@ -567,3 +567,68 @@ test('current-return predicates combine TP and SL using held leverage and mark e
   mark=mode==='take'?100+sign*.5:100-sign*.25;h.exchange.now+=1000;await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.engine.ownOrders(b).filter(o=>o.role==='exit').length,1);assert.equal(b.runtime.error,null);
  }
 });
+
+async function capacityHolding(direction='LONG',exitPercent=100){
+ const entry=marketRule('ENTER_'+direction,'TRUE',{sizePercent:100,leverage:3,reentry:{mode:'cooldown',cooldown:0,afterExitCooldown:0}}),exit=marketRule('EXIT_'+direction,'종가 > 100',{sizePercent:exitPercent}),h=await actionHarness([entry,exit]),b=h.engine.bot(h.id);
+ b.budget=40;b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();
+ h.engine.state.dataTransport={mode:'websocket',restIntervalSeconds:15};h.engine.client.transport={mode:'websocket'};h.engine.client.userStream={status:'connected'};h.engine.client.accountRevision=0;
+ h.exchange.now+=1000;await h.engine.tick();assert.ok(b.runtime.entryBlocked);return {...h,b,entry,exit};
+}
+test('minimum-size add-ons wait without stopping long or short bots or consuming their rule signal',async()=>{
+ for(const direction of ['LONG','SHORT']){
+  const h=await capacityHolding(direction),r=h.b.runtime,quantity=r.quantity,calls=h.exchange.calls.filter(c=>c.method==='placeOrder').length,signal={...r.ruleSignals[h.entry.id]};
+  assert.equal(r.runEnabled,true);assert.equal(r.error,null);assert.equal(r.entryBlocked.reason,'min-notional');assert.equal(r.lastEvaluation.budgetBlocked,true);
+  h.exchange.now+=1000;await h.engine.tick();assert.equal(r.quantity,quantity);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,calls);assert.equal(r.ruleSignals[h.entry.id].lastExecutionAt,signal.lastExecutionAt);assert.equal(r.ruleSignals[h.entry.id].lastBar,signal.lastBar);
+  assert.equal(h.store.state.bots.find(b=>b.id===h.id).runtime.entryBlocked.reason,'min-notional');
+ }
+});
+test('budget waits throttle forced account reads and duplicate logs while preserving condition monitoring',async()=>{
+ const h=await capacityHolding(),began=h.exchange.now,account=h.engine.client.account.bind(h.engine.client);let reads=0;h.engine.client.account=async()=>{reads++;return account();};
+ const logs=h.engine.state.logs.filter(l=>l.title==='진입 대기').length;
+ for(let second=1;second<=10;second++){h.exchange.now=began+second*1000;await h.engine.tick();}
+ assert.equal(reads,0);h.exchange.now=began+16000;await h.engine.tick();assert.equal(reads,1);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);assert.equal(h.engine.state.logs.filter(l=>l.title==='진입 대기').length,logs);
+});
+test('a full-capacity imported position waits without sending an entry or stopping management',async()=>{
+ const h=await harness();h.exchange.quantity=30;const plan=await h.engine.positionImports.preview({positionKey:'BTCUSDT:LONG',botId:h.id});await h.engine.positionImports.commit(plan.id);await h.engine.startBot(h.id);await h.engine.tick();
+ const b=h.engine.bot(h.id);assert.equal(b.runtime.entryBlocked.reason,'no-margin');assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,0);
+});
+test('exit rules execute during entry waits and a partial close makes new capacity usable automatically',async()=>{
+ for(const percentage of [100,50]){
+  const h=await capacityHolding('LONG',percentage),original=h.b.runtime.quantity;h.exchange.signalClose=101;h.exchange.now+=1000;await h.engine.tick();
+  assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);assert.equal(h.engine.ownOrders(h.b).filter(o=>o.role==='exit').length,1);
+  if(percentage===100){assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.entryBlocked,null);}
+  else {assert.ok(h.b.runtime.quantity<original);const after=h.b.runtime.quantity;h.exchange.signalClose=100;h.exchange.now+=1000;await h.engine.tick();assert.ok(h.b.runtime.quantity>after);assert.equal(h.b.runtime.entryBlocked,null);}
+ }
+});
+test('available margin returning restarts a waiting signal without a bot restart',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);
+ const account=h.engine.client.account.bind(h.engine.client);let available=0;h.engine.client.account=async()=>{const value=await account();value.assets[0].availableBalance=String(available);return value;};
+ await h.engine.refreshAccount(true);await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.entryBlocked.reason,'no-margin');assert.equal(h.exchange.quantity,0);
+ available=4000;h.exchange.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();assert.ok(h.exchange.quantity>0);assert.equal(b.runtime.entryBlocked,null);assert.equal(b.runtime.error,null);
+});
+test('capacity disappearing between preflight and submission cannot pause the bot or consume a signal',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);
+ const account=h.engine.client.account.bind(h.engine.client);h.engine.client.account=async()=>{const value=await account();value.assets[0].availableBalance='0';return value;};
+ await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(b.runtime.entryBlocked.reason,'no-margin');assert.equal(b.runtime.ruleSignals[b.actionRules[0].id].fired,false);
+});
+test('market remainder fallback that has no margin ends the remainder without stopping the bot',async()=>{
+ const entry=marketRule('ENTER_LONG','TRUE',{order:{type:'LIMIT',price:'bid',ticks:0,timeout:1,remainder:'market',postOnly:true}}),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();
+ const order=h.engine.ownOrders(b).find(o=>o.role==='entry'),account=h.engine.client.account.bind(h.engine.client);h.engine.client.account=async()=>{const value=await account();value.assets[0].availableBalance='0';return value;};
+ h.exchange.now+=2000;await h.engine.tick();assert.equal(order.status,'CANCELED');assert.equal(order.fallbackDone,true);assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+});
+test('a condition clearing removes an entry wait and user pause never auto-resumes',async()=>{
+ const h=await capacityHolding();h.b.actionRules[0].formula='(종가 < 100)@15m';h.exchange.signalClose=100;h.exchange.now+=1000;await h.engine.tick();assert.equal(h.b.runtime.entryBlocked,null);
+ h.b.actionRules[0].formula='TRUE@15m';h.exchange.now+=1000;await h.engine.tick();assert.ok(h.b.runtime.entryBlocked);await h.engine.pauseBot(h.id);assert.equal(h.b.runtime.entryBlocked,null);h.exchange.now+=30000;await h.engine.tick();assert.equal(h.b.runtime.runEnabled,false);
+});
+test('real exchange rejections, malformed plans and maximum quantity breaches remain errors',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]);await h.engine.startBot(h.id);h.engine.client.placeOrder=async()=>{throw new BinanceError('genuine rejection',{code:-2010});};await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.match(h.engine.bot(h.id).runtime.error,/genuine rejection/);
+ const invalid={...makeBot({budget:100}),used:0,reserved:0};assert.throws(()=>entryOrder({...invalid,used:NaN},info,{bids:[['100','1']],asks:[['100','1']]},100),/계산 값/);
+ const smallMax=structuredClone(info);for(const f of smallMax.filters.filter(f=>f.filterType==='MARKET_LOT_SIZE'||f.filterType==='LOT_SIZE'))f.maxQty='.001';
+ assert.throws(()=>entryOrder(invalid,smallMax,{bids:[['100','1']],asks:[['100','1']]},100),/최대 주문 수량/);
+});
+
+test('a 20x bot can fill two entries then wait on sub-lot dust instead of creating an invalid third order',async()=>{
+ const entry=marketRule('ENTER_SHORT','TRUE',{sizePercent:100,leverage:20,reentry:{mode:'cooldown',cooldown:0,afterExitCooldown:0}}),h=await actionHarness([entry]),b=h.engine.bot(h.id);b.budget=40;b.exit={takeProfitEnabled:false,stopLossEnabled:false};
+ await h.engine.startBot(h.id);for(let n=0;n<3;n++){h.exchange.now+=1000;await h.engine.tick();}
+ assert.equal(b.runtime.entries,2);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);assert.equal(b.runtime.entryBlocked.reason,'min-quantity');assert.equal(b.runtime.runEnabled,true);assert.equal(b.runtime.error,null);assert.ok(h.exchange.quantity<0);
+});

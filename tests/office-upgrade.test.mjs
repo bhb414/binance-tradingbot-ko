@@ -23,3 +23,9 @@ test('roster offers start for a paused entry engine even while it is still manag
  const bot={id:'held',name:'<SPY>',symbol:'SPYUSDT',status:'running',quantity:1,pnl:1,used:100,runtime:{runEnabled:false,realized:0}},names=[];
  const html=officeRosterMarkup([bot],{selectedId:'held',icon:name=>{names.push(name);return '<svg/>';}});assert.ok(names.includes('play'));assert.ok(!names.includes('pause'));assert.match(html,/&lt;SPY&gt; 시작/);assert.match(html,/data-edit-bot="held"/);assert.match(html,/data-office-focus="held"/);
 });
+
+test('minimum-order entry waits remain running and show their specific reason instead of an error',()=>{
+ const bot={id:'waiting',name:'예산 대기',symbol:'BTCUSDT',quantity:1,entryPrice:100,positionDirection:'LONG',leverage:20,used:5,budget:10,pnl:1,runtime:{runEnabled:true,realized:0,entryBlocked:{label:'진입 대기 · 최소 금액',message:'예상 주문금액이 최소 기준보다 작습니다.'}}},names=[];
+ const html=officeRosterMarkup([bot],{icon:name=>{names.push(name);return '<svg/>';}});
+ assert.match(html,/진입 대기 · 최소 금액/);assert.doesNotMatch(html,/확인 필요/);assert.ok(names.includes('pause'));assert.doesNotMatch(html,/has-error/);
+});

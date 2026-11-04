@@ -4,7 +4,7 @@ import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
 import {isEntry,isStop,actionDirection} from '../public/actions.js';
 import {evaluateRuleFormula} from '../public/formula-runtime.js';
-import {entryOrder,protectiveOrders} from './orders.mjs';
+import {EntryCapacityError,isEntryCapacityError,entryOrder,protectiveOrders} from './orders.mjs';
 import {leverageCap} from '../public/leverage.js';
 const terminal=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MATCH','FINISHED']),active=o=>!terminal.has(o.status);
 const initial=()=>({runEnabled:false,error:null,lastEvaluation:null,cancelEntries:false,closeAll:false,stopSignals:{}});
@@ -20,7 +20,7 @@ export class MultiBots{
  syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;}}return allocations;}
  view(p){
   const members=this.workers(p).map(b=>({...this.e.decorate(b),alias:b.multiAlias,parentId:p.id})),held=members.filter(b=>b.quantity>0),realized=members.reduce((s,b)=>s+Number(b.runtime.realized||0),0),used=members.reduce((s,b)=>s+b.used,0),reserved=members.reduce((s,b)=>s+b.reserved,0),pnl=members.reduce((s,b)=>s+b.pnl,0),orders=members.some(b=>this.e.ownOrders(b).some(active));
-  return {...p,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
+  return {...p,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:effectiveBudget({...p,runtime:{realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
@@ -64,7 +64,7 @@ export class MultiBots{
  targetItem(p,rule,target,evaluation){
   const b=this.e.state.bots.find(b=>b.id===memberId(p,{alias:target.alias})),r=b.runtime,entry=isEntry(target.action),direction=actionDirection(target.action);
   const signal=r.ruleSignals[rule.id]||={fired:false,lastBar:null,lastExecutionAt:0,epoch:r.positionEpoch};if(!entry&&signal.epoch!==r.positionEpoch){signal.fired=false;signal.lastBar=null;signal.epoch=r.positionEpoch;}
-  if(!evaluation.result.missing&&!evaluation.result.pass)signal.fired=false;
+  if(!evaluation.result.missing&&!evaluation.result.pass){signal.fired=false;if(entry&&r.entryBlocked?.ruleId===rule.id)r.entryBlocked=null;}
   signal.lastEvaluation={at:this.e.now(),bar:evaluation.bar,interval:evaluation.interval,pass:evaluation.result.pass,missing:evaluation.result.missing};
   const ready=rule.reentry.mode==='bar'?signal.lastBar!==evaluation.bar:rule.reentry.mode==='cooldown'?this.e.now()-signal.lastExecutionAt>=rule.reentry.cooldown*1000:!signal.fired;
   const eligible=entry?p.runtime.runEnabled&&(!r.quantity||r.direction===direction)&&(!p.maxEntries||r.entries<p.maxEntries)&&this.e.now()-Number(r.lastExitAt||0)>=Number(rule.reentry.afterExitCooldown||0)*1000:r.quantity>0&&(!direction||r.direction===direction);
@@ -72,8 +72,9 @@ export class MultiBots{
  }
  async execute(p,item){
   const e=this.e,b=item.worker;if(isEntry(item.rule.action)&&e.ownOrders(b).some(o=>active(o)&&o.kind==='standard'))return;
-  const market=await e.market(b.symbol,item.interval);await e.executeRule(b,{...item,market},await e.symbolInfo(b.symbol));
+  const market=await e.market(b.symbol,item.interval),outcome=await e.executeRule(b,{...item,market},await e.symbolInfo(b.symbol));
   if(b.runtime.error||e.ownOrders(b).some(o=>o.status==='UNKNOWN')){p.runtime.error=b.name+' · '+(b.runtime.error||'주문 접수 확인 중')+' · 다른 종목의 보유분은 유지합니다.';p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const worker of this.workers(p))worker.runtime.runEnabled=false;}
+  return outcome;
  }
  async tick(p){
   const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
@@ -96,12 +97,20 @@ export class MultiBots{
    p.runtime.lastEvaluation.rules.push({id:rule.id,...evaluation.result,at:e.now()});for(const item of items){const list=directions.get(item.worker.id)||new Set();list.add(actionDirection(item.rule.action));directions.set(item.worker.id,list);}batches.push(items);
   }
   for(const batch of batches){
-   const items=batch.filter(item=>{if(directions.get(item.worker.id).size!==1||managed.has(item.worker.id))return false;const usage=e.decorate(item.worker);if(usage.used+usage.reserved>=item.worker.budget){p.runtime.lastEvaluation.blocked=item.worker.multiAlias+' · 배정예산 부족';return false;}return true;});for(const item of batch)if(directions.get(item.worker.id).size>1){p.runtime.lastEvaluation.conflict=true;e.note('진입 신호 충돌',item.worker.name+' · 롱과 숏이 동시에 충족되어 보류합니다.',p.id);}if(!items.length)continue;
-   let required=0;
-   for(const item of items){const b=item.worker,market=await e.market(b.symbol,item.interval),info=await e.symbolInfo(b.symbol),view=e.orderView(b,item.rule,actionDirection(item.rule.action)),usage=e.decorate(b);if(usage.used+usage.reserved>=b.budget){required=Infinity;break;}const limits=await e.leverageLimits(b.symbol);if(view.leverage>leverageCap(limits,b.budget))throw Error(b.name+' · 레버리지 한도 초과');const plan=entryOrder(view,info,{...market.book,lastPrice:market.ticker.lastPrice},Infinity,e.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),e.hedge);required+=plan.margin;}
+   const items=batch.filter(item=>{if(directions.get(item.worker.id).size!==1||managed.has(item.worker.id))return false;const usage=e.decorate(item.worker);if(usage.used+usage.reserved>=item.worker.budget){if(!item.worker.runtime.entryBlocked||item.worker.runtime.entryBlocked.key!==e.entryKey(item.worker,item.rule))e.blockEntry(item.worker,item.rule,new EntryCapacityError('no-margin',{remainingBudget:0}));p.runtime.lastEvaluation.blocked=item.worker.multiAlias+' · 배정예산 부족';return false;}return true;});for(const item of batch)if(directions.get(item.worker.id).size>1){p.runtime.lastEvaluation.conflict=true;e.note('진입 신호 충돌',item.worker.name+' · 롱과 숏이 동시에 충족되어 보류합니다.',p.id);}if(!items.length)continue;
+   let required=0,blocked=false;
+   for(const item of items){
+    const b=item.worker;if(!await e.entryRetryReady(b,item.rule)){blocked=true;break;}
+    const market=await e.market(b.symbol,item.interval),info=await e.symbolInfo(b.symbol),view=e.orderView(b,item.rule,actionDirection(item.rule.action)),usage=e.decorate(b);
+    if(usage.used+usage.reserved>=b.budget){e.blockEntry(b,item.rule,new EntryCapacityError('no-margin',{remainingBudget:0}));blocked=true;break;}
+    const limits=await e.leverageLimits(b.symbol);if(view.leverage>leverageCap(limits,b.budget))throw Error(b.name+' · 레버리지 한도 초과');
+    try{const plan=entryOrder(view,info,{...market.book,lastPrice:market.ticker.lastPrice},Infinity,e.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),e.hedge);required+=plan.margin;}
+    catch(error){if(!isEntryCapacityError(error))throw error;e.blockEntry(b,item.rule,error);blocked=true;break;}
+   }
+   if(blocked){p.runtime.lastEvaluation.blocked='최소 주문 기준 또는 잔여 예산 대기';continue;}
    if(required*1.01>e.accountSnapshot.availableBalance){p.runtime.lastEvaluation.blocked='배정 비중 또는 계좌 가용 증거금 부족';continue;}
    for(const item of items)await e.prepareEntryLeverage(item.worker,item.worker.runtime.quantity?item.worker.leverage:item.rule.leverage);
-   for(const item of items){managed.add(item.worker.id);await this.execute(p,item);if(!p.runtime.runEnabled)break;}if(!p.runtime.runEnabled)break;
+   for(const item of items){managed.add(item.worker.id);const outcome=await this.execute(p,item);if(!p.runtime.runEnabled||outcome?.blocked)break;}if(!p.runtime.runEnabled)break;
   }
  }
  insights(value){const botFunding={...value.botFunding};for(const p of this.groups){const parts=this.workers(p).map(b=>botFunding[b.id]);botFunding[p.id]={complete:parts.length>0&&parts.every(v=>v?.complete),funding:parts.every(v=>v?.complete)?parts.reduce((s,v)=>s+v.funding,0):null,reason:'일부 종목의 수수료·펀딩 조회 확인 필요'};}return {...value,botFunding};}

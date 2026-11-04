@@ -102,6 +102,17 @@ if(process.argv.includes('--position-conditions')){
  await app.engine.refreshAccount(true);
 }
 
+
+if(process.argv.includes('--entry-capacity')){
+ const off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'},order={type:'MARKET',price:'ask',ticks:0,timeout:15,remainder:'cancel',postOnly:false},reentry={mode:'cooldown',cooldown:0,afterExitCooldown:0};
+ app.engine.client.positions=async()=>[...positions].filter(([,q])=>q).map(([symbol,q])=>({symbol,positionSide:'BOTH',positionAmt:String(q),entryPrice:'100',markPrice:'100',unRealizedProfit:'0',positionInitialMargin:String(Math.abs(q)*100/configs.get(symbol).leverage),marginType:configs.get(symbol).marginType,isolatedWallet:configs.get(symbol).marginType==='ISOLATED'?String(Math.abs(q)*100/configs.get(symbol).leverage):'0'}));
+ app.engine.client.commissionRate=async symbol=>({symbol,takerCommissionRate:'.0004'});
+ const bot=await app.engine.saveBot(makeBot({id:'ui-entry-wait',name:'잔여 예산 대기 예시',symbol:'BTCUSDT',budget:40,leverage:3,exit:off,actionRules:[makeActionRule({formula:'TRUE@1m',sizePercent:100,leverage:3,order,reentry}),makeActionRule({action:'EXIT_LONG',formula:'FALSE@1m',sizePercent:100,order})]}));
+ await app.engine.startBot(bot.id);await app.engine.tick();await app.engine.tick();
+ const {makeMultiBot,multiRule}=await import('../public/multi-bot.js'),legs=[{alias:'A',symbol:'ETHUSDT',weight:60},{alias:'B',symbol:'INTCUSDT',weight:40}],p=makeMultiBot({id:'ui-multi-entry-wait',name:'다중종목 진입 대기',budget:10,legs,exit:off,actionRules:[multiRule(legs,{formula:'TRUE@1m',reentry,targets:[{alias:'A',enabled:true,action:'ENTER_LONG',sizePercent:100,leverage:2,order},{alias:'B',enabled:true,action:'ENTER_SHORT',sizePercent:100,leverage:4,order}]})]});
+ await app.engine.saveBot(p);await app.engine.startBot(p.id);await app.engine.tick();await app.engine.tick();
+}
+
 if(process.argv.includes('--storage-outage')){
  const save=store.save.bind(store);let blocked=true;
  store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};

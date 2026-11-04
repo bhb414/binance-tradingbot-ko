@@ -143,3 +143,15 @@ test('multi-symbol exit formulas combine aggregate return with each named leg re
  const saved=await h.engine.saveBot(p);await h.engine.startBot(saved.id);await h.engine.tick();assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
  h.x.prices.BTCUSDT=101;h.x.prices.ETHUSDT=49;h.x.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.equal(h.x.quantities.ETHUSDT,0);assert.equal(h.x.calls.length,4);
 });
+
+test('one undersized leg defers a multi-symbol batch without stopping the parent or opening an unmatched leg',async()=>{
+ const h=await harness(),p=config({budget:10,exit:{takeProfitEnabled:false,stopLossEnabled:false}});p.actionRules[0].reentry={mode:'cooldown',cooldown:0,afterExitCooldown:0};p.actionRules.push(multiRule(p.legs,{formula:'A.종가@1h > 100',targets:[multiTarget('A',{action:'EXIT_LONG',sizePercent:100}),multiTarget('B',{action:'EXIT_SHORT',sizePercent:100})]}));
+ const saved=await h.engine.saveBot(p);await h.engine.startBot(saved.id);await h.engine.tick();assert.equal(h.x.calls.length,2);const before={...h.x.quantities};
+ h.x.now+=1000;await h.engine.tick();const view=h.engine.multi.view(h.engine.multi.get(saved.id));assert.equal(view.runtime.runEnabled,true);assert.equal(view.error,null);assert.equal(view.runtime.entryBlocked.reason,'min-notional');assert.equal(h.x.calls.length,2);assert.deepEqual(h.x.quantities,before);
+ h.x.prices.BTCUSDT=101;h.x.now+=1000;await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.equal(h.x.quantities.ETHUSDT,0);assert.equal(h.x.calls.length,4);assert.equal(h.engine.multi.get(saved.id).runtime.runEnabled,true);
+});
+test('a multi-symbol balance race after preflight cannot submit only later legs or permanently stop the parent',async()=>{
+ const h=await harness(),p=config({exit:{takeProfitEnabled:false,stopLossEnabled:false}}),saved=await h.engine.saveBot(p);await h.engine.startBot(saved.id);
+ const account=h.client.account.bind(h.client);h.client.account=async()=>{const value=await account();value.assets[0].availableBalance='0';return value;};
+ await h.engine.tick();const view=h.engine.multi.view(h.engine.multi.get(saved.id));assert.equal(h.x.calls.length,0);assert.equal(view.runtime.runEnabled,true);assert.equal(view.error,null);assert.equal(view.runtime.entryBlocked.reason,'no-margin');
+});
