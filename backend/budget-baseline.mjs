@@ -32,7 +32,7 @@ export class BudgetBaselines{
   if(running)warnings.push('운용 상태를 유지합니다. 늘어난 한도는 이후 조건 주문에 사용될 수 있습니다.');
   if(held)warnings.push('보유 포지션은 유지합니다. 나중에 정리하면서 확정되는 손익은 예산에 반영됩니다.');
   if(view.used+view.reserved>after+1e-8)warnings.push('현재 사용·예약 증거금이 새 한도를 넘습니다. 기존 보유분은 유지하고 새 진입만 남은 한도로 제한합니다.');
-  return {root,members,fingerprint:this.fingerprint(root,members),preview:{allowed,reason:allowed?'':'재설정 후 전체 배정예산 '+(other+after).toFixed(2)+' USDT가 선물지갑 '+wallet.toFixed(2)+' USDT를 초과합니다.',before,after,base:root.budget,mode:root.budgetMode||'fixed',profitReinvestPercent:root.profitReinvestPercent??100,withheld:view.runtime.budgetWithheld||0,realized,budgetPnl:budgetRealized(view),used:view.used,reserved:view.reserved,running,held,warnings,currentBaselineAt:root.runtime.budgetBaseline?.at||null}};
+  return {root,members,fingerprint:this.fingerprint(root,members),preview:{allowed,reason:allowed?'':'재설정 후 전체 배정예산 '+(other+after).toFixed(2)+' USDT가 선물지갑 '+wallet.toFixed(2)+' USDT를 초과합니다.',before,after,base:root.budget,mode:root.budgetMode||'fixed',budgetFloor:root.budgetFloor,profitReinvestPercent:root.profitReinvestPercent??100,withheld:view.runtime.budgetWithheld||0,realized,budgetPnl:budgetRealized(view),used:view.used,reserved:view.reserved,running,held,warnings,currentBaselineAt:root.runtime.budgetBaseline?.at||null}};
  }
  async preview(id){
   const result=await this.inspect(id),now=this.e.now();for(const [key,p]of this.plans)if(p.expiresAt<=now)this.plans.delete(key);

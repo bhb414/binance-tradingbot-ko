@@ -20,7 +20,7 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
  if(typeof bot.name!=='string'||!bot.name.trim()||bot.name.length>30)errors.push('이름은 1~30자로 입력하세요.');
  errors.push(...budgetSettingsErrors(bot));
  if(bot.profitReinvestPercent!==undefined&&(!Number.isFinite(bot.profitReinvestPercent)||bot.profitReinvestPercent<0||bot.profitReinvestPercent>100))errors.push('이익 예산 반영 비율은 0~100%로 입력하세요.');
- if(!['fixed','pnl','capped'].includes(bot.budgetMode)||!['ISOLATED','CROSSED'].includes(bot.margin))errors.push('예산 운용·증거금 모드를 확인하세요.');
+ if(!['fixed','pnl','capped','floor'].includes(bot.budgetMode)||!['ISOLATED','CROSSED'].includes(bot.margin))errors.push('예산 운용·증거금 모드를 확인하세요.');
  if(!Number.isInteger(bot.maxEntries)||bot.maxEntries<0||bot.maxEntries>20)errors.push('종목별 진입 횟수는 0(제한 없음)~20회로 지정하세요.');
  if(!Array.isArray(bot.legs)||bot.legs.length<2||bot.legs.length>8)return [...errors,'다중종목 봇은 2~8개 종목을 지정하세요.'];
  if(bot.legs.some(leg=>!leg||typeof leg!=='object'))return [...errors,'종목 설정 형식을 확인하세요.'];

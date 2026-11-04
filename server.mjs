@@ -67,6 +67,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='GET'&&pathname==='/api/manual/context'){json(200,await engine.serial(()=>engine.manual.context(url.searchParams.get('symbol'),url.searchParams.get('botId')||null)));return;}
         if(req.method==='POST'&&pathname==='/api/manual/preview'){json(200,await engine.serial(()=>engine.manual.preview(body)));return;}
         if(req.method==='POST'&&pathname==='/api/manual/submit'){json(200,await engine.serial(()=>engine.manual.submit(body.planId)));return;}
+        if(req.method==='POST'&&pathname==='/api/account/orders/cancel'){json(200,await engine.serial(()=>engine.orderCancellation.cancel(body)));return;}
         const manualCancel=/^\/api\/manual\/orders\/([A-Za-z0-9_-]{1,60})\/cancel$/.exec(pathname),manualStatus=/^\/api\/manual\/requests\/([a-f0-9-]{36})$/.exec(pathname);
         if(req.method==='POST'&&manualCancel){json(200,await engine.serial(()=>engine.manual.cancel(manualCancel[1])));return;}
         if(req.method==='GET'&&manualStatus){json(200,await engine.serial(()=>engine.manual.requestStatus(manualStatus[1])));return;}

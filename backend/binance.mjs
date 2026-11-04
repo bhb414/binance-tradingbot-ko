@@ -65,7 +65,7 @@ export class BinanceClient {
   changeLeverage(symbol,leverage){return this.request('POST','/fapi/v1/leverage',{symbol,leverage},true);}
   placeOrder(parameters){return this.request('POST','/fapi/v1/order',parameters,true);}
   queryOrder(symbol,id){return this.request('GET','/fapi/v1/order',{symbol,...(typeof id==='object'?id:{origClientOrderId:id})},true);}
-  cancelOrder(symbol,id){return this.request('DELETE','/fapi/v1/order',{symbol,origClientOrderId:id},true);}
+  cancelOrder(symbol,id){return this.request('DELETE','/fapi/v1/order',{symbol,...(typeof id==='object'?id:{origClientOrderId:id})},true);}
   placeAlgo(parameters){return this.request('POST','/fapi/v1/algoOrder',parameters,true);}
   queryAlgo(id){return this.request('GET','/fapi/v1/algoOrder',{clientAlgoId:id},true);}
   cancelAlgo(id){return this.request('DELETE','/fapi/v1/algoOrder',{clientAlgoId:id},true);}

@@ -133,7 +133,7 @@ export class ManualTrading {
   async refreshPending(){for(const order of this.records.filter(o=>active(o)&&!o.botId))await this.engine.pollTrackedOrder(order,()=>this.refresh(order));}
   async requestStatus(id){const order=this.records.find(order=>order.requestId===id);if(!order)return {found:false};if(this.engine.connected){await this.refresh(order);await this.engine.checkpoint();}return {found:true,order:this.view(order)};}
   async cancel(id){
-    const e=this.engine;e.requireTrading();const order=this.records.find(order=>order.id===id);if(!order)throw new Error('이 계좌에서 앱으로 만든 수동 주문이 아닙니다.');
+    const e=this.engine;e.requireCancellation();const order=this.records.find(order=>order.id===id);if(!order)throw new Error('이 계좌에서 앱으로 만든 수동 주문이 아닙니다.');
     await this.refresh(order);if(!active(order))return this.view(order);if(order.status==='UNKNOWN')throw new Error('주문 접수 여부를 먼저 확인해야 합니다.');
     order.cancelRequestedAt=e.now();await e.checkpoint();
     try{const result=await e.client.cancelOrder(order.parameters.symbol,order.id);if(order.botId)await e.applyOrder(e.bot(order.botId),order,result);else this.apply(order,result);}catch(error){order.error=e.client.redact?.(error.message)||'취소 응답을 확인하지 못했습니다.';if(error.uncertain)order.status='UNKNOWN';else throw error;}

@@ -1,17 +1,17 @@
-export const BUDGET_MODES=Object.freeze({fixed:'고정 한도',pnl:'손익 반영',capped:'원금 한도 유지'});
-export const BUDGET_OPTIONS=Object.freeze([['fixed','고정 한도 (손실이 나도 설정한 한도 유지)'],['pnl','손익 반영 (손실 차감 · 수익도 재투자)'],['capped','원금 한도 유지 (손실 차감 · 수익은 원금까지만 복구)']]);
+export const BUDGET_MODES=Object.freeze({fixed:'고정 한도',pnl:'손익 반영',capped:'원금 한도 유지',floor:'최소 한도 유지 + 손익 반영'});
+export const BUDGET_OPTIONS=Object.freeze([['fixed','고정 한도 (손실이 나도 설정한 한도 유지)'],['pnl','손익 반영 (손실 차감 · 수익도 재투자)'],['capped','원금 한도 유지 (손실 차감 · 수익은 원금까지만 복구)'],['floor','최소 한도 유지 + 손익 반영 (과거 손실 복구 후 증가)']]);
 export const BUDGET_TYPES=Object.freeze([['amount','금액 · USDT'],['walletPercent','선물 USDT 지갑 잔고의 비율 · %']]);
 export const SHORTFALL_OPTIONS=Object.freeze([['strict','설정 한도 확보 후 운용 · 기존 방식'],['available','부족하면 가용 한도까지 자동 축소']]);
 export const budgetIncluded=bot=>bot?.budgetIncluded!==false;
 export const reinvestPercent=bot=>bot.profitReinvestPercent??100;
 export const withheldProfit=(bot,gross)=>Math.max(0,gross)*(1-reinvestPercent(bot)/100);
 export function budgetRealized(bot){const r=bot.runtime||{},base=r.budgetBaseline||{};return (Number(r.realized)||0)-(Number(r.budgetWithheld)||0)-(Number(base.realized)||0)+(Number(base.withheld)||0);}
-export function budgetSettingsErrors(bot){const errors=[];if(!['amount','walletPercent'].includes(bot.budgetType||'amount'))errors.push('예산 지정 기준을 확인하세요.');if(!['strict','available'].includes(bot.budgetShortfall||'strict'))errors.push('예산 부족 시 운용 방식을 확인하세요.');if(bot.budgetType==='walletPercent'){if(!Number.isFinite(bot.budgetPercent)||bot.budgetPercent<=0||bot.budgetPercent>100)errors.push('지갑 잔고 비율은 0보다 크고 100% 이하로 입력하세요.');}else if(!Number.isFinite(bot.budget)||bot.budget<10||bot.budget>100000000)errors.push('운용 예산은 10 USDT 이상이어야 합니다.');return errors;}
+export function budgetSettingsErrors(bot){const errors=[];if(!['amount','walletPercent'].includes(bot.budgetType||'amount'))errors.push('예산 지정 기준을 확인하세요.');if(!['strict','available'].includes(bot.budgetShortfall||'strict'))errors.push('예산 부족 시 운용 방식을 확인하세요.');if(bot.budgetType==='walletPercent'){if(!Number.isFinite(bot.budgetPercent)||bot.budgetPercent<=0||bot.budgetPercent>100)errors.push('지갑 잔고 비율은 0보다 크고 100% 이하로 입력하세요.');}else if(!Number.isFinite(bot.budget)||bot.budget<10||bot.budget>100000000)errors.push('운용 예산은 10 USDT 이상이어야 합니다.');if(bot.budgetType!=='walletPercent'&&bot.budgetMode==='floor'&&(!Number.isFinite(bot.budgetFloor)||bot.budgetFloor<0||bot.budgetFloor>bot.budget))errors.push('최소 운용한도는 0 이상, 기준 운용예산 이하의 USDT 금액으로 입력하세요.');return errors;}
 export function requestedBudget(bot,walletBalance=bot.budgetAllocation?.wallet){
  if(bot.budgetType==='walletPercent')return Number.isFinite(walletBalance)?Math.max(0,walletBalance)*Math.max(0,Number(bot.budgetPercent)||0)/100:0;
- const base=Math.max(0,Number(bot.budget)||0),realized=budgetRealized(bot),mode=bot.budgetMode||'fixed';if(mode==='fixed')return base;const current=Math.max(0,base+realized);return mode==='capped'?Math.min(base,current):current;
+ const base=Math.max(0,Number(bot.budget)||0),realized=budgetRealized(bot),mode=bot.budgetMode||'fixed';if(mode==='fixed')return base;if(mode==='floor')return Math.max(Number(bot.budgetFloor)||0,base+realized);const current=Math.max(0,base+realized);return mode==='capped'?Math.min(base,current):current;
 }
-export const budgetSignature=bot=>JSON.stringify([bot.budget,bot.budgetType||'amount',bot.budgetPercent??null,bot.budgetShortfall||'strict',bot.budgetMode||'fixed',budgetIncluded(bot),budgetRealized(bot)]);
+export const budgetSignature=bot=>JSON.stringify([bot.budget,bot.budgetType||'amount',bot.budgetPercent??null,bot.budgetShortfall||'strict',bot.budgetMode||'fixed',bot.budgetFloor??null,budgetIncluded(bot),budgetRealized(bot)]);
 export function effectiveBudget(bot){const allocation=bot.budgetAllocation;return allocation&&allocation.signature===budgetSignature(bot)?allocation.limit:requestedBudget(bot);}
 export const allocatedAmount=bot=>budgetIncluded(bot)?effectiveBudget(bot):0;
 // Strict targets retain their existing allocation. Flexible bots reserve current usage
