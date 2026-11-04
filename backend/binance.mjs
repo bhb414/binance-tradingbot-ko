@@ -69,5 +69,6 @@ export class BinanceClient {
   placeAlgo(parameters){return this.request('POST','/fapi/v1/algoOrder',parameters,true);}
   queryAlgo(id){return this.request('GET','/fapi/v1/algoOrder',{clientAlgoId:id},true);}
   cancelAlgo(id){return this.request('DELETE','/fapi/v1/algoOrder',{clientAlgoId:id},true);}
+  tradesAfter(symbol,fromId){return this.request('GET','/fapi/v1/userTrades',{symbol,fromId,limit:1000},true);}
   trades(symbol,orderId){return this.request('GET','/fapi/v1/userTrades',{symbol,orderId,limit:1000},true);}
 }

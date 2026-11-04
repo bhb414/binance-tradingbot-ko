@@ -68,7 +68,8 @@ export function protectiveOrders(bot,info,quantity,entryPrice,hedge=false){
 }
 export function exitOrder(bot,info,book,quantity,hedge=false){
   const filters=symbolFilters(info,bot.order.type),long=bot.direction==='LONG',side=long?'SELL':'BUY';
-  const qty=quantize(String(quantity),filters.step);
+  const step=Number(filters.step),scaled=Number(quantity)/step,units=Math.round(scaled),places=(String(filters.step).split('.')[1]||'').length,normalized=Math.abs(scaled-units)<1e-6?(units*step).toFixed(places):String(quantity);
+  const qty=quantize(normalized,filters.step);
   if(Number(qty)<filters.minQty||Number(qty)>filters.maxQty)throw new Error('정리 수량이 거래소 수량 범위를 벗어납니다.');
   const parameters={symbol:bot.symbol,side,type:bot.order.type,quantity:qty,positionSide:hedge?bot.direction:'BOTH',...(!hedge?{reduceOnly:'true'}:{})};
   if(bot.order.type==='LIMIT'){

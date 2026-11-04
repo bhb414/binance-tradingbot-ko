@@ -31,10 +31,10 @@ function ledger(state,now){
   const {order}=group,total=group.rows.reduce((s,f)=>s+num(f.quantity),0),costs=fees.get(key)||[],actual=costs.filter(f=>valid(f.tradeQuantity)&&valid(f.tradePrice)&&valid(f.at)),sum=actual.reduce((s,f)=>s+num(f.tradeQuantity),0),precise=actual.length>0&&Math.abs(sum-total)<=Math.max(eps,total*1e-7),source=precise?actual:group.rows;
   for(const f of source){const at=precise?num(f.at):valid(f.tradeTime)?num(f.tradeTime):num(f.at),lev=executionLeverage(order,f),role=precise?order.role:f.role,direction=f.direction||order?.direction||(role==='entry'?(f.side||order?.parameters?.side)==='BUY'?'LONG':'SHORT':(f.side||order?.parameters?.side)==='SELL'?'LONG':'SHORT');
    if(!['entry','exit','take','stop'].includes(role)||at>now)continue;
-   events.push({id:precise?'trade:'+f.id:f.id,botId:f.botId,symbol:f.symbol,at,earliest:precise||valid(f.tradeTime)?at:Math.min(at,num(order?.createdAt)||at),precise:precise||valid(f.tradeTime),type:role==='entry'?'entry':'exit',role,direction,quantity:num(precise?f.tradeQuantity:f.quantity),price:num(precise?f.tradePrice:f.price),leverage:lev.value,leverageEstimated:lev.estimated,orderId:order?.id||null,source:order?.source==='bot-manual'?'bot-manual':'bot',hedged:order?.parameters?.positionSide&&order.parameters.positionSide!=='BOTH'});
+   events.push({id:precise?'trade:'+f.id:f.id,botId:f.botId,symbol:f.symbol,at,earliest:precise||valid(f.tradeTime)?at:Math.min(at,num(order?.createdAt)||at),precise:precise||valid(f.tradeTime),type:role==='entry'?'entry':'exit',role,direction,quantity:num(precise?f.tradeQuantity:f.quantity),price:num(precise?f.tradePrice:f.price),leverage:lev.value,leverageEstimated:lev.estimated,orderId:order?.id||null,source:order?.source==='exchange-close'?'exchange-close':(order?.source==='bot-manual'||order?.origin==='bot-manual')?'bot-manual':'bot',hedged:order?.parameters?.positionSide&&order.parameters.positionSide!=='BOTH'});
   }
  }
- for(const r of state.positionImports||[])if(r.scope===scope&&r.botId&&r.at<=now&&valid(r.quantity))events.push({id:'import:'+r.id,botId:r.botId,symbol:r.symbol,at:r.at,earliest:r.at,precise:true,type:'import',role:'import',direction:r.direction,quantity:r.quantity,price:r.entryPrice,leverage:r.leverage||null,leverageEstimated:false,orderId:null,source:'import',hedged:false});
+ for(const r of state.positionImports||[])if(r.scope===scope&&r.botId&&r.at<=now&&valid(r.quantity))events.push({id:'import:'+r.id,botId:r.botId,symbol:r.symbol,at:r.at,earliest:r.at,precise:true,type:'import',role:'import',additive:!!r.additive,direction:r.direction,quantity:r.quantity,price:r.entryPrice,leverage:r.leverage||null,leverageEstimated:false,orderId:null,source:'import',hedged:false});
  events.sort((a,b)=>a.at-b.at);
  return {events,orders,byId,fees,orphans};
 }
@@ -47,7 +47,7 @@ function reconstruct(data,now){
  for(const event of data.events){let c=active.get(event.botId);
   if(event.type==='entry'||event.type==='import'){
    if(c&&(c.symbol!==event.symbol||c.direction!==event.direction)){c.inconsistent=true;c.costReasons.push('보유 방향 기록 불일치');active.delete(event.botId);c=null;}
-   c||=create(event);if(event.type==='import'){if(c.remaining>eps)c.inconsistent=true;c.imported=true;c.marginKnown=false;}
+   c||=create(event);if(event.type==='import'){if(c.remaining>eps&&!event.additive)c.inconsistent=true;c.imported=true;c.marginKnown=false;}
    c.averagePrice=(c.remaining*c.averagePrice+event.quantity*event.price)/(c.remaining+event.quantity);c.remaining+=event.quantity;c.entryQuantity+=event.quantity;c.entryNotional+=event.quantity*event.price;
    if(valid(event.leverage))c.entryMargin+=event.quantity*event.price/event.leverage;else c.marginKnown=false;
    c.marginEstimated||=event.leverageEstimated;
@@ -63,7 +63,7 @@ function reconstruct(data,now){
  }
  return cycles;
 }
-function applyCosts(cycles,data,funding,now){
+function applyCosts(cycles,data,funding,now,sharedEvents=[]){
  const totalByOrder=new Map();for(const c of cycles)for(const [id,q]of c.orders)totalByOrder.set(id,(totalByOrder.get(id)||0)+q);
  for(const c of cycles){
   if(c.imported)c.costReasons.push('인수 전 진입 수수료 미확인');
@@ -79,7 +79,9 @@ function applyCosts(cycles,data,funding,now){
  }
  for(const row of funding.rows){
   const owners=cycles.filter(c=>c.symbol===row.symbol&&c.openedAt<=row.at&&(c.closedAt==null||row.at<=c.closedAt)&&c.events.filter(e=>e.at<=row.at).at(-1)?.remaining>eps),boundary=cycles.filter(c=>c.symbol===row.symbol&&c.events.some(e=>(!e.precise&&row.at>=e.earliest&&row.at<=e.at)||row.at===e.at));
-  if(owners.length===1&&!owners[0].hedged&&!boundary.length&&row.asset==='USDT'){owners[0].funding+=row.amount;owners[0].fundingEvents.push({at:row.at,amount:row.amount});}
+  const shared=sharedEvents.filter(e=>e.symbol===row.symbol&&e.at<=row.at).at(-1),sharedTotal=shared?.pools.reduce((n,p)=>n+p.quantity,0);
+  if(sharedTotal>0&&!boundary.length&&row.asset==='USDT'&&owners.every(c=>!c.hedged)){for(const c of owners){const quantity=shared.pools.filter(p=>p.botId===c.botId&&p.direction===c.direction).reduce((n,p)=>n+p.quantity,0),amount=row.amount*quantity/sharedTotal;c.funding+=amount;c.fundingEvents.push({at:row.at,amount});}}
+  else if(owners.length===1&&!owners[0].hedged&&!boundary.length&&row.asset==='USDT'){owners[0].funding+=row.amount;owners[0].fundingEvents.push({at:row.at,amount:row.amount});}
   else for(const c of new Set([...owners,...boundary]))c.costReasons.push(row.asset!=='USDT'?'USDT 외 펀딩 미환산':'펀딩 시점의 소유 포지션 확인 필요');
  }
  for(const c of cycles){c.costReasons=[...new Set(c.costReasons)];c.gross=c.unknownEntry||c.inconsistent?null:c.grossRealized;c.costsComplete=!c.costReasons.length;c.net=c.closedAt&&c.costsComplete&&c.gross!=null?c.gross-c.fee+c.funding:null;c.returnPercent=c.net!=null&&c.marginKnown&&c.entryMargin>0?c.net/c.entryMargin*100:null;}
@@ -97,7 +99,7 @@ export function buildTradeHistory({state,botId,now=Date.now(),range='all',page=1
  if(!Number.isInteger(page)||page<1||page>100000)throw Error('기록 페이지를 확인하세요.');
  const roots=[...(state.bots||[]).filter(b=>!b.multiBotId),...(state.multiBots||[])],bot=botId==null?{id:null,name:'봇 전체',kind:'all',budget:roots.reduce((sum,b)=>sum+num(b.budget),0)}:roots.find(b=>b.id===botId);if(!bot)throw Error('봇을 찾을 수 없습니다.');
  const scope=state.scope,savedRows=(state.fundingLedger||[]).filter(f=>f.scope===scope),extra=funding?.scope===scope?funding:null,coverage=mergeCoverage([...(state.fundingCoverage||[]).filter(r=>r.scope===scope),...(extra?.complete?[{start:extra.startTime,end:extra.endTime}]:[])]),records=new Map([...savedRows,...(extra?.rows||[])].map(r=>[r.id,r]));
- const data=ledger(state,now),all=reconstruct(data,now);applyCosts(all,data,{rows:[...records.values()],coverage,asOf:extra?.endTime||Math.max(0,...coverage.map(r=>r.end))},now);
+ const data=ledger(state,now),all=reconstruct(data,now);applyCosts(all,data,{rows:[...records.values()],coverage,asOf:extra?.endTime||Math.max(0,...coverage.map(r=>r.end))},now,(state.sharedEvents||[]).filter(e=>e.scope===scope));
  const ids=new Set(bot.kind==='all'?all.map(c=>c.botId):bot.kind==='multi'?[bot.id,...(state.bots||[]).filter(b=>b.multiBotId===bot.id).map(b=>b.id),...all.filter(c=>c.botId.startsWith(bot.id+'_')&&/^[A-Z]$/.test(c.botId.slice(bot.id.length+1))).map(c=>c.botId)]:[bot.id]),start=Math.max(bot.statsReset?.scope===scope?bot.statsReset.at:0,range==='all'?Math.min(now,...all.filter(c=>ids.has(c.botId)).map(c=>c.openedAt)):now+({'7d':-7,'30d':-30,'90d':-90}[range])*86400000),resetFor=id=>roots.find(root=>root.id===id||root.kind==='multi'&&id.startsWith(root.id+'_')),selected=all.filter(c=>{const reset=resetFor(c.botId)?.statsReset;return ids.has(c.botId)&&(c.closedAt==null||c.closedAt>=start)&&(!(reset?.scope===scope)||c.openedAt>reset.at);}),budget=num(bot.budget),report=statsAndCurve(selected,budget,start,now),sorted=selected.sort((a,b)=>(b.closedAt??now)-(a.closedAt??now)||b.openedAt-a.openedAt),pages=Math.max(1,Math.ceil(sorted.length/pageSize)),actualPage=Math.min(page,pages);
  const trades=sorted.slice((actualPage-1)*pageSize,actualPage*pageSize).map(c=>{
   const matching=account?.positions?.find(p=>p.symbol===c.symbol&&(p.positionSide==='BOTH'||p.positionSide===c.direction)),mark=matching?num(matching.markPrice):null,unrealized=!c.closedAt&&mark>0?(mark-c.averagePrice)*c.remaining*(c.direction==='LONG'?1:-1):null;
@@ -118,7 +120,7 @@ export class TradeHistory{
 
 export function buildOpenPositionCosts({state,now=Date.now(),funding=null}){
  const scope=state.scope,extra=funding?.scope===scope?funding:null,coverage=mergeCoverage([...(state.fundingCoverage||[]).filter(r=>r.scope===scope),...(extra?.complete?[{start:extra.startTime,end:extra.endTime}]:[])]),rows=new Map([...(state.fundingLedger||[]).filter(r=>r.scope===scope),...(extra?.rows||[])].map(r=>[r.id,r])),asOf=Math.min(now,Math.max(0,...coverage.map(r=>r.end))),data=ledger(state,now),cycles=reconstruct(data,now),result={};
- applyCosts(cycles,data,{rows:[...rows.values()],coverage,asOf},now);
+ applyCosts(cycles,data,{rows:[...rows.values()],coverage,asOf},now,(state.sharedEvents||[]).filter(e=>e.scope===scope));
  const orderQuantities=new Map();for(const event of data.events)if(event.type==='entry'&&event.orderId)orderQuantities.set(event.orderId,(orderQuantities.get(event.orderId)||0)+event.quantity);
  for(const c of cycles.filter(c=>c.closedAt==null&&c.remaining>eps)){
   const reasons=c.costReasons.filter(r=>!['수수료 조회 대기','USDT 외 수수료 미환산','일부 체결 수수료만 확인됨'].includes(r));

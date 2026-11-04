@@ -1,4 +1,4 @@
-import {portfolioFormulaPosition} from '../public/formula-position.js';
+import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
 import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
@@ -56,18 +56,18 @@ export class MultiBots{
  async remove(id){const p=this.get(id),workers=this.workers(p);if(workers.some(b=>b.runtime.quantity>0||this.e.ownOrders(b).some(active)))throw Error('보유·미해결 주문이 있으면 삭제할 수 없습니다.');const ids=new Set(workers.map(b=>b.id));this.e.state.bots=this.e.state.bots.filter(b=>!ids.has(b.id));this.e.state.multiBots=this.groups.filter(b=>b.id!==id);await this.e.checkpoint();return {ok:true};}
  async close(id){const p=this.get(id);this.e.requireTrading();p.runtime.closeAll=true;p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.closePending(p);return this.view(p);}
  async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리');}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
- position(p){return portfolioFormulaPosition(this.view(p));}
+ position(p,rule=null){return rule?portfolioActionFormulaPosition(this.view(p),rule,{account:this.e.liveAccount(),positionMode:this.e.hedge?'HEDGE':'ONE_WAY'}):portfolioFormulaPosition(this.view(p));}
  async evaluate(p,rule,cache){
-  const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p),{now:this.e.now()+(this.e.client.offset||0)});
+  const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p,rule),{now:this.e.now()+(this.e.client.offset||0)});
   return result;
  }
  targetItem(p,rule,target,evaluation){
-  const b=this.e.state.bots.find(b=>b.id===memberId(p,{alias:target.alias})),r=b.runtime,entry=isEntry(target.action),direction=actionDirection(target.action);
-  const signal=r.ruleSignals[rule.id]||={fired:false,lastBar:null,lastExecutionAt:0,epoch:r.positionEpoch};if(!entry&&signal.epoch!==r.positionEpoch){signal.fired=false;signal.lastBar=null;signal.epoch=r.positionEpoch;}
+  const b=this.e.state.bots.find(b=>b.id===memberId(p,{alias:target.alias})),r=b.runtime,entry=isEntry(target.action),direction=actionDirection(target.action),position=this.e.rulePosition(b,target);
+  const signal=r.ruleSignals[rule.id]||={fired:false,lastBar:null,lastExecutionAt:0,epoch:position.positionEpoch};if(!entry&&signal.epoch!==position.positionEpoch){signal.fired=false;signal.lastBar=null;signal.epoch=position.positionEpoch;}
   if(!evaluation.result.missing&&!evaluation.result.pass){signal.fired=false;if(entry&&r.entryBlocked?.ruleId===rule.id)r.entryBlocked=null;}
   signal.lastEvaluation={at:this.e.now(),bar:evaluation.bar,interval:evaluation.interval,pass:evaluation.result.pass,missing:evaluation.result.missing};
   const ready=rule.reentry.mode==='bar'?signal.lastBar!==evaluation.bar:rule.reentry.mode==='cooldown'?this.e.now()-signal.lastExecutionAt>=rule.reentry.cooldown*1000:!signal.fired;
-  const eligible=entry?p.runtime.runEnabled&&(!r.quantity||r.direction===direction)&&(!p.maxEntries||r.entries<p.maxEntries)&&this.e.now()-Number(r.lastExitAt||0)>=Number(rule.reentry.afterExitCooldown||0)*1000:r.quantity>0&&(!direction||r.direction===direction);
+  const eligible=entry?p.runtime.runEnabled&&(!r.quantity||r.direction===direction)&&(!p.maxEntries||r.entries<p.maxEntries)&&this.e.now()-Number(r.lastExitAt||0)>=Number(rule.reentry.afterExitCooldown||0)*1000:position.quantity>0&&(!direction||position.direction===direction);
   return {worker:b,rule:{...target,id:rule.id,reentry:rule.reentry},signal,bar:evaluation.bar,interval:evaluation.interval,ready:eligible&&ready&&!evaluation.result.missing&&evaluation.result.pass};
  }
  async execute(p,item){
@@ -78,12 +78,14 @@ export class MultiBots{
  }
  async tick(p){
   const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
-  if(!p.runtime.runEnabled&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
+  const accountManagement=p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
+  if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
+  if(workers.some(b=>e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))return;
   const problem=workers.find(b=>b.runtime.syncHold||b.runtime.error&&(!p.runtime.error||p.runtime.runEnabled));if(problem){p.runtime.error=problem.name+' · '+(problem.runtime.error||'포지션 확인 필요');p.runtime.runEnabled=false;p.runtime.cancelEntries=true;await this.cancelEntries(p);for(const b of workers)b.runtime.runEnabled=false;}
   const managed=new Set(workers.filter(b=>b.runtime.lastExitAt===e.now()).map(b=>b.id)),cache=new Map(),evaluations=new Map(),evaluate=async rule=>{if(!evaluations.has(rule.id))evaluations.set(rule.id,await this.evaluate(p,rule,cache));return evaluations.get(rule.id);};p.runtime.lastEvaluation={at:e.now(),rules:[]};
   for(const rule of p.actionRules.filter(r=>r.enabled&&isStop(r.action))){if(!p.runtime.runEnabled)break;const evaluation=await evaluate(rule),signal=p.runtime.stopSignals[rule.id]||={fired:false};if(!evaluation.result.missing&&!evaluation.result.pass)signal.fired=false;if(evaluation.result.pass&&!evaluation.result.missing&&!signal.fired){signal.fired=true;await this.pause(p.id);return;}}
   for(const rule of p.actionRules.filter(r=>r.enabled&&r.action==='MULTI')){
-   const targets=rule.targets.filter(t=>t.enabled&&!isEntry(t.action)&&workers.find(b=>b.multiAlias===t.alias)?.runtime.quantity>0);if(!targets.length)continue;
+   const targets=rule.targets.filter(t=>t.enabled&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0);if(!targets.length)continue;
    const evaluation=await evaluate(rule);p.runtime.lastEvaluation.rules.push({id:rule.id,...evaluation.result,at:e.now()});
    for(const target of targets){const item=this.targetItem(p,rule,target,evaluation);if(item.ready&&!managed.has(item.worker.id)){managed.add(item.worker.id);await this.execute(p,item);}}
    // Observe already loaded entry signals without requiring another symbol/timeframe request.

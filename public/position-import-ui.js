@@ -17,7 +17,7 @@ export function installPositionImportUI({api,getState,refresh,onImported,connect
     if(bot.eligible)return '';
     if(state?.orders?.some(order=>order.botId===bot.id))return '미해결 주문 있음';
     if(stored?.runtime?.runEnabled)return '먼저 봇 신규 진입을 정지하세요';
-    if(stored?.quantity>0&&!stored.runtime?.importPending)return '이미 보유 포지션을 관리 중';
+    if(!position.shared&&stored?.quantity>0&&!stored.runtime?.importPending)return '이미 보유 포지션을 관리 중';
     return '현재 연결할 수 없는 상태';
   }
   function showDestination(){

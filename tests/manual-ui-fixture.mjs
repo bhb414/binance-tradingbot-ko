@@ -20,6 +20,7 @@ class FakeClient{
   async placeOrder(parameters){const quantity=Number(parameters.quantity),market=parameters.type==='MARKET',order={...parameters,clientOrderId:parameters.newClientOrderId,origQty:parameters.quantity,executedQty:market?parameters.quantity:'0',cumQuote:market?String(quantity*100):'0',avgPrice:market?'100':'0',status:market?'FILLED':'NEW',orderId:nextOrder++};orders.set(parameters.newClientOrderId,order);if(market)positions.set(parameters.symbol,(positions.get(parameters.symbol)||0)+(parameters.side==='BUY'?quantity:-quantity));return order;}
   async queryOrder(symbol,id){return {...orders.get(id)};}async cancelOrder(symbol,id){const order=orders.get(id);order.status='CANCELED';return {...order};}
 }
+if(process.argv.includes('--shared'))FakeClient.prototype.tradesAfter=async()=>[];
 const publicClient=new FakeClient(),marketData={async catalog(){return {symbols:infos.map(info=>({...info,market:'usdm',name:info.baseAsset,tickSize:'0.1',price:100,change:0})),errors:[],asOf:Date.now()};},async quote(market,symbol,interval){return {market,instrument:{...infos.find(info=>info.symbol===symbol),market,tickSize:'0.1'},environment:'live',asOf:Date.now(),candles:await publicClient.klines(symbol,interval),book:await publicClient.book(symbol),premium:await publicClient.premium(symbol),ticker:{symbol,lastPrice:100,priceChangePercent:0,highPrice:102,lowPrice:99,quoteVolume:100000}};}};
 const state=emptyState(),store={state,async load(){return state;},async save(){}},app=await createServer({store,marketData,clientFactory:()=>new FakeClient()});
 await app.engine.connect({environment:'testnet',apiKey:'fabricated-ui-preview-key',secret:'fabricated-ui-preview-secret',allowTrading:true});const originalSnapshot=app.engine.snapshot.bind(app.engine);app.engine.snapshot=()=>({...originalSnapshot(),error:'UI 검증용 모의계좌 · 외부 주문 전송 없음'});
@@ -125,5 +126,6 @@ if(process.argv.includes('--storage-outage')){
  await app.engine.checkpoint().catch(()=>{});
  process.stdin.setEncoding('utf8');process.stdin.on('data',input=>{if(input.trim()==='recover'){blocked=false;app.engine.serial(()=>app.engine.storage.recover({force:true})).then(ok=>console.log('Mock storage recovery: '+ok));}});
 }
+if(process.argv.includes('--shared')){for(const b of state.bots.filter(b=>!b.multiBotId))b.actionRules=[makeActionRule({action:'EXIT_LONG',formula:'FALSE@1m',sizePercent:100,closeScope:'bot'})];for(const p of state.multiBots||[])for(const rule of p.actionRules)for(const target of rule.targets||[]){target.action='EXIT_LONG';target.sizePercent=100;target.closeScope='bot';}}
 app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
 process.once('SIGINT',()=>{process.stdin.pause();app.server.close();});

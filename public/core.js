@@ -87,6 +87,7 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,symbols=SYMBOL
         if(!r||typeof r!=='object'){errors.push(prefix+'조건 형식을 확인해 주세요.');continue;}
         if(typeof r.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(r.id)||ids.has(r.id))errors.push(prefix+'고유 식별자가 필요합니다.');ids.add(r.id);
         if(typeof r.enabled!=='boolean'||!Object.hasOwn(ACTIONS,r.action))errors.push(prefix+'실행 행동을 확인해 주세요.');
+        if(r.closeScope!==undefined&&!['bot','account'].includes(r.closeScope))errors.push(prefix+'정리 대상을 확인해 주세요.');
         if(r.formulaVersion!==2)errors.push(prefix+'이전 조건을 새 봉 주기 문법으로 변환해 주세요.');
         if(isEntry(r.action)&&(!Number.isInteger(r.leverage)||r.leverage<1||r.leverage>(r.enabled?maxLeverage:MAX_LEVERAGE)))errors.push(prefix+`진입 레버리지는 1~${r.enabled?maxLeverage:MAX_LEVERAGE}배로 설정해 주세요.`);
         if(!isStop(r.action)&&(!finite(r.sizePercent)||r.sizePercent<=0||r.sizePercent>100))errors.push(prefix+'주문 비율은 0보다 크고 100% 이하여야 합니다.');

@@ -42,7 +42,7 @@ export class ManualTrading {
   constructor(engine){this.engine=engine;this.plans=new Map();}
   get records(){return this.engine.state.orders.filter(order=>manual(order)&&order.scope===this.engine.state.scope);}
   recoverInterrupted(){for(const order of this.engine.state.orders.filter(manual)){if(active(order)&&order.stage==='CONFIGURING'){order.status='REJECTED';order.error='설정 처리 중 서버가 종료되었습니다. 주문은 전송하지 않았습니다. 현재 거래소 설정을 다시 확인해 주세요.';}}}
-  blocked(symbol,botId=null){const e=this.engine,bot=e.state.bots.find(b=>b.id!==botId&&b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity>0||e.ownOrders(b).some(active)));if(bot)return bot.name+' 봇이 이 종목을 관리 중입니다. 정지는 신규 진입만 중지합니다. 주문 귀속에서 이 봇을 선택해 추가 진입·정리하거나, 보유 포지션·주문을 모두 정리한 뒤 별도 주문을 사용하세요.';if(this.records.some(o=>o.parameters.symbol===symbol&&o.status==='UNKNOWN'))return '접수 여부가 확인되지 않은 수동 주문이 있어 상태 확인이 먼저 필요합니다.';return null;}
+  blocked(symbol,botId=null){const e=this.engine,bot=e.state.bots.find(b=>b.id!==botId&&b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity>0||e.ownOrders(b).some(active)));if(bot&&!e.shared.supported)return bot.name+' 봇이 이 종목을 관리 중입니다. 정지는 신규 진입만 중지합니다. 주문 귀속에서 이 봇을 선택해 추가 진입·정리하거나, 보유 포지션·주문을 모두 정리한 뒤 별도 주문을 사용하세요.';if(this.records.some(o=>o.parameters.symbol===symbol&&o.status==='UNKNOWN'))return '접수 여부가 확인되지 않은 수동 주문이 있어 상태 확인이 먼저 필요합니다.';return null;}
   async context(symbol,botId=null,{fresh=false}={}){
     const e=this.engine;if(typeof symbol!=='string'||!/^[A-Z0-9_]{2,40}$/.test(symbol))throw new Error('주문 종목을 확인해 주세요.');
     const info=(await e.client.exchangeInfo()).symbols.find(s=>s.symbol===symbol&&s.status==='TRADING'&&s.quoteAsset==='USDT'&&s.marginAsset==='USDT');if(!info)throw new Error('현재 계좌 환경에서 주문할 수 있는 USDT 선물 종목이 아닙니다.');
@@ -53,6 +53,7 @@ export class ManualTrading {
     const hedge=Boolean(mode.dualSidePosition);if(hedge!==e.hedge&&e.hasExposure())throw new Error('계좌 포지션 모드가 변경되었습니다. 포지션·주문을 확인한 뒤 같은 계좌로 다시 연결해 주세요.');e.hedge=hedge;
     const positions=e.accountSnapshot.positions.filter(p=>p.symbol===symbol),orders=e.accountSnapshot.orders.filter(o=>o.symbol===symbol),brackets=bracket?.brackets||[],leverage=Number(config?.leverage),margin=String(config?.marginType||'').toUpperCase();
     if(!leverage||!['CROSSED','ISOLATED'].includes(margin)||!brackets.length)throw new Error('계좌의 종목 설정과 레버리지 한도를 확인하지 못했습니다.');
+    if(e.shared.supported&&!e.shared.active(symbol)){if(!await e.shared.ensure(symbol))throw Error('공유 계좌의 미체결 체결 대조가 먼저 필요합니다.');}
     const bot=botId?e.bot(botId):null;if(bot&&bot.symbol!==symbol)throw new Error('주문 종목과 같은 종목의 봇을 선택해 주세요.');
     let botError=null;
     if(bot){
@@ -62,11 +63,11 @@ export class ManualTrading {
       if(bot.runtime.importPending)botError='가져온 포지션은 봇을 한 번 시작해 관리를 시작한 뒤 주문해 주세요.';
       else if(bot.runtime.syncHold)botError=bot.runtime.error||'봇과 계좌의 포지션 수량을 확인해 주세요.';
       else if(e.ownOrders(bot).some(o=>active(o)&&o.kind==='standard'))botError='이 봇의 미체결 일반 주문을 먼저 취소하거나 체결을 기다려 주세요.';
-      else if(orders.some(o=>!known.has(o.clientOrderId)))botError='이 종목에 봇 소유가 아닌 미체결 주문이 있습니다.';
+      else if(!e.shared.supported&&orders.some(o=>!known.has(o.clientOrderId)))botError='이 종목에 봇 소유가 아닌 미체결 주문이 있습니다.';
       const algo=await read('algo:'+symbol,()=>e.client.openAlgoOrders(symbol)),rows=Array.isArray(algo)?algo:algo.orders||[];
-      if(rows.some(o=>!known.has(o.clientAlgoId)))botError='이 종목에 봇 소유가 아닌 보호 주문이 있습니다.';
+      if(!e.shared.supported&&rows.some(o=>!known.has(o.clientAlgoId)))botError='이 종목에 봇 소유가 아닌 보호 주문이 있습니다.';
     }
-    return {...common,hedge,availableBalance:e.accountSnapshot.availableBalance,positions:e.accountSnapshot.positions.filter(p=>p.symbol===symbol),orders,margin,leverage,brackets,notionalCoef:Number(bracket.notionalCoef)||1,maxLeverage:Math.max(...brackets.map(b=>Number(b.initialLeverage))),settingsLocked:positions.length>0||orders.length>0||this.records.some(o=>active(o)&&o.parameters.symbol===symbol),botId:bot?.id||null,botName:bot?.name||null,botBudget:bot?Math.max(0,effectiveBudget(bot)-e.decorate(bot).used-e.decorate(bot).reserved):null,blockedReason:!e.accountSnapshot.canTrade?'현재 API 키의 주문 권한을 확인해 주세요.':botError||this.blocked(symbol,botId)};
+    return {...common,hedge,availableBalance:e.accountSnapshot.availableBalance,positions:bot&&e.shared.active(symbol)?e.accountSnapshot.positions.filter(p=>p.symbol===symbol&&(p.quantity>0?'LONG':'SHORT')===bot.runtime.direction&&bot.runtime.quantity>0).map(p=>({...p,quantity:bot.runtime.quantity*(bot.runtime.direction==='LONG'?1:-1),entryPrice:bot.runtime.entryPrice,initialMargin:e.decorate(bot).used})):e.accountSnapshot.positions.filter(p=>p.symbol===symbol),orders,margin,leverage,brackets,notionalCoef:Number(bracket.notionalCoef)||1,maxLeverage:Math.max(...brackets.map(b=>Number(b.initialLeverage))),settingsLocked:positions.length>0||orders.length>0||this.records.some(o=>active(o)&&o.parameters.symbol===symbol),botId:bot?.id||null,botName:bot?.name||null,botBudget:bot?Math.max(0,effectiveBudget(bot)-e.decorate(bot).used-e.decorate(bot).reserved):null,blockedReason:!e.accountSnapshot.canTrade?'현재 API 키의 주문 권한을 확인해 주세요.':botError||this.blocked(symbol,botId)};
   }
   validateBotPlan(plan,context){
     if(!context.botId)return plan;const e=this.engine,b=e.bot(context.botId),r=b.runtime;

@@ -74,7 +74,7 @@ export class StorageRecovery{
    if(String(config?.marginType).toUpperCase()!==b.margin||!Number.isInteger(leverage)||leverage<1||leverage>MAX_LEVERAGE||b.runtime.quantity>0&&leverage!==b.leverage)throw Error(b.name+' · 증거금 모드·레버리지 확인이 필요합니다.');
    if(!b.runtime.quantity)b.leverage=leverage;
    const known=new Set(e.ownOrders(b).filter(o=>o.scope===e.state.scope).map(o=>o.id)),algos=await e.client.openAlgoOrders(b.symbol),algoRows=Array.isArray(algos)?algos:algos.orders||[];
-   if(e.accountSnapshot.orders.some(o=>o.symbol===b.symbol&&!known.has(o.clientOrderId))||algoRows.some(o=>!known.has(o.clientAlgoId)))throw Error(b.name+' · 봇 소유가 아닌 미체결 주문이 있습니다.');
+   if(!e.shared.supported&&(e.accountSnapshot.orders.some(o=>o.symbol===b.symbol&&!known.has(o.clientOrderId))||algoRows.some(o=>!known.has(o.clientAlgoId))))throw Error(b.name+' · 봇 소유가 아닌 미체결 주문이 있습니다.');
   }
   if(!e.accountSnapshot.canTrade&&this.fault.resume&&!this.off)throw Error('계좌의 주문 권한을 확인하지 못했습니다.');
  }

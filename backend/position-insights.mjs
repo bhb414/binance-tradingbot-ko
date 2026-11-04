@@ -59,7 +59,7 @@ export class PositionInsights{
       let funding=0,known=valid;
       for(const row of rows.filter(row=>row.symbol===bot.symbol&&row.incomeType==='FUNDING_FEE'&&row.time>resetAt)){
         let quantity=0;for(const event of events){if(event.at>row.time)break;quantity=event.quantity??Math.max(0,quantity+event.delta);}
-        if(quantity>1e-10){if(row.asset!=='USDT')known=false;else funding+=row.income;}
+        if(quantity>1e-10){if(row.asset!=='USDT')known=false;else funding+=row.income*(e.shared?.fundingShare(bot.id,bot.symbol,row.time)??1);}
       }
       result[bot.id]={statsResetAt:resetAt||null,complete:known,funding:known?funding:null,startTime:resetAt||events[0]?.at||e.now(),endTime:e.now(),reason:known?null:e.hedge?'헤지 모드의 종목 펀딩은 봇별 귀속을 구분할 수 없습니다.':'펀딩 조회 범위 또는 포지션 인수 기록 확인이 필요합니다.'};
     }
