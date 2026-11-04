@@ -13,5 +13,13 @@ export function accountView(account,rawPositions,orders,hedge){
   const crossMaintenance=maintenance!==null&&isolatedMaintenance!==null?Math.max(0,maintenance-isolatedMaintenance):null,crossBalance=crossWallet!==null&&crossPnl!==null?crossWallet+crossPnl:null;
   const crossMarginRatio=crossMaintenance!==null&&crossBalance>0?crossMaintenance/crossBalance*100:null;
   for(const p of positions){const equity=p.isolatedMargin+p.unrealizedProfit;p.marginRatio=p.marginType==='ISOLATED'?(p.maintenanceMargin!==null&&equity>0?p.maintenanceMargin/equity*100:null):p.marginAsset==='USDT'?crossMarginRatio:null;p.marginRatioScope=p.marginType==='ISOLATED'?'position':'account';}
-  return {walletBalance:number(usdt?.walletBalance??account.totalWalletBalance),availableBalance:number(usdt?.availableBalance??account.availableBalance),unrealizedProfit:number(usdt?.unrealizedProfit??account.totalUnrealizedProfit),canTrade:account.canTrade!==false,positionMode:hedge?'HEDGE':'ONE_WAY',positions,orders:orders.map(o=>({symbol:o.symbol,side:o.side,positionSide:o.positionSide,status:o.status,quantity:number(o.origQty),executedQuantity:number(o.executedQty),price:number(o.price),type:o.type,clientOrderId:o.clientOrderId,orderId:o.orderId}))};
+  const unrealizedProfit=numeric(usdt?.unrealizedProfit??account.totalUnrealizedProfit)??positions.filter(p=>p.marginAsset==='USDT').reduce((sum,p)=>sum+p.unrealizedProfit,0);
+  return withAccountEquity({walletBalance:number(usdt?.walletBalance??account.totalWalletBalance),availableBalance:number(usdt?.availableBalance??account.availableBalance),unrealizedProfit,canTrade:account.canTrade!==false,positionMode:hedge?'HEDGE':'ONE_WAY',positions,orders:orders.map(o=>({symbol:o.symbol,side:o.side,positionSide:o.positionSide,status:o.status,quantity:number(o.origQty),executedQuantity:number(o.executedQty),price:number(o.price),type:o.type,clientOrderId:o.clientOrderId,orderId:o.orderId}))});
+}
+
+export function withAccountEquity(account,positions=account.positions||[]){
+ const previous=account.positions||[],isUsdt=p=>(p.marginAsset||'USDT')==='USDT',base=numeric(account.unrealizedProfit),oldByKey=new Map(previous.map(p=>[p.symbol+':'+p.positionSide,p]));
+ let unrealizedProfit=base??positions.filter(isUsdt).reduce((sum,p)=>sum+number(p.unrealizedProfit),0);
+ if(base!==null&&positions!==previous)for(const p of positions.filter(isUsdt)){const old=oldByKey.get(p.symbol+':'+p.positionSide);if(old&&isUsdt(old))unrealizedProfit+=number(p.unrealizedProfit)-number(old.unrealizedProfit);}
+ const wallet=numeric(account.walletBalance);return {...account,positions,unrealizedProfit,equity:wallet!==null?wallet+unrealizedProfit:null};
 }

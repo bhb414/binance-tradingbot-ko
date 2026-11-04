@@ -5,7 +5,7 @@ const legendPreference='fw-study-legend-collapsed-v1',renderers=new Set();
 let labelsCollapsed=false;try{labelsCollapsed=localStorage.getItem(legendPreference)==='1';}catch{}
 
 export class StudyRenderer {
-  constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{}}){
+  constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{},followCrosshair=true}){
     this.chart=chart;this.legend=legend;this.onPaneCount=onPaneCount;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
     this.context=context;legend.dataset.studyContext=context;legend.classList.add('study-legend');legend.setAttribute('aria-label','차트 지표 목록');legend.replaceChildren();
     this.list=document.createElement('div');this.list.id=legend.id+'-rows';this.list.className='study-legend-rows';
@@ -15,7 +15,7 @@ export class StudyRenderer {
     this.priceSeries=priceSeries;this.unsubscribe=subscribeStudies(()=>this.update(this.candles,this.interval,this.candleType));
     this.observer=new ResizeObserver(()=>this.layout());this.observer.observe(legend.parentElement);
     this.pointerHandler=()=>requestAnimationFrame(()=>this.layout());legend.parentElement.addEventListener('pointerup',this.pointerHandler);
-    chart.subscribeCrosshairMove(param=>this.valuesAt(param.time));
+    if(followCrosshair)chart.subscribeCrosshairMove(param=>this.valuesAt(param.time));
   }
   update(candles,interval='15m',candleType='standard'){
     this.candles=candles;this.interval=interval;this.candleType=candleType;setStudyPreviewData(this.context,candles);const studies=getStudies(),config=JSON.stringify([studies,interval]);
@@ -38,7 +38,7 @@ export class StudyRenderer {
     for(const row of this.rows){const data=studyData(row.study,candles,candleType);row.error=data.error;row.element.title=data.error||(row.study.type==='FORMULA'?row.study.params.formula:'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){if(row.study.type==='FORMULA'&&studyPane(row.study))item.series.applyOptions({priceFormat:{type:'price',precision:6,minMove:.000001}});else if(!['RSI','STOCH','VOLUME'].includes(row.study.type)&&this.priceSeries)item.series.applyOptions({priceFormat:this.priceSeries.options().priceFormat});item.series.setData(plot.data);}}
       const first=row.plots[0]?.series;if(first){for(const line of row.levels||[])first.removePriceLine(line);row.levels=data.levels.map(price=>first.createPriceLine({price,color:'#c5c6cc',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''}));}
     }
-    this.valuesAt();this.syncLabels();requestAnimationFrame(()=>this.layout());
+    this.valuesAt(this.valueTime);this.onValuesChanged?.();this.syncLabels();requestAnimationFrame(()=>this.layout());
   }
   syncLabels(){
     this.list.hidden=labelsCollapsed;this.toggle.hidden=this.rows.length===0;
@@ -46,8 +46,9 @@ export class StudyRenderer {
     this.toggle.setAttribute('aria-label',label);this.toggle.setAttribute('aria-expanded',String(!labelsCollapsed));this.toggle.title=label+' · 지표 선은 그대로 표시합니다';
     this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+'<span>지표명 '+this.rows.length+'</span>';this.layout();
   }
-  clear(){this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.values.clear();row.output.textContent='—';}}
-  valuesAt(time){for(const row of this.rows){const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time);row.output.textContent=row.error?'계산 확인 필요':!active?(row.study.visible?'이 주기 숨김':'숨김'):points?.length?points.filter(point=>row.study.styles[point.key].visible).map(point=>point.value.toLocaleString('en-US',{maximumFractionDigits:row.study.type==='VOLUME'?0:row.study.type==='FORMULA'?8:Math.abs(point.value)<.1?8:2})).join(' / '):'—';}}
+  clear(){this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.values.clear();row.output.textContent='—';}}
+  readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{const points=row.values.get(time??this.candles.at(-1)?.time),definition=STUDIES[row.study.type],visible=(points||[]).filter(p=>row.study.styles[p.key].visible);return {label:studyLabel(row.study),value:row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:row.study.type==='VOLUME'?0:row.study.type==='FORMULA'?8:Math.abs(p.value)<.1?8:2})).join(' / '):'—'};});}
+  valuesAt(time){this.valueTime=time;for(const row of this.rows){const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time);row.output.textContent=row.error?'계산 확인 필요':!active?(row.study.visible?'이 주기 숨김':'숨김'):points?.length?points.filter(point=>row.study.styles[point.key].visible).map(point=>point.value.toLocaleString('en-US',{maximumFractionDigits:row.study.type==='VOLUME'?0:row.study.type==='FORMULA'?8:Math.abs(point.value)<.1?8:2})).join(' / '):'—';}}
   layout(){
     const panes=this.chart.panes(),tops=[];let y=0;for(const pane of panes){tops.push(y);y+=pane.getHeight()+1;}
     const offsets=new Map(),rowHeight=matchMedia('(max-width:540px)').matches?26:22;for(const row of this.rows){const offset=offsets.get(row.pane)||0;row.element.style.top=((tops[row.pane]||0)+(row.pane?5:33)+offset*rowHeight)+'px';offsets.set(row.pane,offset+1);}

@@ -3,6 +3,7 @@ import { api } from './api.js';
 import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
 import {chartEntryLines,PositionPriceLines} from './chart-positions.js';
+import {koreanTimeOptions,CurrentPriceLine,installCandleInspector} from './chart-readout.js';
 import {botPerformance} from './performance.js';
 import {installBotTools,copyBotSettings,resetBotSettings} from './bot-tools.js';
 import {appearanceFor,saveAppearance} from './avatar.js';
@@ -76,7 +77,7 @@ for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='�
 let chartStorage;try{chartStorage=localStorage;}catch{}
 const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
 let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
-let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, positionPriceLines, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, positionPriceLines, currentPriceLine, candleInspector, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
 let toastTimer, selectedRuleId, symbolPickerTarget='home';
 let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
 const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
@@ -177,10 +178,11 @@ function applyChartRange(preset){
 function initChart() {
   if (!window.LightweightCharts) { $('#chart-fallback').hidden=false; return; }
   const L=window.LightweightCharts;
-  chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7},localization:{locale:'en-US',timeFormatter:t=>new Date(t*1000).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}});
-  candleSeries=chart.addSeries(L.CandlestickSeries,{upColor:'#35c49a',downColor:'#df6879',borderUpColor:'#35c49a',borderDownColor:'#df6879',wickUpColor:'#35c49a',wickDownColor:'#df6879',priceLineColor:'#35c49a'});
+  chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
+  candleSeries=chart.addSeries(L.CandlestickSeries,{upColor:'#35c49a',downColor:'#df6879',borderUpColor:'#35c49a',borderDownColor:'#df6879',wickUpColor:'#35c49a',wickDownColor:'#df6879',priceLineColor:'#35c49a',lastValueVisible:false,priceLineVisible:false});
   positionPriceLines=new PositionPriceLines(candleSeries,{lineStyle:L.LineStyle.Dashed,summary:$('#chart-entry-summary')});
-  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
+  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
+  currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode});
   chart.subscribeClick(param=> { if (!drawingMode || !param.point) return; const p=candleSeries.coordinateToPrice(param.point.y); if (!Number.isFinite(p)) return; addChartLine(p);persistChartView(); drawingMode=false; $$('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor')); toast('차트에 수평선을 추가했습니다.'); });
   chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
   $('.chart-container').addEventListener('pointerup',()=>requestAnimationFrame(persistChartView));
@@ -191,6 +193,7 @@ function initChart() {
 async function updateChart(resetRange=true) {
   if(!chart) return;
   const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;
+  if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();homeStudies?.clear();}
   let snapshot;
   try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
   catch(error){if(request!==chartRequest)return;marketError=error.message;renderRuntimeBanner();return;}
@@ -200,7 +203,8 @@ async function updateChart(resetRange=true) {
   const s=currentInstrument();const tick=Number(s.tickSize),parts=String(tick).split('e');const precision=tick>0?Math.max(0,Math.min(12,(parts[0].split('.')[1]||'').length-Number(parts[1]||0))):s.price<1?6:2;
   candleSeries.applyOptions({priceFormat:{type:'price',precision,minMove:tick||10**-precision}});
   candleSeries.setData(displayed.map(({time,open,high,low,close})=>({time,open,high,low,close})));homeStudies.update(candles,currentInterval,candleType);
-  $('#chart').setAttribute('aria-label',currentSymbol+' · '+currentInterval+' 바이낸스 가격 캔들 차트. 마우스 드래그로 이동하고 휠로 확대합니다.');
+  candleInspector.update({key:nextKey,raw:candles,displayed,heikin:candleType==='heikin'});if(candles.length)currentPriceLine.update(snapshot.ticker.lastPrice,candles.at(-1)?.open);else currentPriceLine.clear();
+  $('#chart').setAttribute('aria-label',currentSymbol+' · '+currentInterval+' 바이낸스 가격 캔들 차트. 마우스 드래그로 이동하고 휠로 확대합니다. 캔들을 클릭하면 해당 봉의 가격과 지표 값을 고정합니다.');
   $('#chart-name').textContent=`${currentSymbol} · ${productLabel(currentInstrument())} · ${currentInterval} · ${candleType==='heikin'?'하이킨아시 · 합성가격':'일반 캔들'}`;
   if(changed||resetRange){
     const saved=chartWorkspace.view(market,symbol,interval),range=restoredRange(saved.offset,candles.length)||presetRange(candles.length,interval,chartWorkspace.selection.range);
@@ -277,7 +281,8 @@ function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 ·
 function renderBots(){
   const operating=bots.filter(budgetIncluded),assigned=operating.reduce((sum,b)=>sum+effectiveBudget(b),0),balance=serverState?.account?.walletBalance,running=operating.filter(b=>b.status==='running').length;
   $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=operating.length;$('#running-count').textContent=running;$('#paused-count').textContent=operating.length-running;
-  $('.budget-summary>div:first-child strong').innerHTML=fmt(balance,2)+'<span>USDT</span>';
+  const account=serverState?.account,equity=account?.equity??(account?account.walletBalance+account.unrealizedProfit:null),unrealized=account?.unrealizedProfit??null;
+  $('#account-equity').innerHTML=fmt(equity,2)+'<span>USDT</span>';$('#account-wallet').textContent=fmt(balance,2)+' USDT';$('#account-unrealized').textContent=unrealized===null?'— USDT':signed(unrealized)+' USDT';$('#account-unrealized').className=unrealized===null?'':unrealized>=0?'positive':'negative';
   $('#total-assigned').innerHTML=fmt(assigned,0)+'<span>USDT</span>';$('#total-available').innerHTML=fmt(balance==null?null:balance-assigned,2)+'<span>USDT</span>';$('#allocated-bar').style.width=(balance?Math.min(100,assigned/balance*100):0)+'%';
   const performance=workroomPerformance(operating),pnl=performance.pnl;$('#total-pnl').innerHTML=(serverState?.connected&&pnl!==null?signed(pnl):'—')+'<span>USDT</span>';$('#total-pnl').className=pnl>=0?'positive':'negative';
   $('#total-roi').textContent=serverState?.connected&&performance.roi!==null?(performance.roi>=0?'+':'')+fmt(performance.roi,2)+'%':'—%';$('#total-roi').className='workroom-roi '+(pnl>=0?'positive':'negative');$('#total-roi').title='현재 등록된 봇의 (누적 실현손익 + 현재 미실현손익) ÷ 기준예산 합계 '+fmt(performance.baseBudget,2)+' USDT. 확인된 USDT 수수료 포함, 펀딩 제외.';

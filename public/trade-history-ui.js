@@ -1,4 +1,5 @@
 import {api} from './api.js';
+import {koreanTimeOptions} from './chart-readout.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=(v,d=2)=>v==null||!Number.isFinite(Number(v))?'—':(Math.abs(Number(v))<.5*10**(-d)?0:Number(v)).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const amount=v=>fmt(v,6).replace(/\.?0+$/,'');
@@ -39,7 +40,7 @@ export function installTradeHistoryUI({getState,notify}){
   }).join(''):'<tr><td colspan="13" class="history-empty">이 기간에 봇이 진입하거나 인수한 포지션 기록이 없습니다.</td></tr>';
  }
  function chart(host,id,percent=false){
-  const L=window.LightweightCharts;if(!L)return null;const c=L.createChart(host,{autoSize:true,layout:{background:{type:'solid',color:'#fff'},textColor:'#718179',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true},grid:{vertLines:{color:'#f0f3f1'},horzLines:{color:'#edf1ef'}},rightPriceScale:{borderColor:'#e6ece8',scaleMargins:{top:.16,bottom:.12}},timeScale:{borderColor:'#e6ece8',timeVisible:true,secondsVisible:false,rightOffset:2},localization:{locale:'ko-KR',timeFormatter:t=>date(Number(t)*1000)}});
+  const L=window.LightweightCharts;if(!L)return null;const c=L.createChart(host,{autoSize:true,layout:{background:{type:'solid',color:'#fff'},textColor:'#718179',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true},grid:{vertLines:{color:'#f0f3f1'},horzLines:{color:'#edf1ef'}},rightPriceScale:{borderColor:'#e6ece8',scaleMargins:{top:.16,bottom:.12}},timeScale:{borderColor:'#e6ece8',timeVisible:true,secondsVisible:false,rightOffset:2,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
   const series=c.addSeries(L.LineSeries,{color:'#299975',lineWidth:2,priceLineVisible:false,lastValueVisible:true,priceFormat:{type:'custom',formatter:v=>fmt(v)+(percent?'%':''),minMove:.01}});
   c.subscribeCrosshairMove(event=>{const value=event.seriesData.get(series)?.value;if(value!=null)$(id).textContent=date(Number(event.time)*1000)+' · '+(percent?signed(value,'%'):moneyMode==='equity'?fmt(value)+' USDT':signed(value,' USDT'));else latestLabels();});
   return {chart:c,series,percent};

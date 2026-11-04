@@ -73,8 +73,8 @@ test('multi-symbol ROI sums current net values over held margin, using each symb
 
 test('roster shows gross and net alongside one another without changing character emotion or controls',()=>{
  const costs={b:cost({fundingAsOf:Date.now(),rateAsOf:Date.now()})},html=officeRosterMarkup([view()],{selectedId:'b',costs,icon:()=>'<svg/>'});
- assert.match(html,/office-roster-returns/);assert.match(html,/>평가</);assert.match(html,/>비용 후 예상</);assert.match(html,/\+1\.00%/);assert.match(html,/-1\.00%/);assert.match(html,/시장가 정리 예상 수수료/);assert.match(html,/data-office-toggle="b"/);
- const unknown=officeRosterMarkup([view()],{costs:{},icon:()=>''});assert.match(unknown,/미확인/);assert.doesNotMatch(unknown,/>0\.00%</);
+ assert.match(html,/office-roster-returns/);assert.match(html,/>평가</);assert.match(html,/>비용 후 예상</);assert.match(html,/\+1\.00%/);assert.match(html,/-1\.00%/);assert.match(html,/시장가 정리 예상 수수료/);assert.match(html,/roster-usdt positive[^>]*>\+0\.05 USDT/);assert.match(html,/roster-usdt negative[^>]*>-0\.05 USDT/);assert.match(html,/data-office-toggle="b"/);
+ const unknown=officeRosterMarkup([view()],{costs:{},icon:()=>''});assert.match(unknown,/미확인/);assert.match(unknown,/roster-usdt cost-unknown[^>]*>— USDT/);assert.doesNotMatch(unknown,/>0\.00%</);
 });
 
 test('commission endpoint is signed, read-only, weight 20 and coalesced by client cache',async()=>{
