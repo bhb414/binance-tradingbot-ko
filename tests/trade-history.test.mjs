@@ -105,3 +105,5 @@ test('funding displayed after a statistics reset excludes earlier ownership inco
  const e={state:s,hedge:false,now:()=>6000},insights=new PositionInsights(e),rows=[{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',time:1500,asset:'USDT',income:5},{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',time:4500,asset:'USDT',income:-.2}];
  assert.equal(insights.botFunding(rows,0,true).b.funding,-.2);assert.equal(insights.botFunding(rows,0,true).b.startTime,3000);
 });
+
+test('wallet percentage reports use the current wallet target rather than an unused amount setting',()=>{const s=state();Object.assign(s.bots[0],{budget:500,budgetType:'walletPercent',budgetPercent:25});fill(s,{id:'e',at:1000,fee:0});fill(s,{id:'x',at:3000,role:'exit',price:110,fee:0});const r=report(s,{account:{walletBalance:200,positions:[]}});assert.equal(r.bot.budget,50);assert.equal(r.summary.returnPercent,20);assert.equal(r.curve.at(-1).equity,60);});

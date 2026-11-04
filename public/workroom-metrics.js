@@ -1,5 +1,6 @@
+import {budgetReference} from './budget.js';
 export function workroomPerformance(bots){
- const baseBudget=bots.reduce((sum,bot)=>sum+(Number.isFinite(bot.budget)?Math.max(0,bot.budget):0),0);
+ const baseBudget=bots.reduce((sum,bot)=>sum+budgetReference(bot),0);
  const complete=bots.every(bot=>Number.isFinite(bot.pnl)),pnl=complete?bots.reduce((sum,bot)=>sum+bot.pnl-(bot.statsReset?.realized||0),0):null;
  return {baseBudget,pnl,roi:pnl!==null&&baseBudget>0?pnl/baseBudget*100:null};
 }

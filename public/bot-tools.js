@@ -3,8 +3,8 @@ import {makeMultiBot,multiRule} from './multi-bot.js';
 import {makeActionRule,upgradeActions} from './actions.js';
 import {randomId} from './id.js';
 import {BUDGET_MODES} from './budget.js';
-export const SINGLE_CONFIG_FIELDS=['id','name','symbol','budget','budgetMode','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
-const multiFields=['id','kind','name','budget','budgetMode','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'];
+export const SINGLE_CONFIG_FIELDS=['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
+const multiFields=['id','kind','name','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'];
 const pick=b=>Object.fromEntries((b.kind==='multi'?multiFields:SINGLE_CONFIG_FIELDS).filter(k=>b[k]!==undefined).map(k=>[k,structuredClone(b[k])]));
 export function copyBotSettings(source){
  const b=pick(source);b.id=randomId();b.budgetIncluded=false;b.name=source.name.slice(0,source.kind==='multi'?25:27)+' 복사본';
@@ -13,7 +13,7 @@ export function copyBotSettings(source){
  const renew=node=>{if(!node||typeof node!=='object')return;if(node.id)node.id=randomId();node.children?.forEach(renew);};renew(b.rules);return b;
 }
 export function resetBotSettings(source){
- const keep=Object.fromEntries(['id','name','symbol','budget','budgetMode','profitReinvestPercent','budgetIncluded','color','legs'].filter(k=>source[k]!==undefined).map(k=>[k,structuredClone(source[k])]));
+ const keep=Object.fromEntries(['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','profitReinvestPercent','budgetIncluded','color','legs'].filter(k=>source[k]!==undefined).map(k=>[k,structuredClone(source[k])]));
  if(source.kind==='multi')return makeMultiBot({...keep,actionRules:[multiRule(keep.legs)]});
  const b=makeBot({...keep,actionRules:[makeActionRule({formula:'FALSE@15m'})]});b.exit={...b.exit,takeProfitEnabled:false,stopLossEnabled:false};return pick(b);
 }
