@@ -30,9 +30,9 @@ export class MarketData {
     const source=this.source(market),state=this.sources.get(market)||{tail:Promise.resolve(),last:0,blockedUntil:0};this.sources.set(market,state);
     const run=async()=>{
       const budget=sharedBudget(source.base,this.fetch,this.now);
-      const wait=state.last+120-this.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));state.last=this.now();budget.reserve(requestWeight(source.prefix+endpoint,parameters));
+      const wait=state.last+120-this.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));state.last=this.now();const weight=requestWeight(source.prefix+endpoint,parameters);budget.reserve(weight,{source:'market',method:'GET',endpoint:source.prefix+endpoint});
       const query=new URLSearchParams(Object.entries(parameters).filter(([,v])=>v!==undefined).map(([key,value])=>[key,String(value)]));
-      let response;try{response=await this.fetch(source.base+source.prefix+endpoint+(query.size?'?'+query:''),{method:'GET',headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});}catch{throw new BinanceError(source.label+' 공개 시세에 연결하지 못했습니다.',{temporary:true,retryAt:this.now()+5000});}
+      let response;budget.recordSent?.('market','GET',source.prefix+endpoint,weight);try{response=await this.fetch(source.base+source.prefix+endpoint+(query.size?'?'+query:''),{method:'GET',headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});}catch{throw new BinanceError(source.label+' 공개 시세에 연결하지 못했습니다.',{temporary:true,retryAt:this.now()+5000});}
       budget.observe(response);let data;try{data=await response.json();}catch{throw new BinanceError(source.label+' 시세 응답 확인 대기',{status:response.status,temporary:true,retryAt:budget.blockedUntil||this.now()+5000});}
       budget.observe(response,data);if(!response.ok||Number(data?.code)<0)throw new BinanceError(source.label+': '+String(data?.msg||'시세 조회 실패').slice(0,250),{code:Number(data?.code),status:response.status,temporary:response.status>=500,retryAt:budget.blockedUntil||this.now()+5000});return data;
     };

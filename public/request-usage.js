@@ -1,0 +1,9 @@
+const labels={account:'계좌 잔고',positionRisk:'보유 포지션',openOrders:'미체결 주문',openAlgoOrders:'보호 주문',userTrades:'체결 대조',income:'손익·펀딩 통계',symbolConfig:'종목 설정',leverageBracket:'레버리지 한도',commissionRate:'수수료율',klines:'캔들',depth:'호가',premiumIndex:'마크 가격',exchangeInfo:'상품 목록',listenKey:'계좌 연결',time:'시각 동기화','24hr':'시세 목록',ticker:'시세'};
+const number=n=>Number.isFinite(Number(n))?Number(n).toLocaleString('ko-KR'):'—';
+function label(row){const name=row.endpoint.split('/').at(-1);if(name==='order'||name==='algoOrder')return row.method==='GET'?'주문 확인':row.method==='DELETE'?'주문 취소':'주문 전송';return labels[name]||'기타';}
+export function requestUsageMarkup(budget){
+ const usage=budget?.usage,period=usage?.previousMinute||usage?.currentMinute;if(!period)return '<p class="transport-help">서버 갱신 후 요청 내역을 집계합니다.</p>';
+ const groups=new Map();for(const row of period.endpoints){const name=label(row),scope=row.source==='market'?'조회 화면':'주문·계좌',key=name+' · '+scope,old=groups.get(key)||{name:key,requests:0,weight:0};old.requests+=row.requests;old.weight+=row.weight;groups.set(key,old);}
+ const rows=[...groups.values()].sort((a,b)=>b.weight-a.weight),last=usage.lastWait,at=new Date(period.at).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour12:false,hour:'2-digit',minute:'2-digit'});
+ return '<p class="transport-help">'+(usage.previousMinute?'직전 1분':'이번 분 · 집계 중')+' ('+at+'부터) · '+number(period.requests)+'회 · '+number(period.weight)+' 가중치</p>'+(rows.length?'<table><thead><tr><th>요청 종류</th><th>횟수</th><th>가중치</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+row.name+'</td><td>'+number(row.requests)+'</td><td>'+number(row.weight)+'</td></tr>').join('')+'</tbody></table>':'<p class="transport-help">이 구간에 보낸 REST 요청이 없습니다.</p>')+'<p class="transport-help">서버 재시작 이후 앱에서 보낸 USDT 선물 요청을 집계합니다. 다른 프로그램의 호출은 포함하지 않아 IP 전체 사용량과 다를 수 있습니다.</p>'+(last?'<p class="transport-help">마지막 대기: '+(last.origin==='local'?'앱 자체 요청량 조절':'거래소 응답에 따른 제한')+'</p>':'');
+}

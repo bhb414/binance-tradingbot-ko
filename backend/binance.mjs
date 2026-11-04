@@ -26,13 +26,13 @@ export class BinanceClient {
   redact(message){let text=String(message||'바이낸스 요청 실패');for(const value of [this.apiKey,this.secret])if(value)text=text.split(value).join('[비공개]');return text.slice(0,400);}
   request(method,endpoint,parameters={},signed=false,keyOnly=false){
     const run=async()=>{
-      const wait=this.lastRequest+this.minGap-this.now();if(wait>0)await delay(wait);this.lastRequest=this.now();this.rate.reserve(requestWeight(endpoint,parameters),{priority:method!=='GET'||signed&&/\/(account|positionRisk|openOrders|openAlgoOrders|order|algoOrder)$/.test(endpoint)});
+      const wait=this.lastRequest+this.minGap-this.now();if(wait>0)await delay(wait);this.lastRequest=this.now();const weight=requestWeight(endpoint,parameters);this.rate.reserve(weight,{priority:method!=='GET'||signed||keyOnly||Boolean(parameters.symbol)||/\/(time|exchangeInfo)$/.test(endpoint),source:'trading',method,endpoint});
       if(signed&&(!this.apiKey||!this.secret))throw new Error('설정에서 API 키를 먼저 연결해 주세요.');
       const values={...parameters};if(signed){values.recvWindow=5000;values.timestamp=Math.round(this.now()+this.offset);}
       const query=signed?signParameters(values,this.secret):new URLSearchParams(Object.entries(values).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)])).toString();
       const read=method==='GET',headers={Accept:'application/json'};if(signed||keyOnly)headers['X-MBX-APIKEY']=this.apiKey;if(!read)headers['Content-Type']='application/x-www-form-urlencoded';
       if(!read&&!keyOnly)this.mutationRevision++;
-      let response;
+      let response;this.rate.recordSent?.('trading',method,endpoint,weight);
       try{response=await this.fetch(this.base+endpoint+(read&&query?'?'+query:''),{method,headers,...(!read?{body:query}:{}),signal:AbortSignal.timeout(10000),redirect:'error'});}
       catch{throw new BinanceError('바이낸스 응답을 받지 못했습니다. 주문 요청은 접수 여부를 조회합니다.',{uncertain:!read&&!keyOnly,temporary:read||keyOnly,retryAt:this.now()+5000});}
       this.rate.observe(response);

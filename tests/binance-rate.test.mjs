@@ -37,3 +37,22 @@ test('temporary read failures can recover but ambiguous writes retain their unce
  await assert.rejects(client.account(),e=>isTemporary(e)&&!e.uncertain);
  await assert.rejects(client.placeOrder({symbol:'BTCUSDT'}),e=>e.uncertain&&!isTemporary(e));
 });
+
+test('request usage counts outbound requests by safe path and source without recording keys or signed parameters',async()=>{
+ let time=1800000001000,calls=0;const now=()=>time,fetchImpl=async()=>{calls++;return ok({});},client=new BinanceClient({environment:'live',now,fetchImpl,minGap:0,apiKey:'private-profile-key',secret:'private-profile-secret'}),market=new MarketData({now,fetchImpl});
+ await client.account();await client.positions();await market.request('usdm','/depth',{symbol:'BTCUSDT',limit:10});
+ const usage=client.rate.snapshot().usage;assert.equal(usage.currentMinute.requests,3);assert.equal(usage.currentMinute.weight,12);assert.equal(calls,3);assert.ok(usage.currentMinute.endpoints.some(row=>row.source==='market'));assert.ok(usage.currentMinute.endpoints.some(row=>row.endpoint==='/fapi/v3/account'));
+ const text=JSON.stringify(usage);assert.doesNotMatch(text,/private-profile|signature|apiKey|secret|BTCUSDT/);
+ time+=60000;assert.equal(client.rate.snapshot().usage.currentMinute.requests,0);assert.equal(client.rate.snapshot().usage.previousMinute.requests,3);
+});
+test('background quota defers only its read, preserves priority for trading data, and distinguishes an actual exchange cooldown',async()=>{
+ let time=1800000001000,calls=0;const now=()=>time,fetchImpl=async()=>{calls++;return ok([]);},client=new BinanceClient({environment:'live',now,fetchImpl,minGap:0,apiKey:'key',secret:'secret'}),market=new MarketData({now,fetchImpl});
+ client.rate.used=1800;client.rate.minute=Math.floor(time/60000);await assert.rejects(()=>market.request('usdm','/depth',{symbol:'BTCUSDT',limit:10}),e=>e.local===true&&e.scope==='background');assert.equal(calls,0);
+ await client.tradesAfter('BTCUSDT',1);await client.book('BTCUSDT');assert.equal(calls,2);assert.equal(client.rate.snapshot().usage.currentMinute.requests,2);assert.equal(client.rate.snapshot().usage.currentMinute.denied,1);assert.equal(client.rate.snapshot().usage.lastWait.origin,'local');
+ client.rate.observe(new Response('{}',{status:429,headers:{'retry-after':'5'}}),{code:-1003});await assert.rejects(()=>client.account(),e=>e.local===false&&e.scope==='exchange');assert.equal(calls,2);assert.equal(client.rate.snapshot().usage.lastWait.origin,'exchange');
+});
+
+test('exchange limit response observations are counted once while a later ban timestamp remains visible',async()=>{
+ const time=1800000001000,client=new BinanceClient({apiKey:'key',secret:'secret',now:()=>time,minGap:0,fetchImpl:async()=>new Response(JSON.stringify({code:-1003,msg:'IP banned until '+(time+300000)}),{status:418,headers:{'retry-after':'5'}})});
+ await assert.rejects(()=>client.account());const usage=client.rate.snapshot().usage;assert.equal(usage.currentMinute.requests,1);assert.equal(usage.currentMinute.denied,1);assert.equal(usage.lastWait.retryAt,time+300000);
+});

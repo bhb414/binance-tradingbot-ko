@@ -70,10 +70,12 @@ export class SharedPositions{
   o.orderId=data.orderId||o.orderId;o.status=data.status||o.status;o.sharedManaged=true;o.sharedPending=q>number(o.sharedRecordedQty);o.appliedQty=q;o.appliedQuote=quote;o.feesFetched=!o.sharedPending;
   try{await this.sync(o.parameters.symbol,{force:o.sharedPending});}catch(error){if(!isTemporary(error))throw error;this.e.defer(error);}
  }
+ watched(book){const e=this.e,symbol=book.symbol;return book.pending||this.exposure(symbol)||Object.values(book.members).some(p=>p.quantity>1e-10)||Object.values(book.manual).some(p=>p.quantity>1e-10)||e.state.bots.some(b=>b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity||b.runtime.syncHold))||e.state.orders.some(o=>o.scope===e.state.scope&&o.parameters.symbol===symbol&&(!terminal.has(o.status)||o.parameters.type==='LIMIT'&&!o.fallbackDone&&['CANCELED','EXPIRED'].includes(o.status)&&(o.orderPolicy?.remainder||'cancel')==='market'));}
  async syncAll(){for(const book of Object.values(this.books).filter(b=>b.scope===this.e.state.scope))await this.sync(book.symbol);}
  async sync(symbol,{force=false}={}){
   const e=this.e,book=this.book(symbol);if(!book||this.busy.has(symbol))return !!book&&!book.pending;
-  const check=this.checks.get(symbol),revision=e.client.accountRevision||0,interval=book.pending?1000:e.client.userStream?.status==='connected'?30000:(e.state.dataTransport?.restIntervalSeconds||15)*1000;
+  const check=this.checks.get(symbol),watched=this.watched(book),revision=e.client.accountRevision||0,interval=book.pending?1000:e.client.userStream?.status==='connected'?30000:(e.state.dataTransport?.restIntervalSeconds||15)*1000;
+  if(!force&&!watched&&check&&e.now()-check.at<300000)return true;
   if(!force&&check?.revision===revision&&e.now()-check.at<interval&&(book.pending||this.matches(symbol,book)))return !book.pending;this.checks.set(symbol,{at:e.now(),revision});this.busy.add(symbol);
   try{
    for(const b of e.state.bots.filter(b=>b.symbol===symbol))if(!book.members[b.id]){if(b.runtime.quantity)throw Error('공유 봇 배정 수량 확인 필요');book.members[b.id]={id:b.id,...finance(b)};}
@@ -84,7 +86,7 @@ export class SharedPositions{
    for(const id of new Set(rows.map(t=>String(t.orderId))))if(!parents.has(id)){const native=await e.client.queryOrder(symbol,{orderId:id}),known=e.state.orders.find(o=>o.scope===e.state.scope&&o.id===native.clientOrderId&&o.parameters.symbol===symbol);if(known){known.orderId=native.orderId;known.status=native.status;known.appliedQty=number(native.executedQty);known.appliedQuote=number(native.cumQuote);known.sharedManaged=true;known.sharedPending=true;parents.set(id,known);}}
    for(const o of parents.values())if(o.sharedPending){const nativeQty=rows.filter(t=>String(t.orderId)===String(o.orderId)).reduce((n,t)=>n+number(t.qty),0);if(nativeQty+number(o.sharedRecordedQty)+1e-8<o.appliedQty){book.pending=true;return false;}}
    const step=number((await e.symbolInfo(symbol)).filters.find(f=>f.filterType==='LOT_SIZE')?.stepSize);if(!(step>0))throw Error('공유 수량 단위 확인 필요');
-   const sim=replayShared(book,rows,parents,step);await e.refreshAccount(true);const config=this.holdings(symbol)[0];if(config?.leverage&&config.marginType)this.syncSettings(symbol,config);if(!this.matches(symbol,sim)){book.pending=true;return false;}
+   const sim=replayShared(book,rows,parents,step),push=e.client.userStream?.status==='connected';if(rows.length||book.pending||!push||!this.matches(symbol,sim)||e.now()-e.accountAt>=30000||e.accountRevisionAt!==e.client.accountRevision)await e.refreshAccount(true);const config=this.holdings(symbol)[0];if(config?.leverage&&config.marginType)this.syncSettings(symbol,config);if(!this.matches(symbol,sim)){book.pending=true;return false;}
    for(const allocation of sim.allocations){
     const {trade:t,parent}=allocation,b=e.bot(allocation.botId),id='fw_share_'+digest(e.state.scope+':'+symbol+':'+t.orderId+':'+b.id+':'+allocation.role+':'+allocation.direction);let order=e.state.orders.find(o=>o.id===id);
     if(!order){order={id,scope:e.state.scope,botId:b.id,kind:'ledger',source:parent?.botId?'shared-allocation':'exchange-close',origin:parent?.source||null,role:allocation.role,direction:allocation.direction,leverage:parent?.leverage||b.leverage,marginType:b.margin,parent:parent?.id||null,orderId:t.orderId,status:'FILLED',parameters:{symbol,side:t.side,type:parent?.parameters.type||'MARKET',quantity:'0',positionSide:t.positionSide},margin:0,createdAt:number(t.time),appliedQty:0,appliedQuote:0,feesFetched:true,fallbackDone:true};e.state.orders.push(order);}

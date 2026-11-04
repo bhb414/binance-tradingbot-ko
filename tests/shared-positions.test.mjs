@@ -187,3 +187,26 @@ test('maker rejection during a shared-position exit keeps all bots running and r
  await h.e.tick();assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.a.runtime.error,null);assert.equal(h.a.runtime.quantity,q);assert.equal(h.b.runtime.quantity,q);assert.equal(h.e.decorate(h.a).runtime.orderRetry.role,'exit');
  h.x.now+=4999;await h.e.tick();assert.equal(attempts.length,1);h.x.now++;await h.e.tick();assert.equal(attempts.length,2);assert.equal(Number(attempts[1].quantity),q);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,q);assert.equal(h.a.runtime.error,null);assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.e.decorate(h.a).runtime.orderRetry,null);
 });
+
+test('eight steady books share recent account reads and idle symbols do not repeat every live audit',async()=>{
+ const h=await harness(),symbols=['KORUUSDT','OKLOUSDT','RKLBUSDT','TQQQUSDT','INTWUSDT','SKUUUSDT','BTCUSDT','SPYUSDT'],baseInfo=(await h.client.exchangeInfo()).symbols[0],read={account:0,positions:0,orders:0,trades:0};
+ h.client.exchangeInfo=async()=>({symbols:symbols.map(symbol=>({...baseInfo,symbol}))});h.client.userStream={status:'connected'};h.client.transport={mode:'websocket',restIntervalSeconds:15};
+ for(const [i,symbol]of symbols.entries()){if(i<6){const b=await h.e.saveBot(makeBot({id:'audit-'+i,symbol,budget:100,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule('CLOSE_ALL')]}));h.e.bot(b.id).runtime.runEnabled=i<4;}await h.e.shared.ensure(symbol);}
+ for(const [method,key]of [['account','account'],['positions','positions'],['openOrders','orders'],['tradesAfter','trades']]){const load=h.client[method].bind(h.client);h.client[method]=async(...args)=>{read[key]++;return load(...args);};}
+ h.e.shared.checks.clear();const start=h.x.now;h.e.accountAt=start;h.e.accountRevisionAt=h.client.accountRevision;
+ for(let i=0;i<60;i++){h.x.now=start+i*1000;await h.e.shared.syncAll();}
+ assert.equal(read.trades,12);assert.equal(read.account,1);assert.equal(read.positions,1);assert.equal(read.orders,1);assert.equal(read.trades*5+read.account*5+read.positions*5+read.orders*40,110);assert.equal(h.x.calls.length,0);
+ const before=read.account;h.client.userStream.status='reconnecting';await h.e.shared.sync('KORUUSDT',{force:true});assert.equal(read.account,before+1);
+ h.client.userStream.status='connected';h.trade('BUY',1);await h.e.refreshAccount(true);await h.e.shared.syncAll();assert.equal(h.e.shared.book('BTCUSDT').manual.LONG.quantity,1);assert.equal(h.x.calls.length,0);
+});
+test('streamed external reductions still reconcile fresh positions, fees and ownership with read reuse enabled',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.client.userStream={status:'connected'};h.client.transport={mode:'websocket',restIntervalSeconds:15};h.trade('SELL',q,{reduceOnly:true});await h.e.tick();
+ assert.ok(Math.abs(h.a.runtime.quantity-q/2)<.0011);assert.ok(Math.abs(h.b.runtime.quantity-q/2)<.0011);assert.equal(h.a.runtime.error,null);assert.equal(h.b.runtime.error,null);assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.x.calls.length,2);
+ assert.ok(h.e.state.fills.some(f=>f.botId===h.a.id&&f.fee>0));assert.equal(h.e.shared.book('BTCUSDT').pending,false);
+});
+test('local read deferral leaves unrelated position exits running while real exchange limits still stop the cycle',async()=>{
+ const {RateLimitError}=await import('../backend/binance-rate.mjs'),h=await twoBots(),quantity=h.b.runtime.quantity,local=()=>new RateLimitError(h.x.now+60000,'local read limit',{local:true,scope:'background'}),tick=h.e.tickBot.bind(h.e);
+ h.b.actionRules=[rule('EXIT_LONG')];h.e.shared.syncAll=async()=>{throw local();};h.e.tickBot=async b=>{if(b.id===h.a.id)throw local();return tick(b);};
+ await h.e.tick();assert.equal(h.e.waiting,null);assert.equal(h.a.runtime.waiting.local,true);assert.equal(h.a.runtime.quantity,quantity);assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);
+ const calls=h.x.calls.length;h.e.shared.syncAll=async()=>{throw new BinanceError('exchange limit',{status:429,retryAt:h.x.now+60000});};await h.e.tick();assert.equal(h.e.waiting.kind,'rate-limit');assert.equal(h.x.calls.length,calls);
+});

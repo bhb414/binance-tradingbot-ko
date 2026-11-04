@@ -3,7 +3,7 @@ import { BinanceClient } from './binance.mjs';
 import {transportSettings} from './streams.mjs';
 import {StorageRecovery,isStorageError} from './storage-recovery.mjs';
 import {MultiBots} from './multi-bots.mjs';
-import {isTemporary,isRateLimited} from './binance-rate.mjs';
+import {isTemporary,isRateLimited,isLocalRateLimit} from './binance-rate.mjs';
 import { ManualTrading } from './manual-trading.mjs';
 import {PositionImports} from './position-import.mjs';
 import {accountView} from './account-view.mjs';
@@ -64,7 +64,9 @@ export class TradingEngine {
     return {environment:this.state.environment,asOf:this.now(),serverNow:this.now()+this.client.offset,candles,book,premium,ticker};
   }
   async symbolTicker(symbol){return this.client.ticker?this.client.ticker(symbol):(await this.client.tickers()).find(t=>t.symbol===symbol);}
+  async availableRead(read){try{return await read();}catch(error){if(!isLocalRateLimit(error))throw error;this.defer(error);return null;}}
   defer(error){
+    if(isLocalRateLimit(error)){const wait={kind:'rate-limit',local:true,message:'호출량 조절 대기 · 이 조회를 제외한 감시는 계속합니다.',retryAt:Number(error.retryAt)||this.now()+1000};return wait;}
     const kind=isRateLimited(error)?'rate-limit':'connection',message=kind==='rate-limit'?'호출 제한 대기 · 제한 해제 후 자동 재개':'시세·계좌 조회 대기 · 연결 회복 후 자동 재개';
     const retryAt=Math.max(this.now()+1000,Number(error.retryAt)||this.now()+(kind==='rate-limit'?60000:5000));
     if(!this.waiting||this.waiting.kind!==kind)this.note('자동 재개 대기',message);
@@ -317,15 +319,15 @@ export class TradingEngine {
     if(this.now()<(this.waiting?.retryAt||0))return;
     let deferred=false;
     try{
-      if(this.now()-this.lastTimeSync>60000){await this.client.syncTime();this.lastTimeSync=this.now();}
-      await this.manual.refreshPending();
-      for(const b of this.state.bots)for(const o of this.ownOrders(b).filter(o=>active(o)||!o.feesFetched&&o.orderId))await this.pollTrackedOrder(o,()=>this.refreshOrder(b,o));
-      await this.refreshAccount();await this.shared.syncAll();this.connectionError=null;
+      if(this.now()-this.lastTimeSync>60000)await this.availableRead(async()=>{await this.client.syncTime();this.lastTimeSync=this.now();});
+      await this.availableRead(()=>this.manual.refreshPending());
+      for(const b of this.state.bots)for(const o of this.ownOrders(b).filter(o=>active(o)||!o.feesFetched&&o.orderId))await this.availableRead(()=>this.pollTrackedOrder(o,()=>this.refreshOrder(b,o)));
+      const account=await this.availableRead(()=>this.refreshAccount());await this.availableRead(()=>this.shared.syncAll());if(account)this.connectionError=null;
       for(const b of this.state.bots){
         try{await this.tickBot(b);b.runtime.waiting=null;}
-        catch(error){if(isStorageError(error))throw error;if(isTemporary(error)){this.defer(error);deferred=true;break;}b.runtime.runEnabled=false;b.runtime.waiting=null;b.runtime.error=this.client.redact?.(error.message)||error.message;this.note('봇 확인 필요',b.name+' · '+b.runtime.error,b.id,'error');}
+        catch(error){if(isStorageError(error))throw error;if(isTemporary(error)){const wait=this.defer(error);if(isLocalRateLimit(error)){b.runtime.waiting=wait;continue;}deferred=true;break;}b.runtime.runEnabled=false;b.runtime.waiting=null;b.runtime.error=this.client.redact?.(error.message)||error.message;this.note('봇 확인 필요',b.name+' · '+b.runtime.error,b.id,'error');}
       }
-      if(!deferred){for(const p of this.multi.groups){try{await this.multi.tick(p);}catch(error){if(isStorageError(error))throw error;if(isTemporary(error)){this.defer(error);deferred=true;break;}p.runtime.runEnabled=false;p.runtime.cancelEntries=true;p.runtime.error=this.client.redact?.(error.message)||error.message;for(const b of this.multi.workers(p))b.runtime.runEnabled=false;this.note('다중종목 확인 필요',p.name+' · '+p.runtime.error,p.id,'error');}}}
+      if(!deferred){for(const p of this.multi.groups){try{await this.multi.tick(p);p.runtime.waiting=null;}catch(error){if(isStorageError(error))throw error;if(isTemporary(error)){const wait=this.defer(error);if(isLocalRateLimit(error)){p.runtime.waiting=wait;continue;}deferred=true;break;}p.runtime.runEnabled=false;p.runtime.cancelEntries=true;p.runtime.error=this.client.redact?.(error.message)||error.message;for(const b of this.multi.workers(p))b.runtime.runEnabled=false;this.note('다중종목 확인 필요',p.name+' · '+p.runtime.error,p.id,'error');}}}
       if(!deferred)this.waiting=null;
     }catch(error){if(!isTemporary(error))throw error;this.defer(error);}
     await this.checkpoint();
