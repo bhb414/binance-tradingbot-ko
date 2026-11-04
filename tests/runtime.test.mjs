@@ -726,3 +726,12 @@ test('an uncertain maker response still pauses and reconciles acceptance without
  assert.equal(order.status,'UNKNOWN');assert.equal(order.errorKind,undefined);assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.orderRetries?.[entry.id],undefined);
  h.exchange.fill(order.id,Number(order.parameters.quantity));h.exchange.now+=60000;await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(b.runtime.quantity,Number(order.parameters.quantity));
 });
+
+test('legacy confirmed maker errors clear on upgrade without starting bots or hiding unknown acceptance',async()=>{
+ const h=await actionHarness([makerRule()]),b=h.engine.bot(h.id),message='Due to the order could not be executed as maker, the Post Only order will be rejected. The order will not be recorded in the order history';b.runtime.runEnabled=false;b.runtime.error='조건 주문이 거절되었습니다: '+message;
+ h.engine.state.orders.push({id:'legacy-maker',botId:b.id,scope:h.engine.state.scope,kind:'standard',status:'REJECTED',error:message,appliedQty:0,parameters:{symbol:b.symbol,type:'LIMIT',timeInForce:'GTX'},fallbackDone:true,feesFetched:true});
+ const state=structuredClone(h.store.state),recovered=await new TradingEngine(new MemoryStore(state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(recovered.bot(h.id).runtime.error,null);assert.equal(recovered.bot(h.id).runtime.runEnabled,false);assert.equal(h.exchange.calls.length,0);
+ const unknown=structuredClone(state);unknown.orders.push({...unknown.orders[0],id:'unknown-order',status:'UNKNOWN'});const held=await new TradingEngine(new MemoryStore(unknown),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.match(held.bot(h.id).runtime.error,/거절/);
+ const mismatch=structuredClone(state);mismatch.bots[0].runtime.syncHold=true;const mismatched=await new TradingEngine(new MemoryStore(mismatch),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.match(mismatched.bot(h.id).runtime.error,/거절/);
+ const unrelated=structuredClone(state);unrelated.bots[0].runtime.error='포지션 수량 불일치';const preserved=await new TradingEngine(new MemoryStore(unrelated),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(preserved.bot(h.id).runtime.error,'포지션 수량 불일치');
+});

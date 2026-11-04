@@ -4,6 +4,14 @@ export function isPostOnlyRejection(error,parameters,kind='standard'){
 }
 export class PostOnlyRetries{
  constructor(engine){this.e=engine;}
+ recoverLegacy(){
+  const cleared=new Map(),message='Due to the order could not be executed as maker, the Post Only order will be rejected. The order will not be recorded in the order history';
+  for(const b of this.e.state.bots){const previous=b.runtime.error,orders=this.e.ownOrders(b);if(b.runtime.syncHold||![message,'조건 주문이 거절되었습니다: '+message].includes(previous)||orders.some(o=>o.status==='UNKNOWN'))continue;
+   if(!orders.some(o=>o.status==='REJECTED'&&o.kind==='standard'&&o.parameters.type==='LIMIT'&&o.parameters.timeInForce==='GTX'&&(o.errorCode==null||Number(o.errorCode)===-5022)&&o.error===message))continue;
+   b.runtime.error=null;cleared.set(b.id,previous);this.e.note('메이커 거절 안내 전환',b.name+' · 이전 메이커 전용 거절 표시 해제 · 신규 진입 상태 유지',b.id);
+  }
+  for(const p of this.e.multi.groups){const members=this.e.multi.workers(p);if(members.some(b=>b.runtime.error||this.e.ownOrders(b).some(o=>o.status==='UNKNOWN')))continue;if(members.some(b=>cleared.has(b.id)&&p.runtime.error===b.name+' · '+cleared.get(b.id)+' · 다른 종목의 보유분은 유지합니다.'))p.runtime.error=null;}
+ }
  position(b,record){return record.role==='entry'?b.runtime:this.e.rulePosition(b,{action:'EXIT_'+record.direction,closeScope:record.closeScope});}
  ready(b,rule){const record=b.runtime.orderRetries?.[rule.id];if(!record)return true;if(record.epoch!==this.position(b,record).positionEpoch){delete b.runtime.orderRetries[rule.id];return true;}return this.e.now()>=record.retryAt;}
  observe(b,rule,result){if(!result.missing&&!result.pass&&b.runtime.orderRetries)delete b.runtime.orderRetries[rule.id];}
