@@ -10,6 +10,7 @@ const state=emptyState(),store={state,async load(){},async save(){}};
 const client={clearCredentials(){},offset:0,redact:value=>String(value),async exchangeInfo(){return {symbols:symbols.map(symbol=>({symbol,baseAsset:symbol.replace('USDT',''),status:'TRADING',quoteAsset:'USDT',marginAsset:'USDT',contractType:'PERPETUAL'}))};},async tickers(){return symbols.map(symbol=>({symbol,lastPrice:'100',priceChangePercent:'0',quoteVolume:'100000'}));},async book(){return {bids:[['100','1']],asks:[['101','1']]};},async premium(){return {};},async klines(){return [];}};
 const marketData={async catalog(){return {symbols:[],errors:[]};},async quote(){throw new Error('맵 화면 검증용');}};
 const app=await createServer({store,clientFactory:()=>client,marketData}),snapshot=app.engine.snapshot.bind(app.engine);
-app.engine.snapshot=()=>({...snapshot(),bots,error:'맵 화면 검증용 · 가상 캐릭터 · 실제 계좌·주문 없음'});
+const refresh=process.argv.includes('--refresh'),started=Date.now();
+app.engine.snapshot=()=>{if(refresh){const phase=Math.floor((Date.now()-started)/3000)%8,bot=bots[0];bot.pnl=bot.runtime.realized+[20,-20,5,-1,0,12,-8,2][phase];bot.quantity=phase===4?0:1;bot.runtime.quantity=bot.quantity;bot.status=phase===5?'paused':'running';bot.task=phase%2?'position':'watching';}return {...snapshot(),bots,error:'맵 화면 검증용 · 가상 캐릭터 · 실제 계좌·주문 없음'};};
 app.server.listen(8897,'127.0.0.1',()=>console.log('Read-only room preview: http://127.0.0.1:8897/#bots'));
 process.once('SIGINT',()=>app.server.close());
