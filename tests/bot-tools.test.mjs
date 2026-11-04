@@ -3,6 +3,7 @@ import {copyBotSettings,resetBotSettings} from '../public/bot-tools.js';
 import {makeBot,validateBot} from '../public/core.js';import {makeActionRule} from '../public/actions.js';
 import {makeMultiBot,multiRule,multiTarget,validateMulti} from '../public/multi-bot.js';
 import {botPerformance} from '../public/performance.js';
+import {botStatusMarkup} from '../public/bot-status.js';
 import {workroomPerformance,positionEmotion} from '../public/workroom-metrics.js';
 test('single copies receive independent IDs and settings without position, PnL, history, or reset ownership',()=>{
  const source=makeBot({name:'원본',budget:40,actionRules:[makeActionRule({formula:'TRUE@1h',leverage:20})],runtime:{runEnabled:true,quantity:3,realized:12},statsReset:{at:1,scope:'live:x',realized:12},fees:2,orders:[{}],imported:{}}),copy=copyBotSettings(source);
@@ -27,3 +28,20 @@ test('statistics baseline zeroes displayed realized returns without changing cur
 });
 
 test('pre-reset funding cache never leaks into newly reset returns',()=>{const b={id:'b',budget:100,pnl:-10,fees:0,statsReset:{at:100,realized:-10}},p=botPerformance(b,{botFunding:{b:{complete:true,funding:9}}});assert.equal(p.net,null);assert.equal(p.funding,null);assert.match(p.reason,/재조회/);});
+
+test('new, copied and reset drafts open without live runtime data, including shared accounts',()=>{
+ const source=makeBot({name:'원본',runtime:{runEnabled:true,quantity:1,realized:5}});
+ const drafts=[makeBot(),copyBotSettings(source),resetBotSettings(source)];
+ for(const draft of drafts)for(const sharedPositions of [false,true]){
+  const html=botStatusMarkup(draft,{capabilities:{sharedPositions},account:{positions:[]},orders:[],fills:[]});
+  assert.match(html,/먼저 저장/);assert.doesNotMatch(html,/data-bot-trade|data-bot-history|NaN|undefined/);
+ }
+});
+test('saved shared bot status still uses its own profit and tolerates missing live valuation',()=>{
+ const bot={...makeBot(),quantity:1,entryPrice:100,positionDirection:'LONG',used:10,pnl:15,runtime:{runEnabled:false,quantity:1,realized:5}};
+ const state={capabilities:{sharedPositions:true},positionMode:'ONE_WAY',account:{positions:[{symbol:'BTCUSDT',quantity:3,markPrice:110,unrealizedProfit:30}]},orders:[],fills:[]};
+ const html=botStatusMarkup(bot,state);
+ assert.match(html,/미실현 손익<\/small><strong><span class="positive">\+10\.00 USDT/);
+ assert.match(html,/data-bot-trade/);
+ assert.doesNotMatch(botStatusMarkup({...bot,pnl:undefined},state),/NaN|undefined/);
+});
