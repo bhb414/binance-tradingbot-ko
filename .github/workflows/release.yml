@@ -19,7 +19,10 @@ jobs:
           node-version: '24'
       - name: Validate version tag
         run: node --input-type=module -e "import fs from 'node:fs';if(process.env.GITHUB_REF_NAME!=='v'+JSON.parse(fs.readFileSync('package.json')).version)throw Error('Version tag mismatch');"
-      - run: npm test
+      - name: Validate in updater environment
+        run: npm test
+        env:
+          WORKROOM_DATA_DIR: ${{ runner.temp }}/workroom-validation
       - run: npm run package
       - name: Publish ZIP and checksum
         env:

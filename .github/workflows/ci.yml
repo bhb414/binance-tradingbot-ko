@@ -13,4 +13,7 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
-      - run: npm test
+      - name: Validate in updater environment
+        run: npm test
+        env:
+          WORKROOM_DATA_DIR: ${{ runner.temp }}/workroom-validation

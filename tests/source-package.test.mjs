@@ -26,7 +26,7 @@ test('a verified source ZIP becomes an isolated Git install and updates while pr
  assert.equal(await bootstrapRepository(app,{onProgress(){}}),false);
  await git(app,['config','url.'+remote+'.insteadOf',REPOSITORY]);assert.equal((await checkUpdate(app)).available,false);
  await writeFile(path.join(producer,'package.json'),JSON.stringify({name:'binance-tradingbot-ko',version:'1.1.0',type:'module'}));await git(producer,['add','.']);await git(producer,['commit','-qm','next']);await git(producer,['push','-q']);
- const result=await updateApplication(app,{port:0,onProgress(){}});assert.equal(result.updated,true);assert.equal(JSON.parse(await readFile(path.join(app,'package.json'),'utf8')).version,'1.1.0');
+ const result=await updateApplication(app,{dataDirectory:path.join(app,'.runtime'),port:0,onProgress(){}});assert.equal(result.updated,true);assert.equal(JSON.parse(await readFile(path.join(app,'package.json'),'utf8')).version,'1.1.0');
  assert.equal(await readFile(path.join(app,'.runtime','state.json'),'utf8'),'private-journal');assert.equal(await readFile(path.join(app,'.runtime','credentials.dpapi'),'utf8'),'fabricated-ciphertext');
 }));
 test('modified or incomplete source ZIPs are rejected before creating Git metadata or touching local state',()=>harness(async({app,gitImpl})=>{
@@ -56,7 +56,7 @@ test('untagged source ZIPs match their original main version and can update afte
  await writeFile(path.join(producer,'package.json'),JSON.stringify({name:'binance-tradingbot-ko',version:'1.1.0',type:'module'}));await writeFile(path.join(producer,'README.md'),'next source');await git(producer,['add','.']);await git(producer,['commit','-qm','next without release tag']);await git(producer,['push','-q']);
  const check=await checkUpdate(app,{gitImpl});assert.equal(check.requiresVerification,true);assert.equal(check.available,null);assert.equal(await exists(path.join(app,'.git')),false);
  assert.equal(await bootstrapRepository(app,{gitImpl,onProgress(){}}),true);assert.equal(await git(app,['rev-parse','HEAD']),original);assert.equal(await git(app,['status','--porcelain']),'');
- await git(app,['config','url.'+remote+'.insteadOf',REPOSITORY]);assert.equal((await updateApplication(app,{port:0,onProgress(){}})).updated,true);
+ await git(app,['config','url.'+remote+'.insteadOf',REPOSITORY]);assert.equal((await updateApplication(app,{dataDirectory:path.join(app,'.runtime'),port:0,onProgress(){}})).updated,true);
  assert.equal(JSON.parse(await readFile(path.join(app,'package.json'),'utf8')).version,'1.1.0');assert.equal(await readFile(path.join(app,'.runtime','state.json'),'utf8'),'private-journal');assert.equal(await readFile(path.join(app,'.runtime','credentials.dpapi'),'utf8'),'fabricated-ciphertext');
 }));
 test('untagged ZIP verification still rejects changed source and preserves private files',()=>harness(async({producer,app,gitImpl})=>{
