@@ -38,8 +38,8 @@ export class PositionImports{
     const candidate=target?{...structuredClone(target),margin,leverage}:newCandidate?structuredClone(newCandidate):makeBot({name:String(input.name||info.baseAsset+' 관리'),symbol:position.symbol,budget:input.budget,budgetMode:input.budgetMode||'fixed',margin,leverage,actionRules:[makeActionRule({action:'CLOSE_ALL',formula:'FALSE',sizePercent:100,order:{type:'MARKET',price:'bid',ticks:0,timeout:15,remainder:'cancel',postOnly:false}})]});
     if(!target){candidate.margin=margin;candidate.leverage=leverage;}
     const errors=validateBot(candidate,e.state.bots,{balance:Infinity,symbols:[position.symbol],maxLeverage:125,enforceAllocationLimit:false});if(errors.length)throw new Error(errors.join('\n'));
-    const quantity=Math.abs(position.quantity),estimatedMargin=positionMargin(position,leverage,margin),warnings=[];
-    if(estimatedMargin+(target&&e.shared.active(position.symbol)?e.decorate(target).used:0)>effectiveBudget(candidate))warnings.push(`보유 포지션 증거금 약 ${money(estimatedMargin)} USDT가 운용예산 ${money(effectiveBudget(candidate))} USDT를 초과합니다. 가져오기는 가능하며 새 진입은 남은 예산 안에서만 가능합니다.`);
+    const quantity=Math.abs(position.quantity),estimatedMargin=positionMargin(position,leverage,margin),combinedMargin=estimatedMargin+(target&&e.shared.active(position.symbol)?e.decorate(target).used:0),warnings=[];
+    if(combinedMargin>effectiveBudget(candidate))warnings.push(`연결 후 보유 포지션 증거금 약 ${money(combinedMargin)} USDT가 운용예산 ${money(effectiveBudget(candidate))} USDT를 초과합니다. 가져오기는 가능하며 새 진입은 남은 예산 안에서만 가능합니다.`);
     if(e.state.bots.filter(bot=>bot.id!==candidate.id).reduce((sum,bot)=>sum+effectiveBudget(bot),0)+effectiveBudget(candidate)>e.accountSnapshot.walletBalance)warnings.push('봇 운용예산 합계가 계좌 잔고보다 큽니다. 새 진입 전 예산을 확인하세요.');
     if(orders.length)warnings.push(`이 종목에 미체결·조건부 주문 ${orders.length}건이 남아 있습니다. 기존 주문은 그대로 유지하며, 봇 시작 전 확인·정리가 필요합니다.`);
     if(target&&(target.margin!==margin||target.leverage!==leverage))warnings.push(`봇의 설정값을 현재 계좌의 ${margin==='ISOLATED'?'격리':'크로스'} · ${leverage}배로 맞춥니다. 거래소 설정은 변경하지 않습니다.`);

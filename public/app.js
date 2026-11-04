@@ -391,7 +391,7 @@ function setFormulaExample(index) {
 }
 function renderActions() {
   if(!['MARK_PRICE','CONTRACT_PRICE'].includes(draft.exit.price))draft.exit.price='MARK_PRICE';
-  $('#editor-actions').innerHTML='<div class="form-section"><h3>포지션 공통 보호 주문 <span class="protection-optional">선택 사항</span></h3><p class="protection-intro">익절·손절을 각각 켜거나 끌 수 있습니다. 둘 다 끄면 조건·행동 탭의 정리 조건만 사용합니다.</p>'+protectionEditorMarkup(draft.exit)+'<div class="field-note">'+icon('shield')+'<span>보호 주문은 봇이 관리하는 수량 전체에 적용합니다. 둘 다 끄면 거래소 TP·SL을 등록하지 않습니다. 기존 보호 주문의 변경·취소는 주문 실행이 허용된 동안 반영하며 취소 완료까지 확인합니다.</span></div></div><div class="form-section"><h3>주문 중복 방지와 소유 수량</h3><div class="field-note">'+icon('info')+'<span>각 조건의 실행과 주문 의도를 전송 전에 저장합니다. 접수 여부가 불명확하면 재전송하지 않고 조회합니다. 정리 행동은 이 봇의 보유 수량에만 적용하며 포지션이 없으면 실행하지 않습니다.</span></div></div>';
+  $('#editor-actions').innerHTML='<div class="form-section"><h3>포지션 공통 보호 주문 <span class="protection-optional">선택 사항</span></h3><p class="protection-intro">익절·손절을 각각 켜거나 끌 수 있습니다. 둘 다 끄면 조건·행동 탭의 정리 조건만 사용합니다.</p>'+protectionEditorMarkup(draft.exit)+'<div class="field-note">'+icon('shield')+'<span>보호 주문은 봇이 관리하는 수량 전체에 적용합니다. 둘 다 끄면 거래소 TP·SL을 등록하지 않습니다. 기존 보호 주문의 변경·취소는 주문 실행이 허용된 동안 반영하며 취소 완료까지 확인합니다.</span></div></div><div class="form-section"><h3>주문 중복 방지와 소유 수량</h3><div class="field-note">'+icon('info')+'<span>각 조건의 실행과 주문 의도를 전송 전에 저장합니다. 접수 여부가 불명확하면 재전송하지 않고 조회합니다. 정리 행동은 조건마다 선택한 이 봇 보유분 또는 계좌 보유분에 적용합니다. 새 봇·복사본은 처음 시작하기 전까지 주문하지 않습니다.</span></div></div>';
 }
 function updateProtectionControls(){syncProtectionEditor($('#editor-actions'),draft.exit);}
 function updateActionPreview() {
@@ -575,7 +575,7 @@ $('#export-bots').addEventListener('click',()=>download('futures-workroom-bots.j
 $('#help-button').addEventListener('click',()=>{goPage('settings');});
 $('#check-app-update').addEventListener('click',async()=>{
  const button=$('#check-app-update'),status=$('#app-update-status');button.disabled=true;status.textContent='새 버전을 확인하는 중…';
- try{const result=await api('/app/update');status.textContent='현재 '+result.version+' ('+result.revision+') · '+(result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
+ try{const result=await api('/app/update');status.textContent='현재 '+result.version+(result.revision?' ('+result.revision+')':' · ZIP 설치')+' · '+(result.requiresVerification?'프로그램 종료 후 update.cmd를 실행하면 설치본을 확인하고 업데이트합니다.':result.available?'새 버전 '+result.latest+' 있음. 프로그램 종료 후 update.cmd를 실행하세요.':'최신 버전입니다.');}
  catch(error){status.textContent='확인하지 못했습니다: '+error.message;}finally{button.disabled=false;}
 });
 $$('dialog:not(#bot-dialog)').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}}));

@@ -17,22 +17,36 @@ export async function bootstrapRepository(root,{onProgress=console.log,gitImpl=g
  try{
   onProgress('ZIP 설치본을 확인하고 업데이트용 Git 기록을 준비합니다…');
   await gitImpl(root,['clone','--quiet','--no-checkout','--single-branch','--branch',BRANCH,REPOSITORY,candidate]);
-  let revision;try{revision=await gitImpl(candidate,['rev-parse','refs/tags/'+tag+'^{commit}']);}catch{throw Error('설치 버전의 공개 태그를 찾지 못했습니다. GitHub Releases의 ZIP을 받아 주세요.');}
-  await gitImpl(candidate,['merge-base','--is-ancestor',revision,'refs/remotes/origin/'+BRANCH]);
   await gitImpl(candidate,['config','core.autocrlf','input']);
-  await gitImpl(candidate,['checkout','--quiet','--detach',revision]);
-  const files=(await gitImpl(candidate,['ls-files','-z'])).split('\0').filter(Boolean);
-  if(!files.length||files.some(file=>!safeSourcePath(file)||protectedSourcePath(file)))throw Error('배포본의 파일 목록을 확인할 수 없습니다.');
-  for(const file of files){
-   const local=path.join(root,file),original=path.join(candidate,file);let localInfo;
-   try{localInfo=await lstat(local);}catch{throw Error('ZIP 설치 파일이 없거나 변경되었습니다: '+file);}
-   if(!localInfo.isFile()||localInfo.isSymbolicLink()||!(await lstat(original)).isFile()||!sameContent(await readFile(local),await readFile(original)))throw Error('로컬 소스 변경이 있습니다: '+file+'. 현재 파일을 덮어쓰지 않습니다.');
+  const verify=async revision=>{
+   await gitImpl(candidate,['checkout','--quiet','--detach',revision]);
+   const files=(await gitImpl(candidate,['ls-files','-z'])).split('\0').filter(Boolean);
+   if(!files.length||files.some(file=>!safeSourcePath(file)||protectedSourcePath(file)))throw Error('배포본의 파일 목록을 확인할 수 없습니다.');
+   for(const file of files){
+    const local=path.join(root,file),original=path.join(candidate,file);let info;
+    try{info=await lstat(local);}catch{throw Object.assign(Error('ZIP 설치 파일이 없거나 변경되었습니다: '+file),{code:'SOURCE_MISMATCH'});}
+    if(!info.isFile()||info.isSymbolicLink()||!(await lstat(original)).isFile()||!sameContent(await readFile(local),await readFile(original)))throw Object.assign(Error('로컬 소스 변경이 있습니다: '+file+'. 현재 파일을 덮어쓰지 않습니다.'),{code:'SOURCE_MISMATCH'});
+   }
+  };
+  let revision;try{revision=await gitImpl(candidate,['rev-parse','refs/tags/'+tag+'^{commit}']);}catch{}
+  if(revision)await verify(revision);
+  else{
+   onProgress('GitHub 소스 ZIP을 main 버전 기록과 대조합니다…');
+   const head=await gitImpl(candidate,['rev-parse','refs/remotes/origin/'+BRANCH]),history=(await gitImpl(candidate,['log','--format=%H','--max-count=1000','refs/remotes/origin/'+BRANCH,'--','package.json'])).split(/\r?\n/);
+   let mismatch;
+   for(const ref of new Set([head,...history])){
+    if(!/^[a-f0-9]{40,64}$/.test(ref))continue;
+    let version;try{version=JSON.parse(await gitImpl(candidate,['show',ref+':package.json']));}catch{continue;}
+    if(version.name!==pkg.name||version.version!==pkg.version)continue;
+    try{await verify(ref);revision=ref;break;}catch(error){if(error.code!=='SOURCE_MISMATCH')throw error;mismatch=error;}
+   }
+   if(!revision)throw mismatch||Error('설치 파일과 일치하는 main 버전 기록을 찾지 못했습니다. GitHub의 소스 ZIP을 다시 받아 주세요.');
   }
+  await gitImpl(candidate,['merge-base','--is-ancestor',revision,'refs/remotes/origin/'+BRANCH]);
   await gitImpl(candidate,['symbolic-ref','HEAD','refs/heads/'+BRANCH]);await gitImpl(candidate,['reset','--mixed',revision]);
   await cp(path.join(candidate,'.git'),metadata,{recursive:true,errorOnExist:true,force:false});
   if(await exists(path.join(root,'.git')))throw Error('다른 작업이 Git 기록을 생성했습니다. 다시 업데이트해 주세요.');
   await rename(metadata,path.join(root,'.git'));
-  // Rebuild only the tracked index after byte/line-ending verification; never rewrite source or private files.
   await gitImpl(root,['add','--renormalize','--','.']);
   await gitImpl(root,['diff','--cached','--exit-code']);
   await gitImpl(root,['diff','--exit-code']);

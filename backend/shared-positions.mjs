@@ -5,30 +5,38 @@ const number=v=>Number(v||0),near=(a,b)=>Math.abs(a-b)<=Math.max(1e-8,Math.abs(b
 const fields=['quantity','entryPrice','entries','realized','lastEntryAt','lastExitAt','positionEpoch','direction'];
 const finance=b=>Object.fromEntries(fields.map(k=>[k,b.runtime[k]??(k==='direction'?null:0)]));
 const digest=value=>createHash('sha256').update(value).digest('hex').slice(0,24);
+function lotQuantity(value,step){
+ const units=Math.round(value/step),[base,exponent='0']=String(step).toLowerCase().split('e'),places=Math.max(0,(base.split('.')[1]||'').length-Number(exponent));
+ if(!(step>0)||!Number.isSafeInteger(units))throw Error('공유 수량 단위를 확인하세요.');
+ const quantity=Number((units*step).toFixed(places));if(Math.abs(value-quantity)>Math.max(1e-10,step*1e-7))throw Error('공유 수량 단위를 확인하세요.');return quantity;
+}
 function portions(pools,quantity,step,preferred){
  const units=Math.round(quantity/step),eligible=pools.filter(p=>p.quantity>1e-10),out=new Map();if(!Number.isSafeInteger(units))throw Error('공유 수량 단위를 확인하세요.');
  let remaining=units;const first=preferred&&eligible.find(p=>p.id===preferred);
  if(first){const take=Math.min(remaining,Math.round(first.quantity/step));out.set(first.id,take);remaining-=take;}
  const rest=eligible.filter(p=>!first||p.id!==first.id),total=rest.reduce((n,p)=>n+Math.round(p.quantity/step),0);
  if(remaining&&total){const ranked=rest.map(p=>{const exact=remaining*Math.round(p.quantity/step)/total,floor=Math.floor(exact);out.set(p.id,floor);return {id:p.id,remainder:exact-floor};}).sort((a,b)=>b.remainder-a.remainder||String(a.id).localeCompare(String(b.id)));let missing=remaining-ranked.reduce((n,p)=>n+out.get(p.id),0);for(const item of ranked){if(!missing--)break;out.set(item.id,out.get(item.id)+1);}}
- return eligible.map(p=>({pool:p,quantity:(out.get(p.id)||0)*step})).filter(p=>p.quantity>1e-10);
+ return eligible.map(p=>({pool:p,quantity:lotQuantity((out.get(p.id)||0)*step,step)})).filter(p=>p.quantity>1e-10);
 }
 export function replayShared(book,trades,parents,step){
  const members=structuredClone(book.members),manual=structuredClone(book.manual),allocations=[],events=[],epochs={LONG:0,SHORT:0,...book.epochs},entryOrders=new Set(book.entryOrders||[]);
+ for(const pool of [...Object.values(members),...Object.values(manual)])pool.quantity=lotQuantity(pool.quantity,step);
+ // Migrate old native-order keys for the currently held cycle to logical groups.
+ for(const parent of parents.values()){const member=members[parent.botId];if(member?.quantity>0&&parent.createdAt>=member.lastExitAt&&entryOrders.has(parent.botId+':'+parent.orderId))entryOrders.add(parent.botId+':'+member.positionEpoch+':'+(parent.group||parent.id||parent.orderId));}
  const poolFor=(id,direction)=>{if(id){const p=members[id];if(!p)throw Error('공유 봇 기록을 확인하세요.');return p;}return manual[direction]||=( {id:null,direction,quantity:0,entryPrice:0} );};
  const rows=[...trades].sort((a,b)=>number(a.time)-number(b.time)||number(a.id)-number(b.id)),seen=new Set();
  for(const t of rows){
-  if(t.symbol!==book.symbol||seen.has(String(t.id))||!(number(t.id)>0)||!(number(t.orderId)>0)||!Number.isSafeInteger(number(t.id))||!Number.isSafeInteger(number(t.orderId))||!(number(t.qty)>0&&number(t.price)>0&&number(t.time)>0)||!['BUY','SELL'].includes(t.side)||!['BOTH','LONG','SHORT'].includes(t.positionSide)||t.commission==null||t.commission===''||!Number.isFinite(Number(t.commission))||typeof t.commissionAsset!=='string'||!t.commissionAsset)throw Error('공유 체결 응답을 확인하세요.');seen.add(String(t.id));
+  if(t.symbol!==book.symbol||seen.has(String(t.id))||!(number(t.id)>0)||!(number(t.orderId)>0)||!Number.isSafeInteger(number(t.id))||!Number.isSafeInteger(number(t.orderId))||!(number(t.qty)>0&&number(t.price)>0&&number(t.time)>0)||!['BUY','SELL'].includes(t.side)||!['BOTH','LONG','SHORT'].includes(t.positionSide)||t.commission==null||t.commission===''||!Number.isFinite(Number(t.commission))||typeof t.commissionAsset!=='string'||!t.commissionAsset)throw Error('공유 체결 응답을 확인하세요.');seen.add(String(t.id));lotQuantity(number(t.qty),step);
   const parent=parents.get(String(t.orderId)),owner=parent?.botId&&members[parent.botId]?parent.botId:null,openDirection=t.side==='BUY'?'LONG':'SHORT',closeDirection=t.positionSide==='BOTH'?(openDirection==='LONG'?'SHORT':'LONG'):t.positionSide,isClose=t.positionSide==='BOTH'||openDirection!==t.positionSide;
   const closing=isClose?[...Object.values(members),...Object.values(manual)].filter(p=>p.direction===closeDirection&&p.quantity>1e-10):[],total=closing.reduce((n,p)=>n+p.quantity,0),closed=Math.min(number(t.qty),total);
   if(closed>1e-10)for(const part of portions(closing,closed,step,parent&&parent.role!=='entry'&&parent.closeScope!=='account'?owner:null)){
    const p=part.pool,quantity=part.quantity,fee=number(t.commission)*quantity/number(t.qty);
    if(p.id){p.realized+=(number(t.price)-p.entryPrice)*quantity*(p.direction==='LONG'?1:-1);if(t.commissionAsset==='USDT')p.realized-=fee;allocations.push({botId:p.id,role:'exit',direction:p.direction,quantity,price:number(t.price),fee,trade:t,parent,epoch:p.positionEpoch});}
-   p.quantity=Math.max(0,p.quantity-quantity);if(p.quantity<step*.1){p.quantity=0;p.entryPrice=0;if(p.id){p.entries=0;p.lastExitAt=number(t.time);}}
+   p.quantity=lotQuantity(Math.max(0,p.quantity-quantity),step);if(p.quantity<step*.1){p.quantity=0;p.entryPrice=0;if(p.id){p.entries=0;p.lastExitAt=number(t.time);}}
   }
-  const opened=number(t.qty)-closed;
-  if(opened>step*.1){if(t.positionSide!=='BOTH'&&isClose)throw Error('계좌 정리 수량을 확인하세요.');const direction=t.positionSide==='BOTH'?openDirection:t.positionSide,p=poolFor(owner,direction),fee=number(t.commission)*opened/number(t.qty);if(![...Object.values(members),...Object.values(manual)].some(pool=>pool.direction===direction&&pool.quantity>1e-10))epochs[direction]++;if(p.quantity>0&&p.direction!==direction)throw Error('공유 포지션 방향 대조 대기');if(!p.quantity&&p.id)p.positionEpoch++;p.direction=direction;p.entryPrice=(p.quantity*p.entryPrice+opened*number(t.price))/(p.quantity+opened);p.quantity+=opened;
-   if(p.id){const key=p.id+':'+t.orderId;if(!entryOrders.has(key)){p.entries++;entryOrders.add(key);}p.lastEntryAt=number(t.time);if(t.commissionAsset==='USDT')p.realized-=fee;allocations.push({botId:p.id,role:'entry',direction,quantity:opened,price:number(t.price),fee,trade:t,parent,epoch:p.positionEpoch});}
+  const opened=lotQuantity(number(t.qty)-closed,step);
+  if(opened>step*.1){if(t.positionSide!=='BOTH'&&isClose)throw Error('계좌 정리 수량을 확인하세요.');const direction=t.positionSide==='BOTH'?openDirection:t.positionSide,p=poolFor(owner,direction),fee=number(t.commission)*opened/number(t.qty);if(![...Object.values(members),...Object.values(manual)].some(pool=>pool.direction===direction&&pool.quantity>1e-10))epochs[direction]++;if(p.quantity>0&&p.direction!==direction)throw Error('공유 포지션 방향 대조 대기');if(!p.quantity&&p.id)p.positionEpoch++;p.direction=direction;p.entryPrice=(p.quantity*p.entryPrice+opened*number(t.price))/(p.quantity+opened);p.quantity=lotQuantity(p.quantity+opened,step);
+   if(p.id){const key=p.id+':'+p.positionEpoch+':'+(parent?.group||parent?.id||t.orderId);if(!entryOrders.has(key)){p.entries++;entryOrders.add(key);}p.lastEntryAt=number(t.time);if(t.commissionAsset==='USDT')p.realized-=fee;allocations.push({botId:p.id,role:'entry',direction,quantity:opened,price:number(t.price),fee,trade:t,parent,epoch:p.positionEpoch});}
   }
   events.push({at:number(t.time),tradeId:number(t.id),pools:[...Object.values(members),...Object.values(manual)].filter(p=>p.quantity>1e-10).map(p=>({botId:p.id,direction:p.direction,quantity:p.quantity}))});
  }
@@ -52,8 +60,9 @@ export class SharedPositions{
   for(const b of all.filter(b=>b.runtime.quantity&&!e.positionMatches(b)&&(!b.runtime.error||b.runtime.error===e.positionMismatchError))){await e.positionReconciliation.reconcile(b,e.positionMismatchError);if(this.book(symbol))return true;}
   if(e.state.orders.some(o=>o.scope===e.state.scope&&o.parameters.symbol===symbol&&o.kind==='standard'&&!terminal.has(o.status)))return false;
   await e.refreshAccount(true);const before=JSON.stringify(this.actual(symbol)),rows=await e.client.trades(symbol);await e.refreshAccount(true);if(before!==JSON.stringify(this.actual(symbol)))return false;if(!Array.isArray(rows))throw Error('공유 계좌 체결 조회 대기');
+  const step=number((await e.symbolInfo(symbol)).filters.find(f=>f.filterType==='LOT_SIZE')?.stepSize);if(!(step>0))throw Error('공유 수량 단위 확인 필요');
   const book={scope:e.state.scope,symbol,cursor:Math.max(0,...rows.map(t=>number(t.id))),at:e.now(),members:Object.fromEntries(all.map(b=>[b.id,{id:b.id,...finance(b)}])),manual:{},epochs:{LONG:this.actual(symbol).some(p=>p.direction==='LONG')?1:0,SHORT:this.actual(symbol).some(p=>p.direction==='SHORT')?1:0},entryOrders:[],pending:false};
-  for(const direction of ['LONG','SHORT']){const p=this.actual(symbol).find(p=>p.direction===direction),held=all.filter(b=>b.runtime.direction===direction).reduce((n,b)=>n+b.runtime.quantity,0);if(held>(p?.quantity||0)+1e-8)return false;const quantity=(p?.quantity||0)-held;if(quantity>1e-8)book.manual[direction]={id:null,direction,quantity,entryPrice:p.entryPrice};}
+  for(const direction of ['LONG','SHORT']){const p=this.actual(symbol).find(p=>p.direction===direction),held=all.filter(b=>b.runtime.direction===direction).reduce((n,b)=>n+b.runtime.quantity,0);if(held>(p?.quantity||0)+1e-8)return false;const quantity=lotQuantity((p?.quantity||0)-held,step);if(quantity>0){const botCost=all.filter(b=>b.runtime.direction===direction).reduce((n,b)=>n+b.runtime.quantity*b.runtime.entryPrice,0),entryPrice=((p?.quantity||0)*(p?.entryPrice||0)-botCost)/quantity;if(!(entryPrice>0&&Number.isFinite(entryPrice)))throw Error('수동 보유분의 평균 진입가를 확인할 수 없습니다.');book.manual[direction]={id:null,direction,quantity,entryPrice};}}
   this.books[this.key(symbol)]=book;e.state.sharedEvents||=[];e.state.sharedEvents.push({scope:e.state.scope,symbol,at:e.now(),pools:[...Object.values(book.members),...Object.values(book.manual)].filter(p=>p.quantity>1e-10).map(p=>({botId:p.id,direction:p.direction,quantity:p.quantity}))});await e.checkpoint();return true;
  }
  async accepted(b,o,data){

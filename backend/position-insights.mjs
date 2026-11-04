@@ -54,7 +54,7 @@ export class PositionInsights{
   botFunding(rows,startTime,complete){
     const e=this.engine,result={};
     for(const bot of e.state.bots||[]){
-      const events=[...(e.state.fills||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id&&f.quantity).map(f=>({at:f.at,delta:(f.role==='entry'?1:-1)*f.quantity})),...(e.state.positionImports||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id).map(f=>({at:f.at,quantity:f.quantity}))].sort((a,b)=>a.at-b.at);
+      const events=[...(e.state.fills||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id&&f.quantity).map(f=>({at:f.at,delta:(f.role==='entry'?1:-1)*f.quantity})),...(e.state.positionImports||[]).filter(f=>f.scope===e.state.scope&&f.botId===bot.id).map(f=>f.additive?{at:f.at,delta:f.quantity}:{at:f.at,quantity:f.quantity})].sort((a,b)=>a.at-b.at);
       const resetAt=bot.statsReset?.scope===e.state.scope?bot.statsReset.at:0,valid=complete&&(resetAt?resetAt>=startTime:!events.length?!bot.runtime.quantity:events[0].at>=startTime)&&!e.hedge;
       let funding=0,known=valid;
       for(const row of rows.filter(row=>row.symbol===bot.symbol&&row.incomeType==='FUNDING_FEE'&&row.time>resetAt)){

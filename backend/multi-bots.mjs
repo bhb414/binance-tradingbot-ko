@@ -1,4 +1,5 @@
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
+import {managementWasEnabled} from './management-state.mjs';
 import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
@@ -7,14 +8,14 @@ import {evaluateRuleFormula} from '../public/formula-runtime.js';
 import {EntryCapacityError,isEntryCapacityError,entryOrder,protectiveOrders} from './orders.mjs';
 import {leverageCap} from '../public/leverage.js';
 const terminal=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MATCH','FINISHED']),active=o=>!terminal.has(o.status);
-const initial=()=>({runEnabled:false,error:null,lastEvaluation:null,cancelEntries:false,closeAll:false,stopSignals:{}});
+const initial=()=>({runEnabled:false,managementEnabled:false,error:null,lastEvaluation:null,cancelEntries:false,closeAll:false,stopSignals:{}});
 export class MultiBots{
  constructor(engine){this.e=engine;}
  get groups(){return this.e.state.multiBots||[];}
  has(id){return this.groups.some(p=>p.id===id);}
  get(id){const p=this.groups.find(p=>p.id===id);if(!p)throw Error('다중종목 봇을 찾을 수 없습니다.');return p;}
  workers(p){return p.legs.map(leg=>this.e.state.bots.find(b=>b.id===memberId(p,leg))).filter(Boolean);}
- init(){this.e.state.multiBots||=[];for(const p of this.groups){p.runtime={...initial(),...p.runtime,runEnabled:false};for(const b of this.workers(p))b.runtime.runEnabled=false;}}
+ init(){this.e.state.multiBots||=[];for(const p of this.groups){p.runtime={...initial(),...p.runtime,managementEnabled:managementWasEnabled(p.runtime)||this.workers(p).some(b=>b.runtime.managementEnabled),runEnabled:false};for(const b of this.workers(p))b.runtime.runEnabled=false;}}
  stopFlags(){for(const p of this.groups){p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;}}
  realized(p){return this.workers(p).reduce((s,b)=>s+Number(b.runtime.realized||0),0);}
  syncBudgets(p){const allocations=multiAllocations(p,this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.maxEntries=p.maxEntries;}}return allocations;}
@@ -47,7 +48,7 @@ export class MultiBots{
   try{
    for(const rule of p.actionRules.filter(r=>r.enabled))await e.formulaMarkets(p.legs[0].symbol,rule.formula,new Map(),multiAliases(p));
    for(const b of workers)await e.startRuntime(b.id);
-   p.runtime.runEnabled=true;p.runtime.stopSignals={};p.runtime.error=null;p.runtime.cancelEntries=false;p.runtime.closeAll=false;for(const b of workers)b.runtime.error=null;
+   p.runtime.runEnabled=true;p.runtime.managementEnabled=true;p.runtime.stopSignals={};p.runtime.error=null;p.runtime.cancelEntries=false;p.runtime.closeAll=false;for(const b of workers)b.runtime.error=null;
   }catch(error){if(isStorageError(error)){e.storage.stop(p.id);throw error;}p.runtime.runEnabled=false;for(const b of workers)b.runtime.runEnabled=false;await e.checkpoint();throw error;}
   e.note('다중종목 감시 시작',p.name,p.id);await e.checkpoint();return this.view(p);
  }
@@ -78,7 +79,7 @@ export class MultiBots{
  }
  async tick(p){
   const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
-  const accountManagement=p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
+  const accountManagement=p.runtime.managementEnabled&&p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
   if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
   if(workers.some(b=>e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))return;
   const problem=workers.find(b=>b.runtime.syncHold||b.runtime.error&&(!p.runtime.error||p.runtime.runEnabled));if(problem){p.runtime.error=problem.name+' · '+(problem.runtime.error||'포지션 확인 필요');p.runtime.runEnabled=false;p.runtime.cancelEntries=true;await this.cancelEntries(p);for(const b of workers)b.runtime.runEnabled=false;}

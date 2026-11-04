@@ -23,7 +23,7 @@ async function harness(){
  async openOrders(){return [];},async openAlgoOrders(){return [];},async symbolConfig(){return [{...x.config}];},async leverageBrackets(){return [{brackets:[{initialLeverage:125,notionalFloor:0,notionalCap:1000000}]}];},async changeMargin(s,margin){x.config.marginType=margin;return{};},async changeLeverage(s,leverage){x.config.leverage=leverage;return{leverage};},
  async tickers(){return [{symbol:'BTCUSDT',lastPrice:String(x.price)}];},async book(){return {bids:[[String(x.price),'100']],asks:[[String(x.price),'100']]};},async premium(){return {markPrice:String(x.price)};},async klines(){return Array.from({length:600},(_,i)=>({time:(x.now-(600-i)*60000)/1000,closeTime:x.now-(599-i)*60000-1,open:100,high:101,low:99,close:100,volume:1}));},
  async placeOrder(p){x.calls.push({...p});return trade(p.side,Number(p.quantity),{owner:p.newClientOrderId,reduceOnly:p.reduceOnly==='true'});},async queryOrder(s,id){const found=typeof id==='object'?[...x.orders.values()].find(o=>String(o.orderId)===String(id.orderId)):x.orders.get(id);if(!found)throw Error('missing native order');return {...found};},
- async trades(s,orderId){return x.trades.filter(t=>orderId==null||String(t.orderId)===String(orderId)).map(t=>({...t}));},async tradesAfter(s,id){return x.trades.filter(t=>t.id>=id).map(t=>({...t}));},async income(){return[];},
+ async trades(s,orderId){return x.trades.filter(t=>t.symbol===s&&(orderId==null||String(t.orderId)===String(orderId))).map(t=>({...t}));},async tradesAfter(s,id){return x.trades.filter(t=>t.symbol===s&&t.id>=id).map(t=>({...t}));},async income(){return[];},
  };
  const state=emptyState(),store={state,async load(){return this.state;},fail:false,async save(){if(this.fail)throw Object.assign(Error('fake disk full'),{code:'ENOSPC'});}},e=await new TradingEngine(store,{now:()=>x.now,clientFactory:()=>client}).init();await e.connect({environment:'testnet',apiKey:'fabricated-shared-key',secret:'fabricated-shared-secret',allowTrading:true});
  return {e,x,client,trade,store};
@@ -100,5 +100,47 @@ test('a paused multi-symbol bot may close an account target without owning that 
  const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'B',symbol:'ETHUSDT',weight:50}],targets=[multiTarget('A',{...rule('EXIT_LONG','account'),alias:'A'}),multiTarget('B',{...rule('EXIT_LONG'),alias:'B',enabled:false})];
  await h.e.saveBot(makeMultiBot({id:'multi-account',name:'shared multi',budget:20,legs,margin:'CROSSED',exit:off,actionRules:[multiRule(legs,{formula:'TRUE@1m',targets})]}));
  assert.deepEqual(h.e.multi.get('multi-account').actionRules[0].targets.map(t=>t.closeScope),['account','bot']);
- await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.e.multi.get('multi-account').runtime.runEnabled,false);assert.equal(h.e.multi.get('multi-account').runtime.error,null);
+ await h.e.tick();assert.ok(h.x.quantity>0,'saving a new multi manager must not execute exits');await h.e.startBot('multi-account');await h.e.pauseBot('multi-account');await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.e.multi.get('multi-account').runtime.runEnabled,false);assert.equal(h.e.multi.get('multi-account').runtime.error,null);
+});
+
+test('unstarted account-exit bots and copied settings cannot manage account positions before first start',async()=>{
+ const h=await harness();await h.e.saveBot(makeBot({id:'source-exit',name:'source',budget:100,margin:'CROSSED',exit:off,actionRules:[rule('EXIT_LONG','account')]}));h.trade('BUY',1);await h.e.refreshAccount(true);await h.e.tick();
+ assert.equal(h.x.calls.length,0,'saving a bot must not activate account exits');assert.equal(h.x.quantity,1);
+ await h.e.startBot('source-exit');await h.e.pauseBot('source-exit');await h.e.tick();assert.equal(h.x.quantity,0,'an explicitly started manager continues exits after entry pause');
+});
+test('a shared partial limit fill and its market remainder count as one entry',async()=>{
+ const h=await harness();
+ h.client.placeOrder=async p=>{h.x.calls.push({...p});const data=h.trade(p.side,p.type==='LIMIT'?1:Number(p.quantity),{owner:p.newClientOrderId,reduceOnly:p.reduceOnly==='true'});if(p.type==='LIMIT'){Object.assign(data,{status:'PARTIALLY_FILLED',origQty:p.quantity,type:'LIMIT'});Object.assign(h.x.orders.get(data.clientOrderId),data);}return data;};
+ h.client.cancelOrder=async(s,id)=>{const data=h.x.orders.get(id);data.status='CANCELED';return {...data};};
+ const enter=rule();enter.order={type:'LIMIT',price:'bid',ticks:0,timeout:1,remainder:'market',postOnly:false};
+ await h.e.saveBot(makeBot({id:'entry-remainder',budget:100,maxEntries:1,margin:'CROSSED',exit:off,actionRules:[enter]}));await h.e.startBot('entry-remainder');await h.e.tick();h.e.shared.book('BTCUSDT').entryOrders=h.e.state.orders.filter(o=>o.kind==='standard'&&o.role==='entry').map(o=>o.botId+':'+o.orderId);h.x.now+=2000;await h.e.tick();
+ assert.equal(h.x.calls.length,2);assert.equal(h.e.bot('entry-remainder').runtime.entries,1);
+});
+test('a direct full close leaves no lot-sized dust after proportional external reductions',async()=>{
+ const h=await twoBots();h.trade('SELL',1.32,{reduceOnly:true});await h.e.tick();await h.e.closeBot('a');
+ assert.equal(h.e.bot('a').runtime.quantity,0);assert.ok(Math.abs(h.e.bot('b').runtime.quantity-1.32)<1e-9);
+});
+test('shared bootstrap derives the unassigned manual entry separately from existing bot entries',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.x.price=120;h.trade('BUY',q);delete h.e.state.sharedPositions[h.e.shared.key('BTCUSDT')];await h.e.shared.ensure('BTCUSDT');
+ const manual=h.e.shared.book('BTCUSDT').manual.LONG;assert.ok(Math.abs(manual.quantity-q)<1e-9);assert.ok(Math.abs(manual.entryPrice-120)<1e-9);
+});
+
+test('additive manual imports retain funding ownership after a partial reduction',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();await h.e.pauseBot('a');const plan=await h.e.positionImports.preview({positionKey:'BTCUSDT:LONG',botId:'a'});await h.e.positionImports.commit(plan.id);
+ h.trade('SELL',4,{reduceOnly:true});await h.e.tick();h.x.now+=500;const at=h.x.now,share=h.e.shared.fundingShare('a','BTCUSDT',at),view=h.e.positionInsights.botFunding([{symbol:'BTCUSDT',incomeType:'FUNDING_FEE',time:at,income:-3,asset:'USDT'}],0,true);
+ assert.ok(h.e.bot('a').runtime.quantity>0);assert.ok(Math.abs(view.a.funding+3*share)<1e-9);
+});
+test('copied account-wide exits remain inactive until the copy itself is started',async()=>{
+ const h=await harness();await h.e.saveBot(makeBot({id:'source-copy',budget:100,margin:'CROSSED',exit:off,actionRules:[rule('EXIT_LONG','account')]}));await h.e.startBot('source-copy');await h.e.pauseBot('source-copy');
+ const source=h.e.bot('source-copy');await h.e.saveBot({...source,actionRules:source.actionRules.map(r=>({...r,formula:'FALSE@1m'}))});
+ const {copyBotSettings}=await import('../public/bot-tools.js'),copy=copyBotSettings(h.e.bot('source-copy'));copy.actionRules[0].formula='TRUE@1m';await h.e.saveBot(copy);h.trade('BUY',1);await h.e.refreshAccount(true);await h.e.tick();
+ assert.equal(h.x.calls.length,0);assert.equal(h.e.bot(copy.id).runtime.managementEnabled,false);assert.equal(h.x.quantity,1);
+});
+
+test('legacy started managers recover management state while newly copied managers remain unarmed',async()=>{
+ const h=await harness();for(const id of ['legacy-manager','never-started'])await h.e.saveBot(makeBot({id,name:id,budget:100,margin:'CROSSED',exit:off,actionRules:[rule('EXIT_LONG','account')]}));
+ for(const bot of h.e.state.bots)delete bot.runtime.managementEnabled;h.e.bot('legacy-manager').runtime.lastEvaluation={at:h.x.now,rules:[]};
+ const e=await new TradingEngine(h.store,{now:()=>h.x.now,clientFactory:()=>h.client}).init();await e.connect({environment:'testnet',apiKey:'fabricated-shared-key',secret:'fabricated-shared-secret',allowTrading:true});
+ assert.equal(e.bot('legacy-manager').runtime.managementEnabled,true);assert.equal(e.bot('never-started').runtime.managementEnabled,false);
+ h.trade('BUY',1);await e.refreshAccount(true);await e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,1);
 });
