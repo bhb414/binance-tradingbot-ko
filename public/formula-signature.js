@@ -1,5 +1,9 @@
 import './analysis-formula.js';
 const signature={
+ currentReturn:{position:true,params:[],help:["현재 마크가격 기준 · 진입 증거금 대비 수익률(%) · 보유 배수 반영. 예: 20배에서 유리하게 0.5% 움직이면 +10%. 수수료·펀딩 제외."]},
+ priceChange:{position:true,params:[],help:["평균 진입가 대비 현재 마크가격 변화(%). 보유 배수는 반영하지 않습니다. 롱은 상승, 숏은 하락할 때 양수입니다."]},
+ currentPnl:{position:true,params:[],help:["현재 보유분의 미실현손익(USDT). 수수료·펀딩과 이전 정리의 실현손익은 제외합니다."]},
+ hasPosition:{position:true,params:[],help:["포지션이 있으면 1, 없으면 0입니다. 포지션이 없을 때 다른 수익률·손익 함수는 미확인값입니다."]},
  weekday:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각의 요일. 월요일=1 ~ 일요일=7. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
  clockTime:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각을 HHMM으로 반환. 예: 930 = 09:30. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
  timeWindow:{calendar:true,params:["시작 HHMM","종료 HHMM","시간대 (선택)"],help:["시작 포함. 예: 900 = 09:00. 2300, 600처럼 자정을 넘는 구간도 지원합니다.","종료 미포함. 예: 1800 = 18:00 직전까지. 종료에만 2400을 사용할 수 있습니다.","기본 한국시간. 한국시간/미국동부/UTC. 미국 동부시간의 서머타임은 자동 반영합니다."]},
@@ -40,7 +44,7 @@ export function installSignatureHelp(textarea,popup){
     if(reset)dismissed=false;
     const help=signatureAt(textarea.value,textarea.selectionStart);
     if(document.activeElement!==textarea||dismissed||!help){hide();return;}
-    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
+    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.position?'현재 보유분 기준 · @봉주기·[1]로 과거 손익이 되지 않습니다.':help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
     popup.hidden=false;textarea.setAttribute('aria-describedby','formula-signature');
     const mirror=document.createElement('div'),style=getComputedStyle(textarea);
     for(const key of ['font','lineHeight','letterSpacing','padding','border','boxSizing','wordBreak','overflowWrap','tabSize'])mirror.style[key]=style[key];

@@ -135,3 +135,11 @@ test('multi-symbol rules share calendar constraints and evaluate current time ev
  h.x.now=Date.parse('2026-01-04T23:59:00Z');const bot=await h.engine.saveBot(p);await h.engine.startBot(bot.id);await h.engine.tick();assert.equal(h.x.calls.length,0);
  h.x.now=Date.parse('2026-01-05T00:00:00Z');await h.engine.tick();assert.equal(h.x.calls.length,2);assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
 });
+
+test('multi-symbol exit formulas combine aggregate return with each named leg return',async()=>{
+ const h=await harness(),p=config(),positions=h.client.positions.bind(h.client);p.exit={takeProfitEnabled:false,stopLossEnabled:false};
+ p.actionRules.push(multiRule(p.legs,{formula:'현재수익률() >= 1 AND A.현재수익률 >= 2 AND B.현재수익률 >= 8',targets:[multiTarget('A',{action:'EXIT_LONG',sizePercent:100}),multiTarget('B',{action:'EXIT_SHORT',sizePercent:100})]}));
+ h.client.positions=async()=>{const rows=await positions();return rows.map(r=>({...r,unRealizedProfit:String((Number(r.markPrice)-Number(r.entryPrice))*Number(r.positionAmt))}));};
+ const saved=await h.engine.saveBot(p);await h.engine.startBot(saved.id);await h.engine.tick();assert.ok(h.x.quantities.BTCUSDT>0);assert.ok(h.x.quantities.ETHUSDT<0);
+ h.x.prices.BTCUSDT=101;h.x.prices.ETHUSDT=49;h.x.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.equal(h.x.quantities.ETHUSDT,0);assert.equal(h.x.calls.length,4);
+});

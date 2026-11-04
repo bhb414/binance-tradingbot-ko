@@ -194,6 +194,10 @@
     '20일선': 'sma20', '이평20': 'sma20', 'sma20': 'sma20',
     '60일선': 'sma60', '이평60': 'sma60', 'sma60': 'sma60',
     '평균매수가': 'averagePrice', '진입가': 'averagePrice', 'averageprice': 'averagePrice',
+    '현재수익률':'currentReturn','진입증거금수익률':'currentReturn','currentreturn':'currentReturn','roi':'currentReturn',
+    '가격변동률':'priceChange','현재가격변동률':'priceChange','pricechange':'priceChange',
+    '현재손익':'currentPnl','평가손익':'currentPnl','currentpnl':'currentPnl',
+    '포지션보유':'hasPosition','hasposition':'hasPosition',
     '수익률': 'profit', 'profit': 'profit', '포지션수익률': 'profit',
     '하이킨시가': 'heikinOpen', '하이킨아시시가': 'heikinOpen', 'heikinopen': 'heikinOpen',
     '하이킨고가': 'heikinHigh', '하이킨아시고가': 'heikinHigh', 'heikinhigh': 'heikinHigh',
@@ -226,6 +230,10 @@
   }
 
   const functionAliases = {
+    '현재수익률':'currentReturn','진입증거금수익률':'currentReturn','currentreturn':'currentReturn','roi':'currentReturn',
+    '가격변동률':'priceChange','현재가격변동률':'priceChange','pricechange':'priceChange',
+    '현재손익':'currentPnl','평가손익':'currentPnl','currentpnl':'currentPnl',
+    '포지션보유':'hasPosition','hasposition':'hasPosition',
     '요일':'weekday','현재요일':'weekday','weekday':'weekday',
     '시각':'clockTime','현재시각':'clockTime','clocktime':'clockTime',
     '시간범위':'timeWindow','timewindow':'timeWindow',
@@ -265,7 +273,7 @@
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
@@ -346,6 +354,7 @@
 
   function evaluateCall(node, context, index) {
     const name = resolveFunction(node.name);
+    if(['currentReturn','priceChange','currentPnl','hasPosition'].includes(name))return context.series[name]?.[index]??null;
 
     if(['weekday','clockTime','timeWindow'].includes(name)){
       const zone=calendarZone(node.args[name==='timeWindow'?2:0]),clock=calendarParts(context,zone);

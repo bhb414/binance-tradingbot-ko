@@ -1,3 +1,4 @@
+import {formulaPosition} from './formula-position.js';
 import { api } from './api.js';
 import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
@@ -375,7 +376,7 @@ async function updateFormulaFeedback() {
   try {
     const intervals=ruleIntervals(source);feedback.className='formula-feedback valid';feedback.innerHTML=icon('check')+'<div><strong>문법 정상</strong><span>거래소 봉으로 조건을 확인하는 중…</span></div>';
     const snapshots=await api('/formula/markets',{method:'POST',body:{symbol:draft.symbol,source}});if(request!==formulaRequest||!$('#bot-dialog').open)return;
-    const {result}=evaluateRuleFormula(source,snapshots,{quantity:draft.quantity,entryPrice:draft.entryPrice,direction:draft.positionDirection,leverage:draft.leverage});feedback.className='formula-feedback valid';
+    const {result}=evaluateRuleFormula(source,snapshots,formulaPosition((serverState?.positionOwners||bots).find(b=>b.id===draft.id&&b.symbol===draft.symbol)));feedback.className='formula-feedback valid';
     let message=result.missing?'계산에 필요한 봉 또는 포지션 정보가 없습니다.':result.pass?'조회한 거래소 봉에서 조건 충족':'조회한 거래소 봉에서 조건 미충족';
     if(!result.ok)message=result.error;
     feedback.innerHTML=icon('check')+'<div><strong>문법 정상</strong><span>'+esc(message)+' · 수동 검사 결과 · '+ACTIONS[rule.action]+'</span></div>';

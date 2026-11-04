@@ -371,7 +371,7 @@ export class TradingEngine {
       for(const o of this.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.cancelStandard(b,o,true);
       if(this.ownOrders(b).some(o=>active(o)&&o.kind==='standard'))return;
       await this.refreshAccount(true);await this.syncBotPosition(b);if(r.syncHold||!r.quantity)return;
-      parameters=exitOrder(this.orderView(b,rule),info,{...market.book,lastPrice:market.ticker.lastPrice},r.quantity*rule.sizePercent/100,this.hedge);
+      parameters=exitOrder(this.orderView(b,rule),info,{...market.book,lastPrice:market.ticker.lastPrice},rule.sizePercent===100?r.quantity:r.quantity*rule.sizePercent/100,this.hedge);
     }
     const previousSignal={...signal},previousLastBar=r.lastBar,previousEntryAt=r.lastEntryAt;
     signal.fired=true;signal.lastBar=bar;signal.lastExecutionAt=this.now();if(isEntry(rule.action)){r.lastBar=bar;r.lastEntryAt=this.now();}

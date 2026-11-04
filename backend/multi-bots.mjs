@@ -1,3 +1,4 @@
+import {portfolioFormulaPosition} from '../public/formula-position.js';
 import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
@@ -55,7 +56,7 @@ export class MultiBots{
  async remove(id){const p=this.get(id),workers=this.workers(p);if(workers.some(b=>b.runtime.quantity>0||this.e.ownOrders(b).some(active)))throw Error('보유·미해결 주문이 있으면 삭제할 수 없습니다.');const ids=new Set(workers.map(b=>b.id));this.e.state.bots=this.e.state.bots.filter(b=>!ids.has(b.id));this.e.state.multiBots=this.groups.filter(b=>b.id!==id);await this.e.checkpoint();return {ok:true};}
  async close(id){const p=this.get(id);this.e.requireTrading();p.runtime.closeAll=true;p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.closePending(p);return this.view(p);}
  async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리');}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
- position(p){const view=this.view(p),sources={};for(const b of view.members){const state={...b.runtime,leverage:b.leverage};sources[b.alias]=state;sources[b.symbol]=state;}const unrealized=view.pnl-view.runtime.realized;return {quantity:view.quantity,profitValue:view.used>0?unrealized/view.used*100:undefined,symbols:sources};}
+ position(p){return portfolioFormulaPosition(this.view(p));}
  async evaluate(p,rule,cache){
   const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p),{now:this.e.now()+(this.e.client.offset||0)});
   return result;

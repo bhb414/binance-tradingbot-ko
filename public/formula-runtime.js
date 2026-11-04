@@ -1,3 +1,4 @@
+import {positionPercent} from './formula-position.js';
 import {compileFormula,formulaTimeframes} from './formula.js';
 import {formulaSeries} from './indicators.js';
 export function ruleIntervals(source){return formulaTimeframes(source);}
@@ -8,10 +9,21 @@ function candles(snapshot,interval){
  if(data.length<2||!Number.isFinite(data.at(-1).closeTime)||snapshot.serverNow-data.at(-1).closeTime>120000)unavailable(interval+' 최신 봉을 확인할 수 없어 조건 판단을 기다립니다.');
  return data;
 }
-function positionSeries(series,data,position={}){
- if(!(position.quantity>0))return series;
- if(Number.isFinite(position.entryPrice)&&position.entryPrice>0){series.averagePrice=data.map(()=>position.entryPrice);series.profit=data.map(c=>(c.close/position.entryPrice-1)*100*(position.direction==='LONG'?1:-1)*position.leverage);}
- if(Number.isFinite(position.profitValue))series.profit=data.map(()=>position.profitValue);
+function positionSeries(series,data,position={},snapshot={}){
+ const quantity=Number(position.quantity),constant=value=>data.map(()=>value);
+ series.hasPosition=constant(quantity>0?1:0);
+ if(!(quantity>0))return series;
+ // Keep saved legacy profit formulas based on candle closes.
+ if(Number.isFinite(position.entryPrice)&&position.entryPrice>0){series.averagePrice=constant(position.entryPrice);series.profit=data.map(c=>(c.close/position.entryPrice-1)*100*(position.direction==='LONG'?1:-1)*position.leverage);}
+ if(Number.isFinite(position.profitValue))series.profit=constant(position.profitValue);
+ if(position.syncHold)return series;
+ const mark=Number(snapshot.premium?.markPrice),entry=Number(position.entryPrice),leverage=Number(position.leverage);
+ if(mark>0&&entry>0&&['LONG','SHORT'].includes(position.direction)){
+  const sign=position.direction==='LONG'?1:-1,delta=(mark-entry)*sign;
+  series.priceChange=constant(positionPercent(delta,entry));series.currentPnl=constant(delta*quantity);
+  if(Number.isFinite(leverage)&&leverage>0)series.currentReturn=constant(positionPercent(delta*quantity,quantity*entry/leverage));
+ }
+ for(const [key,field]of [['currentReturn','currentReturnValue'],['priceChange','priceChangeValue'],['currentPnl','currentPnlValue']])if(Number.isFinite(position[field]))series[key]=constant(position[field]);
  return series;
 }
 export function evaluateRuleFormula(source,snapshots,position={},options={}){
@@ -23,8 +35,8 @@ export function evaluateRuleFormula(source,snapshots,position={},options={}){
   if(named.length){for(;start>=0;start--){if([...byName.values()].some(map=>!map.has(primary[start].time)))break;if(start<primary.length-1&&primary[start].closeTime+1!==primary[start+1].time*1000)break;}start++;}
   else start=0;
   const data=primary.slice(start);if(data.length<2)unavailable('종목 간 공통 봉이 부족합니다.');
-  const series=positionSeries(formulaSeries(data),data,position);
-  if(named.length){series.symbols=Object.create(null);for(const [name]of named){const rows=data.map(row=>byName.get(name).get(row.time));series.symbols[name]=positionSeries(formulaSeries(rows),rows,position.symbols?.[name]);}}
+  const series=positionSeries(formulaSeries(data),data,position,snapshot);
+  if(named.length){series.symbols=Object.create(null);for(const [name]of named){const rows=data.map(row=>byName.get(name).get(row.time));series.symbols[name]=positionSeries(formulaSeries(rows),rows,position.symbols?.[name],snapshot.symbols[name]);}}
   frames[interval]=series;aligned[interval]=data;
  }
  const market=snapshots[clock],data=aligned[clock],result=formula.evaluate(frames[clock],data.length-1,{frames,maxSteps:200000,now:options.now??market.serverNow});

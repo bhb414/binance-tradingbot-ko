@@ -88,6 +88,20 @@ if(process.argv.includes('--calendar')){
  await app.engine.saveBot(makeMultiBot({id:'ui-calendar-multi',name:'다중종목 시간 예시',budget:100,legs,exit:off,actionRules:[multiRule(legs,{formula:'요일(미국동부) <= 금요일 AND 시간범위(930, 1600, 미국동부)\nAND (A.종가 >= B.종가)@15m[1]'})]}));
 }
 
+
+if(process.argv.includes('--position-conditions')){
+ const off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'},at=Date.now()-3600000;
+ const single=await app.engine.saveBot(makeBot({id:'ui-return',name:'현재수익률 예시',symbol:'BTCUSDT',budget:100,margin:'CROSSED',exit:off,actionRules:[makeActionRule({action:'EXIT_LONG',formula:'현재수익률() >= 15 OR 현재수익률() <= -5',sizePercent:100})]}));
+ const {makeMultiBot,multiRule,multiTarget}=await import('../public/multi-bot.js'),legs=[{alias:'A',symbol:'ETHUSDT',weight:50},{alias:'B',symbol:'INTCUSDT',weight:50}];
+ const parent=await app.engine.saveBot(makeMultiBot({id:'ui-return-multi',name:'합산 수익률 예시',budget:100,margin:'CROSSED',legs,exit:off,actionRules:[multiRule(legs,{formula:'현재수익률() >= 20 AND A.현재수익률 > 0',targets:[multiTarget('A',{action:'EXIT_LONG',sizePercent:100}),multiTarget('B',{action:'EXIT_SHORT',sizePercent:100})]})]}));
+ const specs=[{id:single.id,symbol:'BTCUSDT',quantity:2,leverage:20,mark:100.5},{id:parent.id+'_A',symbol:'ETHUSDT',quantity:2,leverage:10,mark:101},{id:parent.id+'_B',symbol:'INTCUSDT',quantity:-1,leverage:20,mark:98}],bySymbol=new Map(specs.map(row=>[row.symbol,row]));
+ state.positionImports||=[];
+ for(const row of specs){const bot=app.engine.bot(row.id),direction=row.quantity>0?'LONG':'SHORT';positions.set(row.symbol,row.quantity);configs.set(row.symbol,{symbol:row.symbol,marginType:'CROSSED',leverage:row.leverage});bot.leverage=row.leverage;Object.assign(bot.runtime,{quantity:Math.abs(row.quantity),entryPrice:100,direction,entries:1,realized:0,positionEpoch:1,lastEntryAt:at,runEnabled:false});state.positionImports.push({id:'ui-return-import-'+row.id,scope:state.scope,botId:row.id,symbol:row.symbol,direction,quantity:Math.abs(row.quantity),entryPrice:100,leverage:row.leverage,at});}
+ app.engine.client.positions=async()=>[...positions].filter(([,q])=>q).map(([symbol,q])=>{const row=bySymbol.get(symbol);return {symbol,positionSide:'BOTH',positionAmt:String(q),entryPrice:'100',markPrice:String(row.mark),unRealizedProfit:String((row.mark-100)*q),positionInitialMargin:String(Math.abs(q)*100/row.leverage),marginType:'cross',isolatedWallet:'0'};});
+ app.engine.client.premium=async symbol=>({markPrice:String(bySymbol.get(symbol)?.mark||100)});
+ await app.engine.refreshAccount(true);
+}
+
 if(process.argv.includes('--storage-outage')){
  const save=store.save.bind(store);let blocked=true;
  store.save=async()=>{if(blocked)throw Object.assign(Error('UI-only fabricated disk full'),{code:'ENOSPC',syscall:'open',path:'state.json'});return save();};

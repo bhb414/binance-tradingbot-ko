@@ -558,3 +558,12 @@ test('an old mismatch warning clears after a confirmed flat match without restar
  await h.engine.tick();assert.equal(b.runtime.syncHold,false);assert.equal(b.runtime.error,null);assert.equal(b.runtime.runEnabled,false);assert.equal(h.exchange.calls.length,0);
  Object.assign(b.runtime,{syncHold:true,error:'주문 접수 여부 확인 필요'});await h.engine.tick();assert.equal(b.runtime.error,'주문 접수 여부 확인 필요');assert.equal(b.runtime.runEnabled,false);
 });
+
+test('current-return predicates combine TP and SL using held leverage and mark even when candle prices do not change',async()=>{
+ for(const direction of ['LONG','SHORT'])for(const mode of ['take','stop']){
+  const entry=marketRule('ENTER_'+direction,'TRUE',{leverage:20}),exit=marketRule('EXIT_'+direction,'TRUE',{formula:'현재수익률() >= 10 OR 현재수익률() <= -5'}),h=await actionHarness([entry,exit]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};let mark=100;
+  h.engine.client.premium=async()=>({markPrice:String(mark)});await h.engine.startBot(h.id);await h.engine.tick();assert.ok(Math.abs(h.exchange.quantity)>0);
+  const sign=direction==='LONG'?1:-1;mark=mode==='take'?100+sign*.49:100-sign*.24;h.exchange.now+=1000;await h.engine.tick();assert.ok(Math.abs(h.exchange.quantity)>0);
+  mark=mode==='take'?100+sign*.5:100-sign*.25;h.exchange.now+=1000;await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.engine.ownOrders(b).filter(o=>o.role==='exit').length,1);assert.equal(b.runtime.error,null);
+ }
+});
