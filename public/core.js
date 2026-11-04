@@ -21,7 +21,7 @@ export const uid = () => randomId();
 export const makeCondition = () => ({ id: uid(), type: 'condition', metric: 'close', period: 20, timeframe: '15m', offset: 0, candle: 'closed', operator: 'cross_up', targetType: 'metric', targetMetric: 'ema', targetPeriod: 20, targetTimeframe: '15m', targetOffset: 0, targetCandle: 'closed', value: 30 });
 export const makeGroup = () => ({ id: uid(), type: 'group', logic: 'AND', children: [makeCondition()] });
 export function makeBot(overrides = {}) {
-  return { id: uid(), name: '새로운 봇', symbol: 'BTCUSDT', budget: 500, budgetMode:'fixed', entryPercent: 25, maxEntries: 0, leverage: 3, margin: 'ISOLATED', direction: 'LONG', status: 'paused', task: 'watching', color: 'mint', pnl: 0, used: 0, reserved: 0, conditionMode:'formula', formula:DEFAULT_FORMULA, formulaTimeframe:'15m', formulaCandle:'closed', rules: makeGroup(), order: { type: 'LIMIT', price: 'bid', ticks: 0, timeout: 15, remainder: 'cancel', postOnly: true }, reentry: { mode: 'rearm', cooldown: 60, afterExitCooldown:0 }, exit: { takeProfit: 3, stopLoss: 1.5, price: 'MARK_PRICE', basis:'price' }, ...overrides };
+  return { id: uid(), name: '새로운 봇', symbol: 'BTCUSDT', budget: 500, budgetMode:'fixed',profitReinvestPercent:100, entryPercent: 25, maxEntries: 0, leverage: 3, margin: 'ISOLATED', direction: 'LONG', status: 'paused', task: 'watching', color: 'mint', pnl: 0, used: 0, reserved: 0, conditionMode:'formula', formula:DEFAULT_FORMULA, formulaTimeframe:'15m', formulaCandle:'closed', rules: makeGroup(), order: { type: 'LIMIT', price: 'bid', ticks: 0, timeout: 15, remainder: 'cancel', postOnly: true }, reentry: { mode: 'rearm', cooldown: 60, afterExitCooldown:0 }, exit: { takeProfit: 3, stopLoss: 1.5, price: 'MARK_PRICE', basis:'price' }, ...overrides };
 }
 export function seedBots() {
   return [
@@ -38,6 +38,7 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,symbols=SYMBOL
   if (!symbols.includes(bot.symbol)) errors.push('지원하는 종목을 선택해 주세요.');
   if (!finite(bot.budget) || bot.budget < 10) errors.push('운용 예산은 10 USDT 이상이어야 합니다.');
   if (bot.budgetIncluded!==undefined&&typeof bot.budgetIncluded!=='boolean') errors.push('운용예산 포함 여부를 확인해 주세요.');
+  if (bot.profitReinvestPercent!==undefined&&(!finite(bot.profitReinvestPercent)||bot.profitReinvestPercent<0||bot.profitReinvestPercent>100)) errors.push('이익 예산 반영 비율은 0~100%로 입력해 주세요.');
   if (!Object.hasOwn(BUDGET_MODES,bot.budgetMode||'fixed')) errors.push('예산의 손익 반영 방식을 확인해 주세요.');
   if (enforceAllocationLimit && budgetIncluded(bot) && finite(bot.budget) && bots.filter(b => !b.multiBotId && b.id !== bot.id).reduce((s,b) => s + allocatedAmount(b), 0) + effectiveBudget(bot) > balance) errors.push('봇들의 배정 예산 합계가 계좌 잔고 한도를 초과합니다.');
   if (!finite(bot.entryPercent) || bot.entryPercent <= 0 || bot.entryPercent > 100) errors.push('1회 진입 비율은 0보다 크고 100% 이하여야 합니다.');

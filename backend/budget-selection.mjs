@@ -10,7 +10,7 @@ export class BudgetSelection{
   if(!input||typeof input.id!=='string'||typeof input.budgetIncluded!=='boolean'||!Number.isFinite(input.budget)||input.budget<10||!['fixed','pnl','capped'].includes(input.budgetMode||'fixed'))throw Error('운용예산과 포함 여부를 확인해 주세요.');
   const e=this.e,root=e.multi.has(input.id)?e.multi.get(input.id):e.state.bots.find(b=>b.id===input.id);if(root?.multiBotId)throw Error('다중종목 봇 전체에서 선택하세요.');
   if(fresh&&e.connected){await e.refreshAccount(true);if(root&&!input.budgetIncluded){for(const b of this.members(root)){await e.syncBotPosition(b,true);}}}
-  const realized=root?.kind==='multi'?e.multi.realized(root):root?.runtime.realized||0,candidate={...input,runtime:{realized}},requested=allocatedAmount(candidate),otherAllocated=e.allocatedBudget(input.id),wallet=e.accountSnapshot?.walletBalance??Infinity,available=Math.max(0,wallet-otherAllocated),blocked=root?this.blocked(root):null;
+  const realized=root?.kind==='multi'?e.multi.realized(root):root?.runtime.realized||0,candidate={...input,runtime:{...root?.runtime,realized}},requested=allocatedAmount(candidate),otherAllocated=e.allocatedBudget(input.id),wallet=e.accountSnapshot?.walletBalance??Infinity,available=Math.max(0,wallet-otherAllocated),blocked=root?this.blocked(root):null;
   const message=!input.budgetIncluded?blocked:requested+otherAllocated>wallet+1e-8?'운용예산 '+requested.toFixed(2)+' USDT를 포함할 수 없습니다. 지갑 잔고에서 다른 운용 봇 배정 후 남은 한도는 '+available.toFixed(2)+' USDT입니다.':'';
   return {allowed:!message,message:message||'',requested,otherAllocated,available:Number.isFinite(available)?available:null,canExclude:!blocked};
  }

@@ -11,7 +11,7 @@ export function multiTarget(alias,extra={}){return {alias,enabled:true,action:'E
 export function multiRule(legs,extra={}){return {...makeActionRule({action:'MULTI',formula:'FALSE@1h',reentry:{mode:'rearm',cooldown:0,afterExitCooldown:0}}),targets:legs.map(leg=>multiTarget(leg.alias)),...extra};}
 export function makeMultiBot(extra={}){
  const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'B',symbol:'ETHUSDT',weight:50}];
- return {id:randomId(),kind:'multi',name:'새 다중종목 봇',budget:500,budgetMode:'fixed',maxEntries:0,margin:'ISOLATED',color:'mint',legs,exit:{takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',basis:'price',takeProfitEnabled:false,stopLossEnabled:false},actionRules:[multiRule(legs)],...extra};
+ return {id:randomId(),kind:'multi',name:'새 다중종목 봇',budget:500,budgetMode:'fixed',profitReinvestPercent:100,maxEntries:0,margin:'ISOLATED',color:'mint',legs,exit:{takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',basis:'price',takeProfitEnabled:false,stopLossEnabled:false},actionRules:[multiRule(legs)],...extra};
 }
 export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,previous=null}={}){
  if(!bot||typeof bot!=='object')return ['봇 설정 형식을 확인하세요.'];
@@ -19,6 +19,7 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
  if(typeof bot.id!=='string'||!/^[A-Za-z0-9_-]{1,48}$/.test(bot.id))errors.push('봇 식별자를 확인하세요.');
  if(typeof bot.name!=='string'||!bot.name.trim()||bot.name.length>30)errors.push('이름은 1~30자로 입력하세요.');
  if(!Number.isFinite(bot.budget)||bot.budget<10||bot.budget>100000000)errors.push('운용예산은 10 USDT 이상으로 입력하세요.');
+ if(bot.profitReinvestPercent!==undefined&&(!Number.isFinite(bot.profitReinvestPercent)||bot.profitReinvestPercent<0||bot.profitReinvestPercent>100))errors.push('이익 예산 반영 비율은 0~100%로 입력하세요.');
  if(!['fixed','pnl','capped'].includes(bot.budgetMode)||!['ISOLATED','CROSSED'].includes(bot.margin))errors.push('예산 운용·증거금 모드를 확인하세요.');
  if(!Number.isInteger(bot.maxEntries)||bot.maxEntries<0||bot.maxEntries>20)errors.push('종목별 진입 횟수는 0(제한 없음)~20회로 지정하세요.');
  if(!Array.isArray(bot.legs)||bot.legs.length<2||bot.legs.length>8)return [...errors,'다중종목 봇은 2~8개 종목을 지정하세요.'];
@@ -58,4 +59,4 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
 }
 export function multiAliases(bot){return Object.fromEntries(bot.legs.map(leg=>[leg.alias,leg.symbol]));}
 export const memberId=(bot,leg)=>bot.id+'_'+leg.alias;
-export function multiAllocations(bot,realized=0){const total=effectiveBudget({...bot,runtime:{realized}});return bot.legs.map(leg=>({...leg,budget:total*leg.weight/100}));}
+export function multiAllocations(bot,realized=0){const total=effectiveBudget({...bot,runtime:{...bot.runtime,realized}});return bot.legs.map(leg=>({...leg,budget:total*leg.weight/100}));}

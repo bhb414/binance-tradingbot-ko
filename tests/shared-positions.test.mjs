@@ -210,3 +210,66 @@ test('local read deferral leaves unrelated position exits running while real exc
  await h.e.tick();assert.equal(h.e.waiting,null);assert.equal(h.a.runtime.waiting.local,true);assert.equal(h.a.runtime.quantity,quantity);assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);
  const calls=h.x.calls.length;h.e.shared.syncAll=async()=>{throw new BinanceError('exchange limit',{status:429,retryAt:h.x.now+60000});};await h.e.tick();assert.equal(h.e.waiting.kind,'rate-limit');assert.equal(h.x.calls.length,calls);
 });
+
+test('budget baseline preserves running holdings, full history and statistics and only excludes past realized PnL',async()=>{
+ const h=await twoBots();h.a.budgetMode='pnl';h.a.runtime.realized=-20;h.a.statsReset={at:1,scope:h.e.state.scope,realized:-5};await h.e.checkpoint();
+ const original=structuredClone({fills:h.e.state.fills,orders:h.e.state.orders,stats:h.a.statsReset,quantity:h.a.runtime.quantity,signals:h.a.runtime.ruleSignals,entries:h.a.runtime.entries}),count=h.x.calls.length;
+ const p=await h.e.budgetBaselines.preview('a');assert.equal(p.before,80);assert.equal(p.after,100);assert.equal(p.held,true);assert.equal(p.running,true);await h.e.budgetBaselines.commit('a',p.previewId);
+ assert.equal(h.e.decorate(h.a).effectiveBudget,100);assert.equal(h.a.runtime.realized,-20);assert.equal(h.a.runtime.runEnabled,true);
+ assert.deepEqual({fills:h.e.state.fills,orders:h.e.state.orders,stats:h.a.statsReset,quantity:h.a.runtime.quantity,signals:h.a.runtime.ruleSignals,entries:h.a.runtime.entries},original);assert.equal(h.x.calls.length,count);
+ const previous=h.a.runtime.realized;h.x.price=110;h.trade('SELL',h.x.quantity,{reduceOnly:true});await h.e.shared.sync('BTCUSDT',{force:true});assert.ok(h.a.runtime.realized>previous);assert.ok(Math.abs(h.e.decorate(h.a).effectiveBudget-(100+h.a.runtime.realized-previous))<1e-8);
+});
+test('budget baseline survives saved settings, position import and same-account restart but not a new account',async()=>{
+ const h=await twoBots();await h.e.pauseBot('a');h.a.budgetMode='capped';h.a.runtime.realized=-15;const p=await h.e.budgetBaselines.preview('a');await h.e.budgetBaselines.commit('a',p.previewId);const marker=structuredClone(h.a.runtime.budgetBaseline);
+ await h.e.saveBot({...h.a,name:'saved'});assert.deepEqual(h.e.bot('a').runtime.budgetBaseline,marker);
+ h.trade('BUY',1);await h.e.shared.sync('BTCUSDT',{force:true});const preview=await h.e.positionImports.preview({positionKey:'BTCUSDT:LONG',botId:'a'});await h.e.positionImports.commit(preview.id);assert.deepEqual(h.e.bot('a').runtime.budgetBaseline,marker);
+ const restarted=await new TradingEngine(h.store,{now:()=>h.x.now,clientFactory:()=>h.client}).init();await restarted.connect({environment:'testnet',apiKey:'fabricated-shared-key',secret:'fabricated-shared-secret',allowTrading:true});assert.deepEqual(restarted.bot('a').runtime.budgetBaseline,marker);
+ // A scope reset is only permitted when there is no exposure.
+ h.x.quantity=0;for(const b of restarted.state.bots){b.runtime.quantity=0;b.runtime.runEnabled=false;}restarted.state.orders=[];restarted.state.sharedBooks=[];await restarted.connect({environment:'testnet',apiKey:'fabricated-another-key',secret:'fabricated-another-secret',allowTrading:true});assert.equal(restarted.bot('a').runtime.budgetBaseline,undefined);
+});
+test('budget baseline validates aggregate wallet headroom without changing flags and archived budgets can reset',async()=>{
+ const h=await twoBots();h.a.budget=3000;h.a.budgetMode='pnl';h.a.runtime.realized=-2000;h.b.budget=3000;let p=await h.e.budgetBaselines.preview('a');assert.equal(p.allowed,false);assert.match(p.reason,/초과/);assert.equal(h.a.runtime.budgetBaseline,undefined);assert.equal(h.a.runtime.runEnabled,true);
+ h.a.budgetIncluded=false;p=await h.e.budgetBaselines.preview('a');assert.equal(p.allowed,true);await h.e.budgetBaselines.commit('a',p.previewId);assert.equal(h.e.decorate(h.a).effectiveBudget,3000);
+});
+test('budget baseline rejects stale, expired and wrong-bot previews while mark-price changes alone remain valid',async()=>{
+ const h=await twoBots();h.a.budgetMode='pnl';h.a.runtime.realized=-10;
+ let p=await h.e.budgetBaselines.preview('a');await assert.rejects(()=>h.e.budgetBaselines.commit('b',p.previewId),/유효시간/);h.a.runtime.realized++;
+ await assert.rejects(()=>h.e.budgetBaselines.commit('a',p.previewId),/바뀌었습니다/);assert.equal(h.a.runtime.budgetBaseline,undefined);
+ p=await h.e.budgetBaselines.preview('a');h.x.now+=60001;await assert.rejects(()=>h.e.budgetBaselines.commit('a',p.previewId),/유효시간/);
+ p=await h.e.budgetBaselines.preview('a');h.x.price=101;h.x.revision++;await h.e.budgetBaselines.commit('a',p.previewId);assert.equal(h.e.decorate(h.a).effectiveBudget,100);
+ p=await h.e.budgetBaselines.preview('a');h.a.runtime.runEnabled=false;await assert.rejects(()=>h.e.budgetBaselines.commit('a',p.previewId),/바뀌었습니다/);
+});
+test('budget baseline refuses unresolved entries, unknown orders and delayed execution fees',async()=>{
+ const h=await twoBots(),o={id:'pending-baseline',botId:'a',scope:h.e.state.scope,role:'entry',kind:'standard',status:'NEW',appliedQty:0,parameters:{symbol:'BTCUSDT',type:'LIMIT',quantity:'1'},orderPolicy:{remainder:'cancel'}};h.e.state.orders.push(o);
+ await assert.rejects(()=>h.e.budgetBaselines.preview('a'),/미체결 진입/);o.role='exit';o.status='UNKNOWN';await assert.rejects(()=>h.e.budgetBaselines.preview('a'),/접수 여부/);
+ o.status='CANCELED';o.role='entry';o.orderPolicy.remainder='market';await assert.rejects(()=>h.e.budgetBaselines.preview('a'),/잔량/);
+ o.fallbackDone=true;o.appliedQty=.1;o.feesFetched=false;const refresh=h.e.refreshOrder;h.e.refreshOrder=async()=>{};await assert.rejects(()=>h.e.budgetBaselines.preview('a'),/수수료/);h.e.refreshOrder=refresh;assert.equal(h.a.runtime.budgetBaseline,undefined);
+});
+test('budget baseline warns when existing collateral exceeds the restored cap and never closes a position',async()=>{
+ const h=await twoBots();h.a.budget=10;h.a.budgetMode='pnl';h.a.runtime.realized=200;
+ const p=await h.e.budgetBaselines.preview('a');assert.ok(p.warnings.some(w=>w.includes('새 한도')));const q=h.a.runtime.quantity,count=h.x.calls.length;await h.e.budgetBaselines.commit('a',p.previewId);assert.equal(h.a.runtime.quantity,q);assert.equal(h.x.calls.length,count);assert.equal(h.e.decorate(h.a).effectiveBudget,10);
+});
+test('budget baseline failure restores the durable budget instead of leaving an unpersisted capital increase',async()=>{
+ const h=await twoBots();h.a.budgetMode='pnl';h.a.runtime.realized=-30;await h.e.checkpoint();const p=await h.e.budgetBaselines.preview('a');h.store.fail=true;await assert.rejects(()=>h.e.budgetBaselines.commit('a',p.previewId),e=>e.storage);assert.equal(h.e.bot('a').runtime.budgetBaseline,undefined);assert.equal(h.e.decorate(h.e.bot('a')).effectiveBudget,70);assert.equal(h.e.tradingEnabled,false);
+});
+
+test('reinvestment uses each profit independently: 200 + half of 100 - all of 40 equals 210, with fees charged fully',async()=>{
+ const h=await twoBots();h.a.budget=200;h.a.budgetMode='pnl';h.a.profitReinvestPercent=50;const p=await h.e.budgetBaselines.preview('a');await h.e.budgetBaselines.commit('a',p.previewId);
+ const settle=gross=>{h.a.runtime.realized+=gross;h.e.recordBudgetProfit(h.a,gross);};
+ settle(100);assert.equal(h.e.decorate(h.a).effectiveBudget,250);settle(-40);assert.equal(h.e.decorate(h.a).effectiveBudget,210);h.a.runtime.realized-=2;assert.equal(h.e.decorate(h.a).effectiveBudget,208);
+ const historical=structuredClone(h.a.runtime),next=await h.e.budgetBaselines.preview('a');await h.e.budgetBaselines.commit('a',next.previewId);assert.equal(h.e.decorate(h.a).effectiveBudget,200);assert.equal(h.a.runtime.realized,historical.realized);assert.equal(h.a.runtime.budgetWithheld,50);settle(20);assert.equal(h.e.decorate(h.a).effectiveBudget,210);
+ h.a.profitReinvestPercent=0;settle(20);assert.equal(h.e.decorate(h.a).effectiveBudget,210);settle(-5);assert.equal(h.e.decorate(h.a).effectiveBudget,205);h.a.profitReinvestPercent=100;settle(10);assert.equal(h.e.decorate(h.a).effectiveBudget,215);
+});
+test('shared external profitable fills withhold only the owner fraction and never count it twice on replay or restart',async()=>{
+ const h=await twoBots();h.a.budgetMode='pnl';h.a.profitReinvestPercent=50;const start=h.e.decorate(h.a).effectiveBudget,beforeB=h.e.decorate(h.b).effectiveBudget,q=h.a.runtime.quantity;
+ h.x.price=110;h.trade('SELL',h.x.quantity,{reduceOnly:true});await h.e.shared.sync('BTCUSDT',{force:true});const fee=q*110*.0004;
+ assert.ok(Math.abs(h.e.decorate(h.a).effectiveBudget-(start+q*10*.5-fee))<1e-8);assert.equal(h.e.decorate(h.b).effectiveBudget,beforeB);assert.ok(Math.abs(h.a.runtime.budgetWithheld-q*10*.5)<1e-8);
+ const withheld=h.a.runtime.budgetWithheld;await h.e.shared.sync('BTCUSDT',{force:true});assert.equal(h.a.runtime.budgetWithheld,withheld);
+ const restarted=await new TradingEngine(h.store,{now:()=>h.x.now,clientFactory:()=>h.client}).init();await restarted.connect({environment:'testnet',apiKey:'fabricated-shared-key',secret:'fabricated-shared-secret',allowTrading:true});await restarted.shared.sync('BTCUSDT',{force:true});assert.equal(restarted.bot('a').runtime.budgetWithheld,withheld);
+});
+test('saving reinvestment percentages validates bounds, preserves old budget adjustments, and changes only future profits',async()=>{
+ const h=await twoBots();await h.e.pauseBot('a');h.a.budgetMode='pnl';h.a.profitReinvestPercent=50;h.a.runtime.realized=100;h.a.runtime.budgetWithheld=50;const current=h.e.decorate(h.a).effectiveBudget;
+ await h.e.saveBot({...h.a,profitReinvestPercent:25});const a=h.e.bot('a');assert.equal(h.e.decorate(a).effectiveBudget,current);a.runtime.realized+=20;h.e.recordBudgetProfit(a,20);assert.equal(h.e.decorate(a).effectiveBudget,current+5);
+ const input={...a};delete input.profitReinvestPercent;await h.e.saveBot(input);assert.equal(h.e.bot('a').profitReinvestPercent,25);
+ for(const value of [-1,101,'50',null])await assert.rejects(()=>h.e.saveBot({...h.e.bot('a'),profitReinvestPercent:value}),/비율/);
+});

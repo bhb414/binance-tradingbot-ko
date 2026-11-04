@@ -116,7 +116,7 @@ if(process.argv.includes('--entry-capacity')){
 
 if(process.argv.includes('--bot-tools')){
  const {makeMultiBot,multiRule}=await import('../public/multi-bot.js'),off={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'};
- const single=await app.engine.saveBot(makeBot({id:'ui-tools-single',name:'복사·초기화 예시',symbol:'BTCUSDT',budget:100,exit:off,actionRules:[makeActionRule({formula:'FALSE@1m'})]}));app.engine.bot(single.id).runtime.realized=-12;
+ const single=await app.engine.saveBot(makeBot({id:'ui-tools-single',name:'복사·초기화 예시',symbol:'BTCUSDT',budget:100,budgetMode:'pnl',profitReinvestPercent:50,exit:off,actionRules:[makeActionRule({formula:'FALSE@1m'})]}));app.engine.bot(single.id).runtime.realized=-12;
  const legs=[{alias:'A',symbol:'ETHUSDT',weight:40},{alias:'B',symbol:'INTCUSDT',weight:40}];await app.engine.saveBot(makeMultiBot({id:'ui-tools-multi',name:'여러 종목 예시',budget:100,legs,exit:off,actionRules:[multiRule(legs)]}));
 }
 

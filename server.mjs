@@ -74,6 +74,8 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='POST'&&pathname==='/api/storage/retry'){await engine.serial(()=>engine.storage.recover({force:true}));json(200,engine.snapshot());return;}
         if(req.method==='POST'&&pathname==='/api/trading'){json(200,await engine.setTrading(body.enabled));return;}
         if(req.method==='POST'&&pathname==='/api/bots'){json(200,await engine.saveBot(body));return;}
+        const budgetBaseline=/^\/api\/bots\/([A-Za-z0-9_-]+)\/budget-baseline(\/preview)?$/.exec(pathname);
+        if(req.method==='POST'&&budgetBaseline){json(200,await engine.serial(()=>budgetBaseline[2]?engine.budgetBaselines.preview(budgetBaseline[1]):engine.budgetBaselines.commit(budgetBaseline[1],body.previewId)));return;}
         const resetStatistics=/^\/api\/bots\/([A-Za-z0-9_-]+)\/reset-statistics$/.exec(pathname);
         if(req.method==='POST'&&resetStatistics){json(200,await engine.resetBotStatistics(resetStatistics[1]));return;}
         const cancelBotOrder=/^\/api\/bots\/([A-Za-z0-9_-]+)\/orders\/([A-Za-z0-9_-]{1,60})\/cancel$/.exec(pathname);

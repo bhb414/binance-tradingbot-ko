@@ -735,3 +735,11 @@ test('legacy confirmed maker errors clear on upgrade without starting bots or hi
  const mismatch=structuredClone(state);mismatch.bots[0].runtime.syncHold=true;const mismatched=await new TradingEngine(new MemoryStore(mismatch),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.match(mismatched.bot(h.id).runtime.error,/거절/);
  const unrelated=structuredClone(state);unrelated.bots[0].runtime.error='포지션 수량 불일치';const preserved=await new TradingEngine(new MemoryStore(unrelated),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(preserved.bot(h.id).runtime.error,'포지션 수량 불일치');
 });
+
+test('non-shared partial closes apply the selected profit fraction once and later losses remain full',async()=>{
+ const {engine,id}=await harness(),b=engine.bot(id);b.budget=200;b.budgetMode='pnl';b.profitReinvestPercent=50;Object.assign(b.runtime,{quantity:2,entryPrice:100,direction:'LONG'});
+ const o={id:'reinvest-exit',scope:engine.state.scope,botId:id,kind:'standard',role:'exit',direction:'LONG',status:'NEW',appliedQty:0,appliedQuote:0,parameters:{symbol:'BTCUSDT',type:'LIMIT',side:'SELL',quantity:'2'}};engine.state.orders.push(o);
+ await engine.applyOrder(b,o,{executedQty:'1',cumQuote:'200',status:'PARTIALLY_FILLED'});assert.equal(engine.decorate(b).effectiveBudget,250);
+ await engine.applyOrder(b,o,{executedQty:'1',cumQuote:'200',status:'PARTIALLY_FILLED'});assert.equal(engine.decorate(b).effectiveBudget,250);
+ await engine.applyOrder(b,o,{executedQty:'2',cumQuote:'260',status:'FILLED'});assert.equal(engine.decorate(b).effectiveBudget,210);assert.equal(b.runtime.realized,60);assert.equal(b.runtime.budgetWithheld,50);
+});

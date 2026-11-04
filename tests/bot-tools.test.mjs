@@ -1,3 +1,4 @@
+import {budgetBaselineReview} from '../public/bot-tools.js';
 import test from 'node:test';import assert from 'node:assert/strict';
 import {copyBotSettings,resetBotSettings} from '../public/bot-tools.js';
 import {makeBot,validateBot} from '../public/core.js';import {makeActionRule} from '../public/actions.js';
@@ -44,4 +45,11 @@ test('saved shared bot status still uses its own profit and tolerates missing li
  assert.match(html,/미실현 손익<\/small><strong><span class="positive">\+10\.00 USDT/);
  assert.match(html,/data-bot-trade/);
  assert.doesNotMatch(botStatusMarkup({...bot,pnl:undefined},state),/NaN|undefined/);
+});
+
+test('budget baseline review distinguishes preserved records from the new budget period and escapes error text',()=>{
+ const p={base:100,mode:'pnl',before:88,after:100,budgetPnl:-12,allowed:true,warnings:['운용 유지']},html=budgetBaselineReview(p);
+ assert.match(html,/88.00/);assert.match(html,/100.00/);assert.match(html,/통계/);assert.match(html,/미실현손익/);assert.match(html,/정리 시 확정/);assert.match(html,/운용 유지/);
+ assert.doesNotMatch(budgetBaselineReview({...p,allowed:false,reason:'<script>bad</script>'}),/<script>/);
+ for(const source of [makeBot({runtime:{budgetBaseline:{at:1,realized:-10}}}),makeMultiBot({runtime:{budgetBaseline:{at:1,realized:-10}}})]){assert.equal(copyBotSettings(source).runtime,undefined);assert.equal(resetBotSettings(source).runtime,undefined);}
 });

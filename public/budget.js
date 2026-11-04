@@ -4,8 +4,11 @@ export const BUDGET_OPTIONS=Object.freeze([
   ['pnl','손익 반영 (손실 차감 · 수익도 재투자)'],
   ['capped','원금 한도 유지 (손실 차감 · 수익은 원금까지만 복구)']
 ]);
+export function reinvestPercent(bot){return bot.profitReinvestPercent??100;}
+export function withheldProfit(bot,gross){return Math.max(0,gross)*(1-reinvestPercent(bot)/100);}
+export function budgetRealized(bot){const r=bot.runtime||{},base=r.budgetBaseline||{};return (Number(r.realized)||0)-(Number(r.budgetWithheld)||0)-(Number(base.realized)||0)+(Number(base.withheld)||0);}
 export function effectiveBudget(bot){
-  const base=Math.max(0,Number(bot.budget)||0),realized=Number(bot.runtime?.realized)||0,mode=bot.budgetMode||'fixed';
+  const base=Math.max(0,Number(bot.budget)||0),realized=budgetRealized(bot),mode=bot.budgetMode||'fixed';
   if(mode==='fixed')return base;
   const current=Math.max(0,base+realized);
   return mode==='capped'?Math.min(base,current):current;

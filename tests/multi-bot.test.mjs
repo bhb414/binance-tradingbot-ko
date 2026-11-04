@@ -185,3 +185,29 @@ test('maker rejection on one multi target keeps the group running and retries on
  assert.equal(root.runtime.runEnabled,true);assert.equal(root.runtime.error,null);assert.equal(workers[0].runtime.error,null);assert.equal(workers[0].runtime.quantity,0);assert.ok(workers[1].runtime.quantity>0);assert.ok(e.multi.view(root).runtime.orderRetry);
  x.now+=4999;await e.tick();assert.equal(attempts.length,2);x.now++;await e.tick();assert.equal(attempts.length,3);assert.equal(attempts.filter(p=>p.symbol==='ETHUSDT').length,1);assert.ok(workers[0].runtime.quantity>0);assert.equal(e.multi.view(root).runtime.orderRetry,null);assert.equal(root.runtime.runEnabled,true);
 });
+
+test('multi budget baseline restores the parent cap and per-symbol percentages without touching lifetime results',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config({budgetMode:'pnl'})),root=h.engine.multi.get(p.id),workers=h.engine.multi.workers(root);workers[0].runtime.realized=-100;workers[1].runtime.realized=-50;h.engine.multi.syncBudgets(root);
+ assert.deepEqual(h.engine.multi.view(root).members.map(b=>b.budget),[510,340]);const plan=await h.engine.budgetBaselines.preview(root.id);assert.equal(plan.before,850);await h.engine.budgetBaselines.commit(root.id,plan.previewId);
+ const view=h.engine.multi.view(root);assert.equal(view.effectiveBudget,1000);assert.equal(view.runtime.realized,-150);assert.deepEqual(view.members.map(b=>b.budget),[600,400]);assert.equal(h.engine.allocatedBudget(),1000);assert.equal(h.x.calls.length,0);
+ await assert.rejects(()=>h.engine.budgetBaselines.preview(workers[0].id),/다중종목/);const marker=structuredClone(root.runtime.budgetBaseline);await h.engine.saveBot({...root,name:'saved group'});assert.deepEqual(h.engine.multi.get(root.id).runtime.budgetBaseline,marker);
+ const input={...root,budget:1100,budgetIncluded:true};const result=await h.engine.budgetSelection.inspect(input);assert.equal(result.requested,1100);
+});
+test('multi baseline keeps unassigned weights unused and fresh wallet changes can invalidate application',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config({budgetMode:'capped',legs:[{alias:'A',symbol:'BTCUSDT',weight:40},{alias:'B',symbol:'ETHUSDT',weight:40}]})),root=h.engine.multi.get(p.id);h.engine.multi.workers(root)[0].runtime.realized=-200;
+ let plan=await h.engine.budgetBaselines.preview(root.id);h.client.account=async()=>({canTrade:true,assets:[{asset:'USDT',walletBalance:'900',availableBalance:'900'}]});await assert.rejects(()=>h.engine.budgetBaselines.commit(root.id,plan.previewId),/초과/);assert.equal(root.runtime.budgetBaseline,undefined);
+ root.budgetIncluded=false;plan=await h.engine.budgetBaselines.preview(root.id);await h.engine.budgetBaselines.commit(root.id,plan.previewId);assert.deepEqual(h.engine.multi.view(root).members.map(b=>b.budget),[400,400]);assert.equal(h.engine.allocatedBudget(),0);
+});
+
+test('multi reinvestment withholds each profitable leg before combining losses and allocates the resulting cap',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config({budget:200,budgetMode:'pnl',profitReinvestPercent:50})),root=h.engine.multi.get(p.id),[a,b]=h.engine.multi.workers(root);
+ a.runtime.realized+=100;h.engine.recordBudgetProfit(a,100);b.runtime.realized-=40;h.engine.recordBudgetProfit(b,-40);h.engine.multi.syncBudgets(root);assert.equal(h.engine.multi.view(root).effectiveBudget,210);assert.deepEqual(h.engine.multi.view(root).members.map(m=>m.budget),[126,84]);assert.equal(h.engine.allocatedBudget(),210);
+ const plan=await h.engine.budgetBaselines.preview(root.id);await h.engine.budgetBaselines.commit(root.id,plan.previewId);assert.equal(h.engine.multi.view(root).effectiveBudget,200);assert.equal(root.runtime.budgetBaseline.withheld,50);
+ await h.engine.saveBot({...root,profitReinvestPercent:25});const saved=h.engine.multi.get(root.id);assert.equal(saved.runtime.budgetWithheld,50);assert.equal(saved.profitReinvestPercent,25);assert.equal(h.engine.multi.view(saved).effectiveBudget,200);
+ for(const value of [-1,101,'50'])await assert.rejects(()=>h.engine.saveBot({...saved,profitReinvestPercent:value}),/비율/);
+});
+
+test('retiring a flat multi leg preserves prior budget PnL and a reset baseline instead of creating artificial profit',async()=>{
+ const h=await harness(),p=await h.engine.saveBot(config({budgetMode:'pnl'})),root=h.engine.multi.get(p.id),[a,b]=h.engine.multi.workers(root);a.runtime.realized=-100;b.runtime.realized=-50;const plan=await h.engine.budgetBaselines.preview(root.id);await h.engine.budgetBaselines.commit(root.id,plan.previewId);
+ const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'C',symbol:'SOLUSDT',weight:50}];await h.engine.saveBot({...root,legs,actionRules:[multiRule(legs)]});const saved=h.engine.multi.get(root.id);assert.equal(h.engine.multi.view(saved).effectiveBudget,1000);assert.equal(h.engine.multi.realized(saved),-150);assert.equal(h.engine.allocatedBudget(),1000);
+});
