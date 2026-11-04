@@ -21,6 +21,7 @@ import {protectionEnabled,hasProtection,protectionBasis,protectionPricePercent} 
 
 const TERMINAL=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MATCH','FINISHED']);
 const active=o=>!TERMINAL.has(o.status);
+const POSITION_MISMATCH_ERROR='거래소 포지션과 봇 체결 원장이 다릅니다. 수동 거래·다른 봇의 포지션을 자동 인수하지 않습니다.';
 const initialRuntime=()=>({runEnabled:false,importPending:false,quantity:0,entryPrice:0,entries:0,realized:0,lastSignal:null,lastBar:null,lastEntryAt:0,lastExitAt:0,lastEvaluation:null,error:null,waiting:null,guardKey:null,mismatchSince:0,syncHold:false,direction:null,ruleSignals:{},positionEpoch:0});
 const number=value=>Number(value||0);
 
@@ -29,7 +30,7 @@ export class TradingEngine {
     this.store=store;this.clientFactory=clientFactory;this.now=now;this.client=null;this.connected=false;this.tradingEnabled=false;this.hedge=false;this.accountSnapshot=null;this.accountAt=0;this.connectionError=null;this.waiting=null;this.writeError=null;this.queue=Promise.resolve();this.timer=null;this.lastTimeSync=0;this.lastTick=0;
     this.credentialStore=credentialStore;this.credentialError=null;this.reconnectAt=0;
     this.manual=new ManualTrading(this);this.multi=new MultiBots(this);this.storage=new StorageRecovery(this);
-    this.orderChecks=new WeakMap();this.accountRevisionAt=0;this.lastCycleAt=0;
+    this.orderChecks=new WeakMap();this.positionChecks=new WeakMap();this.accountRevisionAt=0;this.lastCycleAt=0;
     this.positionImports=new PositionImports(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.positionCostEstimates=new PositionCostEstimates(this);this.connectionId=null;
   }
   get state(){return this.store.state;}
@@ -37,10 +38,10 @@ export class TradingEngine {
   async init(){await this.store.load();this.state.dataTransport=transportSettings(this.state.dataTransport);this.client=this.clientFactory({environment:this.state.environment});for(let i=0;i<this.state.bots.length;i++){const old=this.state.bots[i],b=upgradeActions(upgradeBot(old));b.runtime={...initialRuntime(),...old.runtime,runEnabled:false,waiting:null};if(!b.runtime.direction&&(b.runtime.quantity>0||this.state.orders.some(o=>o.botId===b.id&&o.role==='entry'&&active(o))))b.runtime.direction=old.direction||'LONG';delete b.direction;this.state.bots[i]=b;}this.client.configureDataTransport?.(this.state.dataTransport);this.multi.init();this.manual.recoverInterrupted();await this.checkpoint();await this.restoreConnection();return this;}
   startTimer(){this.timer=setInterval(()=>{const interval=this.state.dataTransport?.mode==='rest'?this.state.dataTransport.restIntervalSeconds*1000:1000;if(this.timerBusy||this.now()-this.lastCycleAt<interval)return;this.lastCycleAt=this.now();this.timerBusy=true;(async()=>{if(!this.connected&&this.reconnectAt&&this.now()>=this.reconnectAt)await this.restoreConnection();await this.tick();})().catch(error=>{this.connectionError=this.client.redact?.(error.message)||error.message;}).finally(()=>{this.timerBusy=false;});},1000);this.timer.unref?.();}
   async stopTimer(){clearInterval(this.timer);await this.queue;this.client.closeStreams?.();}
-  async setDataTransport(input){return this.serial(async()=>{this.storage.healthy();const next=transportSettings(input);this.state.dataTransport=next;await this.checkpoint();this.client.configureDataTransport?.(next);this.accountAt=0;this.lastCycleAt=0;this.orderChecks=new WeakMap();return this.snapshot();});}
-  async pollTrackedOrder(order,load){
+  async setDataTransport(input){return this.serial(async()=>{this.storage.healthy();const next=transportSettings(input);this.state.dataTransport=next;await this.checkpoint();this.client.configureDataTransport?.(next);this.accountAt=0;this.lastCycleAt=0;this.orderChecks=new WeakMap();this.positionChecks=new WeakMap();return this.snapshot();});}
+  async pollTrackedOrder(order,load,{force=false}={}){
     const now=this.now(),revision=this.client.accountRevision||0,previous=this.orderChecks.get(order),push=this.client.userStream?.status==='connected',interval=push?60000:(this.state.dataTransport?.restIntervalSeconds||3)*1000;
-    if(this.client.transport&&order.status!=='UNKNOWN'&&previous&&now-previous.at<interval&&previous.revision===revision)return;
+    if(!force&&this.client.transport&&order.status!=='UNKNOWN'&&previous&&now-previous.at<interval&&previous.revision===revision)return;
     const before=[order.status,order.appliedQty].join(':');await load();this.orderChecks.set(order,{at:this.now(),revision});if(before!==[order.status,order.appliedQty].join(':'))this.accountAt=0;
   }
   note(title,message,botId=null,level='info'){const last=this.state.logs[0];if(last?.message===message&&this.now()-last.at<30000)return;this.state.logs.unshift({id:randomUUID(),at:this.now(),title,message,botId,level});this.state.logs=this.state.logs.slice(0,1000);}
@@ -219,15 +220,33 @@ export class TradingEngine {
   }
   async cancelStandard(b,o,abortRemainder=false){this.storage.healthy();if(abortRemainder){o.fallbackDone=true;await this.checkpoint();}try{const result=await this.client.cancelOrder(b.symbol,o.id);await this.applyOrder(b,o,result);}catch(error){if(![-2011,-2013].includes(error.code)&&!error.uncertain)throw error;}await this.refreshOrder(b,o);await this.checkpoint();}
   async cancelGuard(b,o){this.storage.healthy();try{await this.client.cancelAlgo(o.id);}catch(error){if(![-2011,-2013,-4143].includes(error.code)&&!error.uncertain)throw error;}await this.refreshOrder(b,o);await this.checkpoint();}
-  async syncBotPosition(b,immediate=false){
+  positionMatches(b){
     const positions=this.accountSnapshot?.positions.filter(p=>p.symbol===b.symbol)||[],expected=b.runtime.quantity;
     const own=positions.find(p=>this.hedge?p.positionSide===b.runtime.direction:true),other=positions.some(p=>this.hedge&&!b.runtime.imported&&p.positionSide!==b.runtime.direction&&Math.abs(p.quantity)>0),actual=Math.abs(own?.quantity||0);
     const reversed=!this.hedge&&own&&((own.quantity>0)!==(b.runtime.direction==='LONG'));
     const priceMatches=!expected||!actual||Math.abs(number(own?.entryPrice)-b.runtime.entryPrice)<=Math.max(1e-8,b.runtime.entryPrice*1e-8);
-    const matches=!other&&!reversed&&priceMatches&&Math.abs(actual-expected)<=1e-9;
-    if(matches){b.runtime.syncHold=false;b.runtime.mismatchSince=0;return;}
-    b.runtime.syncHold=true;b.runtime.mismatchSince||=this.now();
-    if(immediate||this.now()-b.runtime.mismatchSince>15000){b.runtime.runEnabled=false;b.runtime.error='거래소 포지션과 봇 체결 원장이 다릅니다. 수동 거래·다른 봇의 포지션을 자동 인수하지 않습니다.';}
+    return !other&&!reversed&&priceMatches&&Math.abs(actual-expected)<=1e-9;
+  }
+  async syncBotPosition(b,immediate=false){
+    const r=b.runtime;
+    if(!this.positionMatches(b)){
+      const revision=this.client.accountRevision||0,signature=JSON.stringify([r.quantity,r.entryPrice,r.direction,this.accountSnapshot?.positions.filter(p=>p.symbol===b.symbol).map(p=>[p.quantity,p.entryPrice,p.positionSide])]),previous=this.positionChecks.get(b);
+      // Account and order streams need not arrive together. Verify owned executions
+      // before treating an observed account change as an external position change.
+      if(immediate||!previous||previous.client!==this.client||previous.revision!==revision||previous.signature!==signature||this.now()-previous.at>=5000){
+        this.positionChecks.set(b,{at:this.now(),revision,signature,client:this.client});
+        for(const order of this.ownOrders(b).filter(o=>active(o)&&o.parameters.symbol===b.symbol))await this.pollTrackedOrder(order,()=>this.refreshOrder(b,order),{force:true});
+        await this.refreshAccount(true);
+      }
+    }
+    if(this.positionMatches(b)){
+      const recovered=r.syncHold;r.syncHold=false;r.mismatchSince=0;
+      if(r.error===POSITION_MISMATCH_ERROR)r.error=null;
+      if(recovered)this.note('포지션 대조 완료',b.name+' · 봇 체결 원장과 거래소 보유 수량이 일치합니다.',b.id);
+      return;
+    }
+    r.syncHold=true;r.mismatchSince||=this.now();
+    if(immediate||this.now()-r.mismatchSince>15000){r.runEnabled=false;r.error=POSITION_MISMATCH_ERROR;}
   }
   async ensureGuards(b,info){
     const r=b.runtime,guards=this.ownOrders(b).filter(o=>o.kind==='algo'&&active(o));
@@ -362,7 +381,7 @@ export class TradingEngine {
     await this.refreshAccount(true);await this.syncBotPosition(b);await this.ensureGuards(b,info);
   }
   async tickBot(b){
-    const r=b.runtime;if(!r.runEnabled&&!r.quantity&&!this.ownOrders(b).some(active))return;
+    const r=b.runtime;if(!r.runEnabled&&!r.quantity&&!this.ownOrders(b).some(active)){if(r.syncHold)await this.syncBotPosition(b);return;}
     await this.syncBotPosition(b);if(!this.tradingEnabled||r.syncHold||r.importPending)return;
     const info=await this.symbolInfo(b.symbol);
     if(!r.quantity){for(const o of this.ownOrders(b).filter(o=>active(o)&&o.kind==='standard'&&o.role!=='entry'))await this.cancelStandard(b,o,true);}

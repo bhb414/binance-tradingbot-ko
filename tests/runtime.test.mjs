@@ -511,3 +511,50 @@ test('single-bot calendar evaluates current clock instead of a reused snapshot t
  const bot=h.engine.bot(h.id),snapshots=await h.engine.formulaMarkets(bot.symbol,bot.actionRules[0].formula);h.engine.formulaMarkets=async()=>snapshots;h.exchange.now+=60000;
  assert.equal((await h.engine.evaluateRules(bot))[0].ready,true);
 });
+
+async function delayedCloseHarness(){
+ const exit=marketRule('EXIT_LONG','종가 > 100',{order:{type:'LIMIT',price:'ask',ticks:0,timeout:600,remainder:'cancel',postOnly:true}}),h=await actionHarness([marketRule('ENTER_LONG'),exit]),b=h.engine.bot(h.id);
+ b.exit={takeProfitEnabled:false,stopLossEnabled:false,price:'MARK_PRICE'};await h.engine.startBot(h.id);await h.engine.tick();
+ h.engine.client.transport={mode:'websocket',restIntervalSeconds:15};h.engine.client.userStream={status:'connected',revision:0};h.engine.client.accountRevision=0;
+ h.exchange.signalClose=101;h.exchange.now+=1000;await h.engine.tick();await h.engine.tick();
+ const order=h.engine.ownOrders(b).find(o=>o.role==='exit');assert.equal(order.status,'NEW');
+ return {...h,b,order};
+}
+test('missing private fill notifications reconcile the owned exit before a false position mismatch pause',async()=>{
+ const h=await delayedCloseHarness(),original=h.b.runtime.quantity;h.exchange.fill(h.order.id,original);h.exchange.now+=1000;await h.engine.refreshAccount(true);
+ await h.engine.tick();assert.equal(h.order.status,'FILLED');assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.syncHold,false);assert.equal(h.b.runtime.error,null);
+ const count=h.exchange.calls.filter(c=>c.method==='placeOrder').length;h.exchange.now+=20000;await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,count);assert.equal(h.engine.state.fills.filter(f=>f.role==='exit').length,1);
+});
+test('partial and final owned fills reconcile independently inside the normal polling interval',async()=>{
+ const h=await delayedCloseHarness(),original=h.b.runtime.quantity;h.exchange.fill(h.order.id,original/2);h.exchange.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();
+ assert.ok(Math.abs(h.b.runtime.quantity-original/2)<1e-8);assert.equal(h.order.status,'PARTIALLY_FILLED');assert.equal(h.b.runtime.syncHold,false);assert.equal(h.b.runtime.runEnabled,true);
+ h.exchange.fill(h.order.id,original);h.exchange.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();assert.equal(h.b.runtime.quantity,0);assert.equal(h.order.status,'FILLED');assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.engine.state.fills.filter(f=>f.role==='exit').length,2);
+});
+test('a stale account read is refreshed before pausing a correctly tracked held position',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();
+ h.engine.accountSnapshot={...h.engine.accountSnapshot,positions:[]};await h.engine.syncBotPosition(b,true);assert.equal(b.runtime.syncHold,false);assert.equal(b.runtime.runEnabled,true);assert.ok(b.runtime.quantity>0);
+});
+test('an unexplained external close stays blocked, with bounded reconciliation reads instead of adopting the account quantity',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();const owned=b.runtime.quantity;
+ h.engine.client.transport={mode:'websocket'};h.engine.client.userStream={status:'connected'};h.exchange.quantity=0;await h.engine.refreshAccount(true);
+ let reads=0;const positions=h.engine.client.positions.bind(h.engine.client);h.engine.client.positions=async()=>{reads++;return positions();};const began=h.exchange.now;
+ for(let sec=1;sec<=4;sec++){h.exchange.now=began+sec*1000;await h.engine.tick();}
+ assert.equal(reads,1);assert.equal(b.runtime.syncHold,true);assert.equal(b.runtime.quantity,owned);
+ h.exchange.now=began+18000;await h.engine.tick();assert.equal(reads,2);assert.equal(b.runtime.runEnabled,false);assert.match(b.runtime.error,/거래소 포지션/);assert.equal(b.runtime.quantity,owned);
+});
+test('unknown order acceptance cannot release a mismatch or resend the entry',async()=>{
+ const h=await delayedCloseHarness(),owned=h.b.runtime.quantity,count=h.exchange.calls.filter(c=>c.method==='placeOrder').length;h.exchange.quantity=0;h.exchange.orders.delete(h.order.id);h.order.status='UNKNOWN';h.exchange.now+=1000;await h.engine.refreshAccount(true);await h.engine.tick();
+ assert.equal(h.b.runtime.syncHold,true);assert.equal(h.order.status,'UNKNOWN');assert.equal(h.b.runtime.quantity,owned);
+ h.exchange.now+=16000;await h.engine.tick();assert.equal(h.b.runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,count);
+});
+test('a rate limit during mismatch reconciliation waits and later records the fill once without a permanent stop',async()=>{
+ const h=await delayedCloseHarness(),owned=h.b.runtime.quantity,query=h.engine.client.queryOrder.bind(h.engine.client);h.exchange.fill(h.order.id,owned);h.exchange.now+=1000;await h.engine.refreshAccount(true);let fail=true;
+ h.engine.client.queryOrder=async(...args)=>{if(fail)throw new BinanceError('slow down',{code:-1003,status:429,retryAt:h.exchange.now+5000});return query(...args);};
+ await h.engine.tick();assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.engine.waiting.kind,'rate-limit');
+ fail=false;h.exchange.now+=6000;await h.engine.tick();assert.equal(h.b.runtime.quantity,0);assert.equal(h.b.runtime.syncHold,false);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);assert.equal(h.engine.state.fills.filter(f=>f.role==='exit').length,1);
+});
+test('an old mismatch warning clears after a confirmed flat match without restarting a stopped bot or clearing unrelated errors',async()=>{
+ const h=await harness(),b=h.engine.bot(h.id);Object.assign(b.runtime,{quantity:0,runEnabled:false,syncHold:true,mismatchSince:h.exchange.now-60000,error:'거래소 포지션과 봇 체결 원장이 다릅니다. 수동 거래·다른 봇의 포지션을 자동 인수하지 않습니다.'});
+ await h.engine.tick();assert.equal(b.runtime.syncHold,false);assert.equal(b.runtime.error,null);assert.equal(b.runtime.runEnabled,false);assert.equal(h.exchange.calls.length,0);
+ Object.assign(b.runtime,{syncHold:true,error:'주문 접수 여부 확인 필요'});await h.engine.tick();assert.equal(b.runtime.error,'주문 접수 여부 확인 필요');assert.equal(b.runtime.runEnabled,false);
+});
