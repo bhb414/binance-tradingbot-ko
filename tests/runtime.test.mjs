@@ -798,3 +798,52 @@ test('a known triggering guard whose child order is not visible yet waits withou
 test('a previous full-close intent cannot cancel current-position guards or close a new position epoch',async()=>{const h=await closeWaitHarness(),b=h.engine.bot(h.id);await h.engine.tick();h.exchange.fill(h.pending.id,b.runtime.quantity);h.pending.native.algoStatus='FINISHED';await h.engine.refreshOrder(b,h.engine.ownOrders(b).find(o=>o.kind==='algo'&&o.role==='stop'));h.exchange.quantity=2;b.runtime.quantity=2;b.runtime.entryPrice=100;b.runtime.positionEpoch++;const calls=h.exchange.calls.length;h.exchange.now+=4000;await h.engine.tick();assert.equal(b.runtime.quantity,2);assert.equal(h.exchange.quantity,2);assert.equal(b.runtime.closePending,undefined);assert.equal(h.exchange.calls.length,calls);assert.equal(b.runtime.runEnabled,true);});
 
 test('an accepted market full-close is journal-linked across restart and is never sent twice',async()=>{const h=await actionHarness([marketRule('ENTER_LONG')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();const send=h.engine.client.placeOrder.bind(h.engine.client);let queued;h.engine.client.placeOrder=async p=>{if(p.reduceOnly!=='true')return send(p);h.exchange.calls.push({method:'placeOrder',parameters:structuredClone(p)});queued={...p,clientOrderId:p.newClientOrderId,orderId:h.exchange.next++,origQty:p.quantity,executedQty:'0',cumQuote:'0',status:'NEW'};h.exchange.orders.set(queued.clientOrderId,queued);return structuredClone(queued);};await h.engine.closePosition(b,'손절 조건');assert.ok(b.runtime.closePending);assert.ok(h.engine.ownOrders(b).some(o=>o.closeIntentId===b.runtime.closePending.id));const recovered=await new TradingEngine(new MemoryStore(h.engine.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});h.exchange.now+=4000;await recovered.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);assert.ok(recovered.bot(h.id).runtime.closePending);h.exchange.fill(queued.clientOrderId,Number(queued.origQty));h.exchange.now+=4000;await recovered.tick();assert.equal(recovered.bot(h.id).runtime.quantity,0);assert.equal(recovered.bot(h.id).runtime.closePending,undefined);assert.equal(recovered.bot(h.id).runtime.runEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);});
+
+const deadlineEntry=()=>marketRule('ENTER_LONG','TRUE',{order:{type:'LIMIT',price:'bid',ticks:0,timeout:5,remainder:'market',postOnly:false}});
+async function deadlineHarness(rules=[deadlineEntry()]){
+ const h=await actionHarness(rules);const b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();return {...h,b,order:h.engine.ownOrders(b).find(o=>o.kind==='standard'&&o.role==='entry')};
+}
+test('an already expired entry is converted before slow fee-history and unrelated bot work',async()=>{
+ const h=await deadlineHarness(),sent=[],start=h.order.createdAt,refresh=h.engine.refreshOrder.bind(h.engine);h.exchange.beforeSend=p=>sent.push({at:h.exchange.now,type:p.type});
+ const fee={...structuredClone(h.order),id:'historical-fee',status:'FILLED',parameters:{...h.order.parameters,type:'MARKET'},orderId:7654,feesFetched:false,fallbackDone:true};h.engine.state.orders.unshift(fee);
+ h.engine.refreshOrder=async(b,o,options)=>{if(o===fee){h.exchange.now+=20000;o.feesFetched=true;return;}return refresh(b,o,options);};h.exchange.now=start+5000;await h.engine.tick();
+ assert.equal(sent.filter(p=>p.type==='MARKET').length,1);assert.equal(sent.find(p=>p.type==='MARKET').at,start+5000);assert.equal(h.order.timing.deadlineAt,start+5000);assert.equal(h.order.timing.timeoutCheckedAt,start+5000);assert.ok(h.order.timing.cancelConfirmedAt);assert.equal(h.b.runtime.runEnabled,true);
+});
+test('a deadline reached during background reads interrupts the remaining read batch',async()=>{
+ const h=await deadlineHarness(),refresh=h.engine.refreshOrder.bind(h.engine),start=h.order.createdAt,sent=[];h.exchange.beforeSend=p=>sent.push({at:h.exchange.now,type:p.type});
+ const fees=[1,2].map(n=>({...structuredClone(h.order),id:'old-fee-'+n,status:'FILLED',parameters:{...h.order.parameters,type:'MARKET'},orderId:8000+n,feesFetched:false,fallbackDone:true}));h.engine.state.orders.unshift(...fees);
+ h.engine.refreshOrder=async(b,o,options)=>{if(fees.includes(o)){h.exchange.now+=o===fees[0]?6000:20000;o.feesFetched=true;return;}return refresh(b,o,options);};await h.engine.tick();
+ assert.equal(sent.find(p=>p.type==='MARKET').at,start+6000);assert.equal(h.order.timing.timeoutCheckedAt,start+6000);assert.equal(sent.filter(p=>p.type==='MARKET').length,1);
+});
+test('REST market cadence does not delay the five-second order deadline',async()=>{
+ const h=await deadlineHarness(),start=h.order.createdAt;h.engine.state.dataTransport={mode:'rest',restIntervalSeconds:15};h.engine.lastCycleAt=h.exchange.now;const last=h.engine.lastCycleAt;h.exchange.now=start+4999;await h.engine.timerCycle();assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,0);
+ h.exchange.now=start+5000;await h.engine.timerCycle();assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,1);assert.equal(h.engine.lastCycleAt,last);assert.equal(h.order.timing.timeoutCheckedAt,start+5000);assert.equal(h.engine.timerBusy,false);
+});
+test('deadline-only processing keeps STOP priority over entry fallback',async()=>{
+ const h=await deadlineHarness([deadlineEntry(),marketRule('STOP_BOT','종가 > 100')]);h.exchange.fill(h.order.id,1);h.exchange.now+=5000;h.exchange.signalClose=101;await h.engine.tick({deadlinesOnly:true});assert.equal(h.b.runtime.runEnabled,false);assert.equal(h.order.fallbackDone,true);assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,0);assert.equal(h.exchange.quantity,1);
+});
+test('deadline-only processing keeps a position exit ahead of partial-entry fallback',async()=>{
+ const h=await deadlineHarness([deadlineEntry(),marketRule('EXIT_LONG','종가 > 100')]);h.exchange.fill(h.order.id,1);h.exchange.now+=5000;h.exchange.signalClose=101;await h.engine.tick({deadlinesOnly:true});const market=h.exchange.calls.filter(c=>c.parameters.type==='MARKET');assert.equal(market.length,1);assert.equal(market[0].parameters.side,'SELL');assert.equal(market[0].parameters.quantity,'1');assert.equal(h.exchange.quantity,0);assert.equal(h.order.fallbackDone,true);
+});
+test('unconfirmed cancellation never sends a fallback; a later partial-fill confirmation converts only the remainder once',async()=>{
+ const h=await deadlineHarness(),cancel=h.engine.client.cancelOrder.bind(h.engine.client),quantity=Number(h.order.parameters.quantity);h.engine.client.cancelOrder=async()=>({status:'NEW',executedQty:'0',orderId:h.order.orderId});h.exchange.now+=5000;await h.engine.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,0);assert.equal(h.order.status,'NEW');
+ h.exchange.fill(h.order.id,1);h.engine.client.cancelOrder=cancel;h.exchange.now+=1000;await h.engine.tick({deadlinesOnly:true});await h.engine.tick({deadlinesOnly:true});const market=h.exchange.calls.filter(c=>c.parameters.type==='MARKET');assert.equal(market.length,1);assert.equal(Number(market[0].parameters.quantity),quantity-1);assert.equal(h.exchange.quantity,quantity);
+});
+test('a paused entry cannot be revived by a deadline or a restart',async()=>{
+ const h=await deadlineHarness();await h.engine.pauseBot(h.id);h.exchange.now+=5000;await h.engine.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.length,1);assert.equal(h.order.fallbackDone,true);
+ const recovered=await new TradingEngine(new MemoryStore(h.engine.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});await recovered.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.length,1);assert.equal(recovered.bot(h.id).runtime.runEnabled,false);
+});
+test('exchange rate cooldown also blocks deadline sends until it expires',async()=>{
+ const h=await deadlineHarness();h.exchange.now+=5000;h.engine.client.rate={blockedUntil:h.exchange.now+5000};await h.engine.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.length,1);h.exchange.now+=5001;await h.engine.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,1);
+});
+test('restart with an accepted pending limit produces a single linked fallback after explicit resume',async()=>{
+ const h=await deadlineHarness();const recovered=await new TradingEngine(new MemoryStore(h.engine.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});await recovered.startBot(h.id);h.exchange.now+=5000;await recovered.tick({deadlinesOnly:true});await recovered.tick({deadlinesOnly:true});assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,1);const fallback=recovered.ownOrders(recovered.bot(h.id)).find(o=>o.parent===h.order.id);assert.ok(fallback);assert.equal(fallback.acceptedAt,h.exchange.now);
+});
+
+test('a deadline reached between unrelated bots is handled before the remaining bot round',async()=>{
+ const h=await deadlineHarness(),start=h.order.createdAt,normal=h.engine.tickBot.bind(h.engine),sent=[];
+ h.exchange.beforeSend=p=>sent.push({at:h.exchange.now,type:p.type});
+ const slow=[1,2,3].map(n=>({...structuredClone(h.b),id:'slow-idle-'+n,name:'idle '+n,budgetIncluded:false,runtime:{...structuredClone(h.b.runtime),runEnabled:false,managementEnabled:false}}));h.engine.state.bots.unshift(...slow);
+ h.engine.tickBot=async(b,options)=>{if(b.id.startsWith('slow-idle-')){h.exchange.now+=3000;return;}return normal(b,options);};
+ await h.engine.tick();assert.equal(sent.find(p=>p.type==='MARKET').at,start+6000);assert.equal(h.exchange.calls.filter(c=>c.parameters.type==='MARKET').length,1);
+});

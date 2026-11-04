@@ -131,7 +131,7 @@ export class ManualTrading {
     order.appliedQty=quantity;order.appliedQuote=quote;order.averagePrice=quantity&&quote?quote/quantity:null;order.status=data.status||order.status;order.orderId=data.orderId||order.orderId;if(order.status!=='UNKNOWN')order.error=null;
   }
   async refresh(order){if(order.stage!=='ORDER_SENT')return;if(order.botId){await this.engine.refreshOrder(this.engine.bot(order.botId),order);return;}try{delete order.lastQueryError;this.apply(order,await this.engine.client.queryOrder(order.parameters.symbol,order.id));}catch(error){if(![-2013,-2011].includes(error.code))throw error;order.lastQueryError=error.code;order.error='거래소에서 아직 접수 여부를 확인하지 못했습니다. 같은 주문을 다시 전송하지 않고 조회합니다.';}}
-  async refreshPending(){for(const order of this.records.filter(o=>active(o)&&!o.botId))await this.engine.pollTrackedOrder(order,()=>this.refresh(order));}
+  async refreshPending({beforeEach=async()=>{}}={}){for(const order of this.records.filter(o=>active(o)&&!o.botId)){await beforeEach();await this.engine.pollTrackedOrder(order,()=>this.refresh(order));}}
   async requestStatus(id){const order=this.records.find(order=>order.requestId===id);if(!order)return {found:false};if(this.engine.connected){await this.refresh(order);await this.engine.checkpoint();}return {found:true,order:this.view(order)};}
   async cancel(id){
     const e=this.engine;e.requireCancellation();const order=this.records.find(order=>order.id===id);if(!order)throw new Error('이 계좌에서 앱으로 만든 수동 주문이 아닙니다.');

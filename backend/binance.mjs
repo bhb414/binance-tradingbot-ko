@@ -3,6 +3,7 @@ import {sharedBudget,requestWeight,publicTTL,publicKey} from './binance-rate.mjs
 import {candleHistory} from './candle-history.mjs';
 import {sharedStreams,transportSettings} from './streams.mjs';
 import {UserStream} from './user-stream.mjs';
+import {RequestQueue,requestPriority} from './request-queue.mjs';
 
 export const ENDPOINTS=Object.freeze({testnet:'https://demo-fapi.binance.com',live:'https://fapi.binance.com'});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -13,7 +14,7 @@ export function signParameters(parameters,secret){const query=new URLSearchParam
 export class BinanceClient {
   constructor({environment='testnet',apiKey='',secret='',fetchImpl=fetch,minGap=120,now=Date.now}={}){
     if(!Object.hasOwn(ENDPOINTS,environment))throw new Error('지원하지 않는 접속 환경입니다.');
-    this.environment=environment;this.base=ENDPOINTS[environment];this.apiKey=apiKey;this.secret=secret;this.fetch=fetchImpl;this.now=now;this.offset=0;this.minGap=minGap;this.tail=Promise.resolve();this.lastRequest=0;this.blockedUntil=0;this.mutationRevision=0;this.cache=new Map();this.rate=sharedBudget(this.base,fetchImpl,now);
+    this.environment=environment;this.base=ENDPOINTS[environment];this.apiKey=apiKey;this.secret=secret;this.fetch=fetchImpl;this.now=now;this.offset=0;this.minGap=minGap;this.tail=Promise.resolve();this.requests=new RequestQueue({now});this.lastRequest=0;this.blockedUntil=0;this.mutationRevision=0;this.cache=new Map();this.rate=sharedBudget(this.base,fetchImpl,now);
   }
   clearCredentials(){this.closeStreams();this.apiKey='';this.secret='';}
   configureDataTransport(settings){this.cache.clear();this.transport=transportSettings(settings);this.rate.pollIntervalMs=this.transport.restIntervalSeconds*1000;if(this.fetch===globalThis.fetch&&this.environment==='live'){this.streams=sharedStreams(this.rate,{now:this.now});this.streams.configure(this.transport);if(this.transport.mode==='websocket'&&this.apiKey){if(!this.userStream||this.userStream.closed)this.userStream=new UserStream(this,{now:this.now});this.userStream.start();}else{this.userStream?.close();this.userStream=null;}}}
@@ -24,7 +25,7 @@ export class BinanceClient {
   keepListenKey(){return this.request('PUT','/fapi/v1/listenKey',{},false,true);}
   readMarket(kind,symbol,load){return this.streams?this.streams.read(this.rate,kind,symbol,load):this.transport?this.cached('poll:'+kind+':'+symbol,this.transport.restIntervalSeconds*1000,load):load();}
   redact(message){let text=String(message||'바이낸스 요청 실패');for(const value of [this.apiKey,this.secret])if(value)text=text.split(value).join('[비공개]');return text.slice(0,400);}
-  request(method,endpoint,parameters={},signed=false,keyOnly=false){
+  request(method,endpoint,parameters={},signed=false,keyOnly=false,{priority=requestPriority(method,endpoint,parameters)}={}){
     const run=async()=>{
       const wait=this.lastRequest+this.minGap-this.now();if(wait>0)await delay(wait);this.lastRequest=this.now();const weight=requestWeight(endpoint,parameters);this.rate.reserve(weight,{priority:method!=='GET'||signed||keyOnly||Boolean(parameters.symbol)||/\/(time|exchangeInfo)$/.test(endpoint),source:'trading',method,endpoint});
       if(signed&&(!this.apiKey||!this.secret))throw new Error('설정에서 API 키를 먼저 연결해 주세요.');
@@ -41,7 +42,7 @@ export class BinanceClient {
       if(!response.ok||Number(data?.code)<0)throw new BinanceError(this.redact(data?.msg||`바이낸스 HTTP ${response.status}`),{code:data?.code,status:response.status,temporary:(read||keyOnly)&&response.status>=500,retryAt:this.rate.blockedUntil||this.now()+5000,uncertain:!read&&!keyOnly&&(response.status>=500||[-1006,-1007,-4116].includes(data?.code))});
       return data;
     };
-    const send=()=>{const result=this.tail.then(run,run);this.tail=result.catch(()=>{});return result;};
+    const send=()=>{const result=this.requests.enqueue(run,{priority,onTiming:timing=>this.rate.usage.timed?.({source:'trading',method,endpoint,...timing})});this.tail=Promise.allSettled([this.tail,result]).then(()=>{});return result;};
     const baseTTL=method==='GET'&&!signed?publicTTL(endpoint,parameters):0,ttl=baseTTL?Math.max(baseTTL,this.rate.pollIntervalMs||0):0;return ttl?this.rate.cached(publicKey(endpoint,parameters),ttl,send):send();
   }
   async cached(key,ttl,load){const hit=this.cache.get(key);if(hit&&hit.expires>this.now())return hit.promise;const entry={expires:this.now()+ttl,promise:Promise.resolve().then(load)};this.cache.set(key,entry);try{return await entry.promise;}catch(e){if(this.cache.get(key)===entry)this.cache.delete(key);throw e;}}

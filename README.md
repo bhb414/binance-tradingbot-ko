@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.37](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.37/binance-tradingbot-ko-v0.4.37-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.38](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.38/binance-tradingbot-ko-v0.4.38-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,12 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 미체결 주문 기한
+
+미체결 대기 시간이 지나면 다른 조회·봇 처리 사이에서도 해당 주문을 우선 확인합니다. REST 시세 조회 주기가 길어도 주문 기한은 약 1초 간격으로 확인하며, 정지·청산 조건을 확인한 뒤 기존 주문의 취소와 실제 잔량 대조를 거쳐 설정된 후속 처리를 실행합니다. 통계·수수료 내역보다 주문·취소·포지션 검증 요청을 먼저 전송합니다.
+
+기한은 체결 완료를 보장하는 시간이 아닙니다. 이미 진행 중인 요청·거래소 응답·취소 확인·호출 제한으로 추가 시간이 걸릴 수 있습니다. 기한 발견·취소 요청/확인·주문 접수 시각과 최근 API 큐 대기/처리 시간을 남깁니다. 접수 여부가 불명확한 주문은 재전송하지 않습니다.
 
 ## 지표 설정 저장
 

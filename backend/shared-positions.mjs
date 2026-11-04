@@ -71,7 +71,7 @@ export class SharedPositions{
   try{await this.sync(o.parameters.symbol,{force:o.sharedPending});}catch(error){if(!isTemporary(error))throw error;this.e.defer(error);}
  }
  watched(book){const e=this.e,symbol=book.symbol;return book.pending||this.exposure(symbol)||Object.values(book.members).some(p=>p.quantity>1e-10)||Object.values(book.manual).some(p=>p.quantity>1e-10)||e.state.bots.some(b=>b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity||b.runtime.syncHold))||e.state.orders.some(o=>o.scope===e.state.scope&&o.parameters.symbol===symbol&&(!terminal.has(o.status)||o.parameters.type==='LIMIT'&&!o.fallbackDone&&['CANCELED','EXPIRED'].includes(o.status)&&(o.orderPolicy?.remainder||'cancel')==='market'));}
- async syncAll(){for(const book of Object.values(this.books).filter(b=>b.scope===this.e.state.scope))await this.sync(book.symbol);}
+ async syncAll({beforeEach=async()=>{}}={}){for(const book of Object.values(this.books).filter(b=>b.scope===this.e.state.scope)){await beforeEach();await this.sync(book.symbol);}}
  async sync(symbol,{force=false}={}){
   const e=this.e,book=this.book(symbol);if(!book||this.busy.has(symbol))return !!book&&!book.pending;
   const check=this.checks.get(symbol),watched=this.watched(book),revision=e.client.accountRevision||0,interval=book.pending?1000:e.client.userStream?.status==='connected'?30000:(e.state.dataTransport?.restIntervalSeconds||15)*1000;

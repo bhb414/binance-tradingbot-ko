@@ -79,7 +79,7 @@ export class MultiBots{
   if(b.runtime.error||e.ownOrders(b).some(o=>o.status==='UNKNOWN'&&!knownOrderSettlement(o))){p.runtime.error=b.name+' · '+(b.runtime.error||'주문 접수 확인 중')+' · 다른 종목의 보유분은 유지합니다.';p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const worker of this.workers(p))worker.runtime.runEnabled=false;}
   return outcome;
  }
- async tick(p){
+ async tick(p,{pendingOnly=false}={}){
   const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}if(workers.some(b=>b.runtime.closePending||b.runtime.guardWaiting||b.runtime.closeRecovery))return;
   const accountManagement=p.runtime.managementEnabled&&p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
   if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
@@ -95,7 +95,7 @@ export class MultiBots{
    for(const target of rule.targets.filter(t=>t.enabled&&isEntry(t.action)))this.targetItem(p,rule,target,evaluation);
   }
   for(const b of workers)if(!managed.has(b.id)&&!b.runtime.syncHold){await e.settlePending(b,await e.symbolInfo(b.symbol));await e.refreshAccount();await e.syncBotPosition(b);await e.ensureGuards(b,await e.symbolInfo(b.symbol));}
-  if(!p.runtime.runEnabled)return;
+  if(pendingOnly||!p.runtime.runEnabled)return;
   const batches=[],directions=new Map();
   for(const rule of p.actionRules.filter(r=>r.enabled&&r.action==='MULTI')){
    const targets=rule.targets.filter(t=>t.enabled&&isEntry(t.action));if(!targets.length)continue;const evaluation=await evaluate(rule),items=targets.map(t=>this.targetItem(p,rule,t,evaluation)).filter(item=>item.ready&&!managed.has(item.worker.id)&&!e.postOnly.pending(item.worker).some(record=>record.role==='exit')&&!e.ownOrders(item.worker).some(o=>active(o)&&o.kind==='standard'));
