@@ -1,3 +1,4 @@
+import {CHART_TYPE_IDS} from './chart-types.js';
 import {CHART_INTERVALS,chartIntervalSeconds} from './chart-timeframes.js';
 export const CHART_WORKSPACE_KEY='fw-chart-workspace-v1';
 const markets=['usdm','coinm','spot','options'],intervals=CHART_INTERVALS,presets=['custom','1d','7d','all'];
@@ -13,7 +14,7 @@ export function normalizeChartWorkspace(value){
   if(markets.includes(selected.market))next.selection.market=selected.market;
   if(typeof selected.symbol==='string'&&/^[A-Z0-9_\-]{2,80}$/.test(selected.symbol))next.selection.symbol=selected.symbol;
   if(intervals.includes(selected.interval))next.selection.interval=selected.interval;
-  if(['standard','heikin'].includes(selected.candleType))next.selection.candleType=selected.candleType;
+  if(CHART_TYPE_IDS.includes(selected.candleType))next.selection.candleType=selected.candleType;
   if(presets.includes(selected.range))next.selection.range=selected.range;
   for(const [key,view] of Object.entries(value.views||{}).slice(-40)){
     if(!validView(key)||!view||typeof view!=='object')continue;const offset=view.offset;

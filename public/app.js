@@ -19,7 +19,9 @@ import {leverageCap,notionalCap} from './leverage.js';
 import {BUDGET_OPTIONS,budgetIncluded,allocatedAmount,budgetRealized} from './budget.js';
 import {budgetSelectionMarkup,createBudgetEditor} from './budget-editor.js';
 import {installSignatureHelp} from './formula-signature.js';
-import { heikinAshi } from './indicators.js';
+import {PriceChart} from './price-chart.js';
+import {chartTypeCaption,CHART_TYPE_IDS} from './chart-types.js';
+import {installChartTypePicker} from './chart-type-picker.js';
 import { roomAvatar } from './room.js';
 import {ChartExecutions} from './chart-executions.js';
 import {CHART_INTERVALS} from './chart-timeframes.js';
@@ -79,7 +81,7 @@ for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='�
 let chartStorage;try{chartStorage=localStorage;}catch{}
 const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
 let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
-let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, positionPriceLines, currentPriceLine, candleInspector, chartExecutions, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, homePrice, positionPriceLines, currentPriceLine, candleInspector, chartExecutions, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
 let toastTimer, selectedRuleId, symbolPickerTarget='home';
 let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
 const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
@@ -90,6 +92,7 @@ let selectedBotId=bots[0]?.id, candleType=savedChart.candleType;
 let chartRenderedKey='',chartRestoring=false,chartSaveTimer;
 const botControls=installBotActions({getBots:()=>bots,getState:()=>serverState,openSettings:id=>openBot(id),connectionSettings:()=>goPage('settings'),refresh:syncWorkspace,api,notify:toast});
 const timeframePicker=installTimeframePicker({root:$('#chart-interval-more'),onSelect:setChartInterval});
+const homeTypePicker=installChartTypePicker($('#candle-type'),{value:candleType,onSelect:setChartType});
 const positionImportUI=installPositionImportUI({api,getState:()=>serverState,refresh:syncWorkspace,connectionSettings:()=>goPage('settings'),notify:toast,onImported:id=>{if($('#bot-dialog').open)$('#bot-dialog').close();selectedBotId=id;goPage('bots');openBot(id,'conditions');}});
 function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
 async function syncWorkspace(refreshMarket=false){
@@ -165,6 +168,13 @@ function addChartLine(value){
   if(drawnLines.length>=50){toast('수평선은 종목당 50개까지 저장합니다.',true);return;}
   drawnLines.push(candleSeries.createPriceLine({price:value,color:'#d0b77d',lineWidth:1,lineStyle:window.LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'수평선'}));
 }
+function setChartType(type){
+  if(!CHART_TYPE_IDS.includes(type))return;persistChartView();candleType=type;chartWorkspace.select({candleType});syncChartButtons();
+  if(chartRenderedKey===chartViewKey(currentMarket,currentSymbol,currentInterval)&&marketSnapshot)drawHomeChart(marketSnapshot,currentMarket,currentSymbol,currentInterval,false);else updateChart(false);
+}
+function replaceHomePrice(next){
+  const options=drawnLines.map(line=>line.options());candleSeries=next;positionPriceLines.setSeries(next);currentPriceLine.setSeries(next);homeStudies.priceSeries=next;candleInspector.setSeries(next);chartExecutions.setSeries(next);drawnLines=options.map(option=>next.createPriceLine(option));
+}
 function setChartInterval(interval){
   if(!CHART_INTERVALS.includes(interval))return;persistChartView();currentInterval=interval;chartWorkspace.select({interval});syncChartButtons();renderMarket();updateChart();
 }
@@ -173,7 +183,7 @@ function syncChartExecutions(){
 }
 function syncChartButtons(){
   timeframePicker.sync(currentInterval);
-  $('#candle-type').value=candleType;
+  homeTypePicker.sync(candleType);
   $$('[data-interval]').forEach(button=>button.classList.toggle('active',button.dataset.interval===currentInterval));
   $$('[data-range]').forEach(button=>button.classList.toggle('active',button.dataset.range===chartWorkspace.selection.range));
 }
@@ -185,7 +195,7 @@ function initChart() {
   if (!window.LightweightCharts) { $('#chart-fallback').hidden=false; return; }
   const L=window.LightweightCharts;
   chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
-  candleSeries=chart.addSeries(L.CandlestickSeries,{upColor:'#35c49a',downColor:'#df6879',borderUpColor:'#35c49a',borderDownColor:'#df6879',wickUpColor:'#35c49a',wickDownColor:'#df6879',priceLineColor:'#35c49a',lastValueVisible:false,priceLineVisible:false});
+  homePrice=new PriceChart(chart,{type:candleType,onReplace:replaceHomePrice});candleSeries=homePrice.series;
   positionPriceLines=new PositionPriceLines(candleSeries,{lineStyle:L.LineStyle.Dashed,summary:$('#chart-entry-summary')});
   homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
   currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode,chartElement:$('#chart')});
@@ -200,19 +210,20 @@ function initChart() {
 async function updateChart(resetRange=true) {
   if(!chart) return;
   const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;
-  if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();chartExecutions?.clear();homeStudies?.clear();}
+  if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();chartExecutions?.clear();homeStudies?.clear();homePrice?.clear();}
   let snapshot;
   try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
   catch(error){if(request!==chartRequest)return;marketError=error.message;renderRuntimeBanner();return;}
+  drawHomeChart(snapshot,market,symbol,interval,resetRange);
+}
+function drawHomeChart(snapshot,market,symbol,interval,resetRange=false){
   const nextKey=chartViewKey(market,symbol,interval),changed=chartRenderedKey!==nextKey,previousRange=!changed?chart.timeScale().getVisibleLogicalRange():null;chartRestoring=true;
   candles=snapshot.candles;
-  const displayed=candleType==='heikin'?heikinAshi(candles):candles;
   const s=currentInstrument();const tick=Number(s.tickSize),parts=String(tick).split('e');const precision=tick>0?Math.max(0,Math.min(12,(parts[0].split('.')[1]||'').length-Number(parts[1]||0))):s.price<1?6:2;
-  candleSeries.applyOptions({priceFormat:{type:'price',precision,minMove:tick||10**-precision}});
-  candleSeries.setData(displayed.map(({time,open,high,low,close})=>({time,open,high,low,close})));homeStudies.update(candles,currentInterval,candleType);
-  candleInspector.update({key:nextKey,raw:candles,displayed,heikin:candleType==='heikin'});if(candles.length)currentPriceLine.update(snapshot.ticker.lastPrice,candles.at(-1)?.open);else currentPriceLine.clear();
-  $('#chart').setAttribute('aria-label',currentSymbol+' · '+currentInterval+' 바이낸스 가격 캔들 차트. 마우스 드래그로 이동하고 휠로 확대합니다. 캔들을 클릭하면 해당 봉의 가격과 지표 값을 고정합니다.');
-  $('#chart-name').textContent=`${currentSymbol} · ${productLabel(currentInstrument())} · ${currentInterval} · ${candleType==='heikin'?'하이킨아시 · 합성가격':'일반 캔들'}`;
+  const displayed=homePrice.render(candleType,candles,{type:'price',precision,minMove:tick||10**-precision});homeStudies.update(candles,currentInterval,candleType);
+  candleInspector.update({key:nextKey,raw:candles,displayed,heikin:candleType==='heikin',chartType:candleType});if(candles.length)currentPriceLine.update(snapshot.ticker.lastPrice,candles.at(-1)?.open);else currentPriceLine.clear();
+  $('#chart').setAttribute('aria-label',currentSymbol+' · '+currentInterval+' 바이낸스 가격 차트. 마우스 드래그로 이동하고 휠로 확대합니다. 캔들을 클릭하면 해당 봉의 가격과 지표 값을 고정합니다.');
+  $('#chart-name').textContent=`${currentSymbol} · ${productLabel(currentInstrument())} · ${currentInterval} · ${chartTypeCaption(candleType)}`;
   if(changed||resetRange){
     const saved=chartWorkspace.view(market,symbol,interval),range=restoredRange(saved.offset,candles.length)||presetRange(candles.length,interval,chartWorkspace.selection.range);
     chart.timeScale().setVisibleLogicalRange(range);restoreChartLines();
@@ -524,7 +535,6 @@ document.addEventListener('input',event=>{
 });
 $('#symbol-picker').addEventListener('click',showSymbols);$('#watch-search-button').addEventListener('click',()=>{marketFilter='favorites';showSymbols();});$('#symbol-search').addEventListener('input',e=>{symbolResultLimit=100;renderSymbolResults(e.target.value);});
 $('#indicator-button').addEventListener('click',openStudyLibrary);
-$('#candle-type').addEventListener('change',e=>{candleType=e.target.value;chartWorkspace.select({candleType});updateChart(false);});
 document.addEventListener('change',event=>{
   if(event.target.id!=='formula-insert')return;
   const value=event.target.value;if(!value)return;

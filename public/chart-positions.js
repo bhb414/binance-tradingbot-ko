@@ -11,8 +11,10 @@ export function chartEntryLines(state,market,symbol){
  return [...lines.values()];
 }
 export class PositionPriceLines{
- constructor(series,{lineStyle=2,summary=null}={}){this.series=series;this.lineStyle=lineStyle;this.summary=summary;this.lines=new Map();}
+ constructor(series,{lineStyle=2,summary=null}={}){this.series=series;this.lineStyle=lineStyle;this.summary=summary;this.lines=new Map();this.specs=[];}
+ setSeries(series){const specs=this.specs;this.clear();this.series=series;this.update(specs);}
  update(specs){
+  this.specs=specs;
   const wanted=new Set(specs.map(s=>s.key));
   for(const [key,entry]of this.lines)if(!wanted.has(key)){this.series.removePriceLine(entry.line);this.lines.delete(key);}
   for(const spec of specs){

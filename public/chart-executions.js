@@ -13,9 +13,10 @@ const cache=new Map(),renderers=new Set(),preference='fw-chart-executions-visibl
 function requestRows(path,connectionId,revision){const key=connectionId+':'+revision+':'+path,old=cache.get(key);if(old&&Date.now()-old.at<5000)return old.promise;const promise=api(path);cache.set(key,{at:Date.now(),promise});promise.catch(()=>cache.delete(key));if(cache.size>24)cache.delete(cache.keys().next().value);return promise;}
 export class ChartExecutions{
  constructor(series,{toggle,inspector,createMarkers=window.LightweightCharts.createSeriesMarkers,load=requestRows}){
-  this.plugin=createMarkers(series,[],{autoScale:false});this.toggle=toggle;this.inspector=inspector;this.load=load;this.version=0;this.key=null;this.rows=[];this.context=null;this.retryAt=0;this.signature='';renderers.add(this);
+  this.createMarkers=createMarkers;this.plugin=createMarkers(series,[],{autoScale:false});this.toggle=toggle;this.inspector=inspector;this.load=load;this.version=0;this.key=null;this.rows=[];this.context=null;this.retryAt=0;this.signature='';renderers.add(this);
   if(toggle){toggle.checked=enabled;toggle.addEventListener('change',()=>{enabled=toggle.checked;try{localStorage.setItem(preference,enabled?'1':'0');}catch{}for(const item of renderers){if(item.toggle)item.toggle.checked=enabled;item.render();}});}
  }
+ setSeries(series){this.plugin.detach();this.plugin=this.createMarkers(series,[],{autoScale:false});this.signature='';this.render();}
  clear(){this.version++;this.key=null;this.rows=[];this.context=null;this.render();}
  render(){const data=enabled&&this.context?executionBars(this.rows,this.context.candles,this.context.interval):{markers:[],rows:[]},signature=JSON.stringify(data.markers);if(signature!==this.signature){this.plugin.setMarkers(data.markers);this.signature=signature;}this.inspector?.setExecutions(data.rows);}
  async update({state,market,symbol,candles,interval}){

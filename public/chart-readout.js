@@ -1,4 +1,5 @@
 import {installChartTooltip} from './chart-tooltip.js';
+import {chartTypeCaption} from './chart-types.js';
 // Display-only KST formatting: candle timestamps stay in UTC for all calculations.
 const pad=n=>String(n).padStart(2,'0');
 export function chartSeconds(time){
@@ -13,6 +14,7 @@ export function koreanTickMark(time,type){const d=kstDate(time);if(!d||Number.is
 export const koreanTimeOptions=()=>({localization:{locale:'ko-KR',timeFormatter:koreanChartTime},timeScale:{tickMarkFormatter:koreanTickMark}});
 export class CurrentPriceLine{
  constructor(series){this.series=series;this.line=null;this.signature='';}
+ setSeries(series){this.clear();this.series=series;}
  update(value,open){const price=Number(value);if(value==null||value===''||!Number.isFinite(price)||price<=0){this.clear();return;}
   const color=Number.isFinite(Number(open))&&price<Number(open)?'#df6879':'#249b78',options={price,title:'현재가',color,lineWidth:1,lineStyle:2,lineVisible:true,axisLabelVisible:true},signature=JSON.stringify(options);
   if(!this.line)this.line=this.series.createPriceLine(options);else if(this.signature!==signature)this.line.applyOptions(options);this.signature=signature;
@@ -21,17 +23,17 @@ export class CurrentPriceLine{
 }
 export class CandleInspection{
  constructor({chart,studies,onChange=()=>{},isDrawing=()=>false}){
-  this.studies=studies;this.onChange=onChange;this.isDrawing=isDrawing;this.raw=new Map();this.displayed=new Map();this.pin=null;this.hover=null;this.key=null;this.heikin=false;this.executions=[];this.point=null;
+  this.studies=studies;this.onChange=onChange;this.isDrawing=isDrawing;this.raw=new Map();this.displayed=new Map();this.pin=null;this.hover=null;this.key=null;this.heikin=false;this.chartType='standard';this.executions=[];this.point=null;
   this.move=p=>{if(this.pin!==null||this.isDrawing())return;const t=chartSeconds(p.time);this.hover=this.raw.has(t)?t:null;this.publish();};
   this.click=p=>{if(this.isDrawing())return;const t=chartSeconds(p.time);if(!this.raw.has(t)){if(this.pin!==null)this.release();return;}this.pin=t;this.hover=null;this.point=p.point&&Number.isFinite(p.point.x)&&Number.isFinite(p.point.y)?{x:p.point.x,y:p.point.y}:null;this.publish(true);};
   this.chart=chart;chart.subscribeCrosshairMove(this.move);chart.subscribeClick(this.click);
  }
- update({key,raw,displayed=raw,heikin=false}){
-  if(this.key!==key){this.pin=null;this.hover=null;this.executions=[];this.point=null;}this.key=key;this.heikin=heikin;this.raw=new Map(raw.map(c=>[c.time,c]));this.displayed=new Map(displayed.map(c=>[c.time,c]));
+ update({key,raw,displayed=raw,heikin=false,chartType=heikin?'heikin':'standard'}){
+  if(this.key!==key){this.pin=null;this.hover=null;this.executions=[];this.point=null;}this.key=key;this.heikin=heikin;this.chartType=chartType;this.raw=new Map(raw.map(c=>[c.time,c]));this.displayed=new Map(displayed.map(c=>[c.time,c]));
   if(!this.raw.has(this.pin))this.pin=null;if(!this.raw.has(this.hover))this.hover=null;this.latest=raw.at(-1)?.time??null;this.publish();
  }
  setExecutions(rows){this.executions=rows;this.publish();}
- publish(selected=false){const time=this.pin??this.hover??this.latest,candle=this.displayed.get(time),raw=this.raw.get(time);this.studies?.valuesAt(candle?time:undefined);this.onChange({time:candle?time:null,candle,raw,heikin:this.heikin,pinned:this.pin!==null,hovered:this.hover!==null,selected,point:this.pin!==null?this.point:null,executions:this.executions.filter(row=>row.barTime===time),indicators:this.studies?.readingsAt(candle?time:undefined)||[]});}
+ publish(selected=false){const time=this.pin??this.hover??this.latest,candle=this.displayed.get(time),raw=this.raw.get(time);this.studies?.valuesAt(candle?time:undefined);this.onChange({time:candle?time:null,candle,raw,heikin:this.heikin,chartType:this.chartType,pinned:this.pin!==null,hovered:this.hover!==null,selected,point:this.pin!==null?this.point:null,executions:this.executions.filter(row=>row.barTime===time),indicators:this.studies?.readingsAt(candle?time:undefined)||[]});}
  release(){this.pin=null;this.hover=null;this.point=null;this.publish();}
  clear(){this.point=null;this.executions=[];this.key=null;this.pin=null;this.hover=null;this.latest=null;this.raw.clear();this.displayed.clear();this.publish();}
  destroy(){this.chart.unsubscribeCrosshairMove(this.move);this.chart.unsubscribeClick(this.click);}
@@ -43,7 +45,7 @@ export function installCandleInspector(host,{chart,studies,series,isDrawing,char
  host.innerHTML='<div class="chart-readout-heading"><time data-readout="time">—</time><span data-readout="kind"></span><button type="button" data-readout="release" aria-label="봉 정보 닫기" title="봉 정보 닫기">×</button></div><div class="chart-tooltip-body"><div class="chart-readout-prices">'+[['open','시가'],['high','고가'],['low','저가'],['close','종가'],['actual','실제 종가'],['volume','거래량']].map(([key,label])=>'<span data-readout-field="'+key+'">'+label+' <output data-readout="'+key+'">—</output></span>').join('')+'</div><details class="chart-readout-studies" data-readout="studies" hidden><summary>선택 봉 지표 값 <span data-readout="count"></span></summary><div data-readout="values"></div></details><details class="chart-readout-executions" data-readout="executions" hidden><summary>선택 봉 체결 <span data-readout="execution-count"></span></summary><ol data-readout="execution-list"></ol><small>앱에 기록된 체결 · B 매수 / S 매도 · 한국시간</small></details></div>';
  const el=Object.fromEntries([...host.querySelectorAll('[data-readout]')].map(n=>[n.dataset.readout,n])),format=v=>v==null||!Number.isFinite(Number(v))?'—':series.priceFormatter().format(Number(v));
  const inspector=new CandleInspection({chart,studies,isDrawing,onChange:view=>{
-  const {candle,raw}=view;host.dataset.pinned=String(view.pinned);setText(el.time,koreanChartTime(view.time));setText(el.kind,view.heikin?'하이킨아시 · 합성가격':'일반 캔들');
+  const {candle,raw}=view;host.dataset.pinned=String(view.pinned);setText(el.time,koreanChartTime(view.time));setText(el.kind,chartTypeCaption(view.chartType));
   for(const field of ['open','high','low','close'])setText(el[field],format(candle?.[field]));
   host.querySelector('[data-readout-field="actual"]').hidden=!view.heikin;setText(el.actual,format(raw?.close));setText(el.volume,raw?.volume==null?'—':Number(raw.volume).toLocaleString('en-US',{maximumFractionDigits:4}));
   const trades=view.executions,wasHidden=el.executions.hidden;el.executions.hidden=!view.pinned||!trades.length;setText(el['execution-count'],'('+trades.length+')');
@@ -53,5 +55,6 @@ export function installCandleInspector(host,{chart,studies,series,isDrawing,char
   tooltip?.update(view);
  }});
  tooltip=installChartTooltip(host,{chart,series,chartElement,onDismiss:()=>inspector.release()});
+ inspector.setSeries=next=>{series=next;tooltip.setSeries(next);inspector.publish();};
  el.release.addEventListener('click',()=>inspector.release());const publish=()=>inspector.publish();studies.onValuesChanged=publish;const destroy=inspector.destroy.bind(inspector);inspector.destroy=()=>{tooltip.destroy();if(studies.onValuesChanged===publish)studies.onValuesChanged=null;destroy();};return inspector;
 }
