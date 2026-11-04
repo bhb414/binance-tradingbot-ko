@@ -51,10 +51,11 @@ if(process.argv.includes('--history')){
    for(const [role,time,price]of [['entry',open,entry],['exit',exitTime,close]]){
     const id='fixture-history-'+bot.id+'-'+i+'-'+role,orderId=9000+state.orders.length;
     state.orders.push({id,botId:bot.id,scope:state.scope,kind:'standard',role,direction,leverage,margin:role==='entry'?quantity*price/leverage:0,status:'FILLED',createdAt:time-100,appliedQty:quantity,appliedQuote:quantity*price,feesFetched:true,orderId,parameters:{symbol,side:direction==='LONG'?(role==='entry'?'BUY':'SELL'):(role==='entry'?'SELL':'BUY'),type:'MARKET',positionSide:'BOTH',quantity:String(quantity)}});
-    state.fills.push({id:id+':2',scope:state.scope,botId:bot.id,symbol,at:time,tradeTime:time,role,direction,quantity,price,leverage,clientOrderId:id});
-    state.fills.push({id:'fixture-history-fee-'+orderId,scope:state.scope,botId:bot.id,symbol,at:time,fee:.08,feeAsset:'USDT',clientOrderId:id,orderId,tradeQuantity:quantity,tradePrice:price,leverage});
+    state.fills.push({id:id+':2',scope:state.scope,botId:bot.id,symbol,at:time,tradeTime:time,role,direction,quantity,price,leverage,clientOrderId:id,positionEpoch:i+1});
+    state.fills.push({id:'fixture-history-fee-'+orderId,scope:state.scope,botId:bot.id,symbol,at:time,fee:.08,feeAsset:'USDT',clientOrderId:id,orderId,tradeQuantity:quantity,tradePrice:price,leverage,positionEpoch:i+1});
    }
    income.push({symbol,incomeType:'FUNDING_FEE',asset:'USDT',income:String(i%3===0?.03:-.02),time:open+3600000,tranId:90000+income.length});
+   if(i>0){const margin=quantity*entry/leverage,profit=Math.max(0,gain)+4,loss=Math.min(0,gain)-2;state.tradeExcursions||=[];state.tradeExcursions.push({scope:state.scope,botId:bot.id,symbol,direction,positionEpoch:i+1,openedAt:open,observedFrom:open+(i===1?3600000:0),closedAt:exitTime,lastObservedAt:exitTime,maxProfit:profit,maxLoss:loss,maxProfitPercent:profit/margin*100,maxLossPercent:loss/margin*100,maxProfitAt:open+4000000,maxLossAt:open+5000000,partial:i===1,marginKnown:i!==1,samples:7200,markSamples:7198,gaps:i===2?1:0});}
    realized+=gain-.16;
   }
   bot.runtime.realized=realized;

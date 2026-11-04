@@ -273,3 +273,11 @@ test('saving reinvestment percentages validates bounds, preserves old budget adj
  const input={...a};delete input.profitReinvestPercent;await h.e.saveBot(input);assert.equal(h.e.bot('a').profitReinvestPercent,25);
  for(const value of [-1,101,'50',null])await assert.rejects(()=>h.e.saveBot({...h.e.bot('a'),profitReinvestPercent:value}),/비율/);
 });
+
+test('shared native fills track each owner excursion once and retain linkage through precise fees and external partial/full closes',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.x.price=110;h.x.now+=1000;await h.e.refreshAccount(true);await h.e.tick();
+ for(const b of [h.a,h.b]){const r=h.e.excursions.get(b);assert.ok(Math.abs(r.maxProfit-q*10)<1e-7);assert.equal(r.partial,false);assert.equal(r.uncertain,undefined);}
+ h.trade('SELL',q,{reduceOnly:true});await h.e.tick();h.x.price=90;h.x.now+=1000;await h.e.refreshAccount(true);await h.e.tick();h.trade('SELL',h.x.quantity,{reduceOnly:true});await h.e.tick();
+ const report=buildTradeHistory({state:h.e.state,now:h.x.now});assert.equal(report.summary.excursions.collected,2);for(const t of report.trades){assert.equal(t.excursion.status,'observed');assert.ok(Math.abs(t.excursion.maxProfit-q*10)<1e-7);assert.ok(Math.abs(t.excursion.maxLoss)<1e-7);}
+ const before=JSON.stringify(h.e.state.tradeExcursions);await h.e.tick();assert.equal(JSON.stringify(h.e.state.tradeExcursions),before);
+});
