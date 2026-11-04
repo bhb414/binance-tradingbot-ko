@@ -16,7 +16,7 @@ function initialize(){
   positionLines=new PositionPriceLines(series,{lineStyle:L.LineStyle.Dashed});
   studies=new StudyRenderer(chart,{legend:$('#modal-study-legend'),priceSeries:series,context:'modal',followCrosshair:false,onPaneCount:count=>$('.modal-chart-stage').style.setProperty('--study-min-height',(280+count*105)+'px')});
   fillTimeframeSelect($('#modal-interval'));
-  currentPriceLine=new CurrentPriceLine(series);inspector=installCandleInspector($('#modal-chart-inspector'),{chart,studies,series});executions=new ChartExecutions(series,{toggle:$('#modal-chart-executions-toggle'),inspector});
+  currentPriceLine=new CurrentPriceLine(series);inspector=installCandleInspector($('#modal-chart-inspector'),{chart,studies,series,chartElement:$('#modal-chart')});executions=new ChartExecutions(series,{toggle:$('#modal-chart-executions-toggle'),inspector});
 }
 function draw(reset=false){
   if(!snapshot||!chart)return;const raw=snapshot.candles,data=$('#modal-candle-type').value==='heikin'?heikinAshi(raw):raw;
