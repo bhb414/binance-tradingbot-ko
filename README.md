@@ -2,7 +2,9 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[다운로드](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)**
+**[Windows 다운로드 · v0.4.35](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.35/binance-tradingbot-ko-v0.4.35-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+
+[소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
 ## 실행
 
@@ -11,6 +13,8 @@
 3. 설정에서 본인 API 키를 등록하고, 주문 허용을 켠 뒤 봇을 시작합니다.
 
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
+
+실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
 
 ## 차트 유형
 

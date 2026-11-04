@@ -1,0 +1,3 @@
+# Keep literal Windows command-file bytes in checkouts and release archives.
+*.cmd -text whitespace=cr-at-eol
+*.bat -text whitespace=cr-at-eol
