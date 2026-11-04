@@ -1,3 +1,4 @@
+import {knownOrderSettlement} from './close-position-flow.mjs';
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
 import {budgetIncluded} from '../public/budget.js';
 import {managementWasEnabled} from './management-state.mjs';
@@ -75,11 +76,11 @@ export class MultiBots{
  async execute(p,item){
   const e=this.e,b=item.worker;if(isEntry(item.rule.action)&&e.ownOrders(b).some(o=>active(o)&&o.kind==='standard'))return;
   const market=await e.market(b.symbol,item.interval),outcome=await e.executeRule(b,{...item,market},await e.symbolInfo(b.symbol));
-  if(b.runtime.error||e.ownOrders(b).some(o=>o.status==='UNKNOWN')){p.runtime.error=b.name+' · '+(b.runtime.error||'주문 접수 확인 중')+' · 다른 종목의 보유분은 유지합니다.';p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const worker of this.workers(p))worker.runtime.runEnabled=false;}
+  if(b.runtime.error||e.ownOrders(b).some(o=>o.status==='UNKNOWN'&&!knownOrderSettlement(o))){p.runtime.error=b.name+' · '+(b.runtime.error||'주문 접수 확인 중')+' · 다른 종목의 보유분은 유지합니다.';p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const worker of this.workers(p))worker.runtime.runEnabled=false;}
   return outcome;
  }
  async tick(p){
-  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}
+  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}if(workers.some(b=>b.runtime.closePending||b.runtime.guardWaiting||b.runtime.closeRecovery))return;
   const accountManagement=p.runtime.managementEnabled&&p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
   if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
   if(workers.some(b=>e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))return;

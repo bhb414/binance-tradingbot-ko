@@ -60,7 +60,8 @@ export class ManualTrading {
       for(const order of e.ownOrders(bot).filter(active))if(fresh)await e.refreshOrder(bot,order);else await e.pollTrackedOrder(order,()=>e.refreshOrder(bot,order));
       await e.refreshAccount(fresh);await e.syncBotPosition(bot,true);
       const known=new Set(e.ownOrders(bot).map(o=>o.id));
-      if(bot.runtime.importPending)botError='가져온 포지션은 봇을 한 번 시작해 관리를 시작한 뒤 주문해 주세요.';
+      if(bot.runtime.closePending)botError='정리 체결·취소 확인 중입니다. 확인 후 다시 주문해 주세요.';
+      else if(bot.runtime.importPending)botError='가져온 포지션은 봇을 한 번 시작해 관리를 시작한 뒤 주문해 주세요.';
       else if(bot.runtime.syncHold)botError=bot.runtime.error||'봇과 계좌의 포지션 수량을 확인해 주세요.';
       else if(e.ownOrders(bot).some(o=>active(o)&&o.kind==='standard'))botError='이 봇의 미체결 일반 주문을 먼저 취소하거나 체결을 기다려 주세요.';
       else if(!e.shared.supported&&orders.some(o=>!known.has(o.clientOrderId)))botError='이 종목에 봇 소유가 아닌 미체결 주문이 있습니다.';
