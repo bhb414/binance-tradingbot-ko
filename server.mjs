@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {chartExecutions} from './backend/chart-executions.mjs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath,pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -44,6 +45,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(pathname==='/api/data-transport'&&req.method==='GET'){json(200,engine.snapshot().dataTransport);return;}
         if(pathname==='/api/data-transport'&&req.method==='POST'){const state=await engine.setDataTransport(body);marketData.configureDataTransport?.(state.dataTransport.settings);json(200,state.dataTransport);return;}
         if(req.method==='GET'&&pathname==='/api/status'){const state=engine.snapshot();if(!local)state.credentials={saved:state.credentials.saved,error:state.credentials.error,storagePath:null};json(200,state);return;}
+        if(req.method==='GET'&&pathname==='/api/chart-executions'){json(200,{...chartExecutions(engine.state,{symbol:url.searchParams.get('symbol'),startTime:Number(url.searchParams.get('startTime')||0),endTime:Number(url.searchParams.get('endTime')||engine.now()),now:engine.now()}),connectionId:engine.connectionId});return;}
         if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkUpdate(appDirectory));return;}
         if(req.method==='GET'&&pathname==='/api/trade-history'){json(200,await engine.tradeHistory.get(url.searchParams.get('botId')||null,{range:url.searchParams.get('range')||'all',page:Number(url.searchParams.get('page')||1)}));return;}
         const historyMatch=/^\/api\/bots\/([A-Za-z0-9_-]+)\/history$/.exec(pathname);

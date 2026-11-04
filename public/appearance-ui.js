@@ -1,7 +1,7 @@
 import {AVATAR_BODIES,AVATAR_HAIR,AVATAR_OUTFITS,AVATAR_ACCESSORIES,appearanceFor,avatarSprite,saveAppearance,reloadAppearances,APPEARANCE_KEY,spriteViewBox,avatarPartPreview} from './avatar.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function preview(bot,appearance,direction='down',extra=''){return `<svg class="appearance-avatar ${extra}" viewBox="-40 -70 80 78" aria-hidden="true"><ellipse cy="1" rx="18" ry="5" fill="#36505e20"/>${avatarSprite(bot,{appearance,direction})}</svg>`;}
-export function appearanceCard(bot){return `<div class="appearance-card"><div class="appearance-card-avatar">${preview(bot,appearanceFor(bot))}</div><div><strong>나만의 봇 캐릭터</strong><small>헤어 · 의상 · 피부 · 액세서리</small><button type="button" class="button secondary" data-customize-appearance="${esc(bot.id)}">외형 꾸미기</button></div><small class="appearance-card-note">외형은 별도로 저장해 맵에 바로 적용합니다.</small></div>`;}
+export function appearanceCard(bot){return `<div class="appearance-card"><div class="appearance-card-avatar">${preview(bot,appearanceFor(bot))}</div><div><strong>나만의 봇 캐릭터</strong><small>헤어 · 의상 · 피부 · 액세서리</small><button type="button" class="button secondary" data-customize-appearance="${esc(bot.id)}">외형 꾸미기</button></div><small class="appearance-card-note">외형은 별도로 저장해 봇 목록에 바로 적용합니다.</small></div>`;}
 export function installAppearanceUI({notify,onSaved}){
  const dialog=document.createElement('dialog');dialog.id='appearance-dialog';dialog.className='appearance-dialog';dialog.setAttribute('aria-labelledby','appearance-title');document.body.append(dialog);
  let bot=null,draft=null,tab='hair',direction='down',walking=true,timer=null;

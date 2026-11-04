@@ -1,0 +1,18 @@
+import {roomAvatar} from './room.js';
+import {BUDGET_MODES,effectiveBudget} from './budget.js';
+import {protectionSummary} from './protection.js';
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),money=v=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:2});
+export function installBotActions({getBots,getState,openSettings,connectionSettings,refresh,api,notify}){
+ const dialog=document.querySelector('#room-action-dialog'),confirm=document.querySelector('#room-action-confirm'),error=document.querySelector('#room-action-error');let pending=null,busy=false;
+ const bot=()=>getBots().find(b=>b.id===pending?.id);
+ function render(){if(!pending)return;const current=bot(),state=getState();if(!current){dialog.close();return;}const start=pending.kind==='start',needsConnection=start&&(!state?.connected||!state.tradingEnabled);
+ document.querySelector('#room-action-title').textContent=start?'봇을 시작할까요?':'봇을 정지할까요?';
+ document.querySelector('#room-action-body').innerHTML='<div class="room-action-person"><svg viewBox="-48 -48 96 96" aria-hidden="true">'+roomAvatar(current)+'</svg><div><strong>'+esc(current.name)+'</strong><span>'+esc(current.symbol)+' · '+(current.margin==='ISOLATED'?'격리':'크로스')+' · '+(current.kind==='multi'?current.legs.length+'종목 · 종목별 레버리지':current.leverage+'×')+'</span></div><b class="room-environment">'+(state?.environment==='live'?'실전':'테스트넷')+'</b></div><p class="room-action-description">'+(start?(current.runtime?.importPending?'가져온 포지션의 정리 조건·보호 주문 관리를 시작합니다. 설정에 따라 신규 진입도 실행됩니다.':'저장된 수식으로 조건 감시와 신규 진입을 시작합니다. 편집 중인 설정은 저장한 뒤 적용됩니다.'):'신규 진입을 중지하고 남은 진입 주문을 취소합니다. 보유 포지션의 정리 조건과 보호 주문은 계속 관리합니다.')+'</p><dl class="room-action-facts"><div><dt>현재 운용한도 · '+BUDGET_MODES[current.budgetMode||'fixed']+'</dt><dd>'+money(effectiveBudget(current))+' USDT</dd></div><div><dt>사용 중인 조건</dt><dd>'+current.actionRules.filter(r=>r.enabled).length+'개</dd></div><div><dt>현재 상태</dt><dd>'+(current.runtime?.runEnabled?'신규 진입 허용':'신규 진입 정지')+'</dd></div></dl>'+(start?'<p class="room-action-note">보호 주문: '+esc(protectionSummary(current.exit))+'. 시작 시 이미 충족된 조건은 바로 실행될 수 있습니다.</p>':'')+(current.budgetWarning?'<p class="room-action-note">'+esc(current.budgetWarning)+'</p>':'')+(needsConnection?'<p class="room-action-note">'+(!state?.connected?'계좌를 먼저 연결해야 합니다.':'연결 설정에서 주문 실행을 허용해야 합니다.')+'</p>':'');
+ confirm.textContent=needsConnection?'연결 설정 열기':start?'시작':'정지';confirm.disabled=busy||!needsConnection&&(start?Boolean(current.runtime?.runEnabled):!current.runtime?.runEnabled);
+ }
+ function action(kind,id){if(kind==='settings'){openSettings(id);return;}if(!['start','pause'].includes(kind)||!getBots().some(b=>b.id===id))return;pending={kind,id};error.hidden=true;render();if(!dialog.open)dialog.showModal();}
+ confirm.addEventListener('click',async()=>{if(!pending||busy)return;const current=bot(),state=getState();if(!current)return;if(pending.kind==='start'&&(!state?.connected||!state.tradingEnabled)){dialog.close();connectionSettings();return;}if(pending.kind==='start'&&current.runtime?.runEnabled||pending.kind==='pause'&&!current.runtime?.runEnabled){render();return;}const{id,kind}=pending;busy=true;confirm.disabled=true;error.hidden=true;
+ try{await api('/bots/'+encodeURIComponent(id)+(kind==='start'?'/start':'/pause'),{method:'POST'});await refresh();dialog.close();notify(kind==='start'?'조건 감시와 신규 진입을 시작했습니다.':'신규 진입을 정지했습니다.');}catch(reason){error.textContent=reason.message;error.hidden=false;}finally{busy=false;if(dialog.open)render();}
+ });
+ dialog.addEventListener('close',()=>{pending=null;});return {action,sync(){if(dialog.open&&!busy)render();}};
+}

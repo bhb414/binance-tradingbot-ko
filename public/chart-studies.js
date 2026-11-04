@@ -5,7 +5,8 @@ import {compileFormula} from './formula.js';
 
 export const STUDY_KEY='fw-chart-studies-v1';
 export const MAX_STUDIES=12;
-export const TIMEFRAMES=[['1m','1분'],['5m','5분'],['15m','15분'],['1h','1시간'],['4h','4시간'],['1d','일봉']];
+export {CHART_TIMEFRAMES as TIMEFRAMES} from './chart-timeframes.js';
+import {CHART_TIMEFRAMES as TIMEFRAMES} from './chart-timeframes.js';
 export const SOURCES=[['close','종가'],['open','시가'],['high','고가'],['low','저가'],['hl2','고가·저가 평균'],['hlc3','고가·저가·종가 평균'],['ohlc4','시가·고가·저가·종가 평균']];
 const length=(key,label,value,min=1)=>({key,label,value,min,max:300,step:1});
 const choice=(key,label,value,options)=>({key,label,value,options});
@@ -39,7 +40,7 @@ export function validateStudy(value){
   return {id:value.id,type:value.type,visible:value.visible,source:value.source,candle:value.candle,timeframes:[...new Set(value.timeframes)],params,styles};
 }
 export const defaultStudies=()=>[createStudy('SMA',{id:'default-ma20'}),createStudy('SMA',{id:'default-ma60',params:{period:60},styles:{main:{color:'#be9e60',negative:'#d98e9a',width:1,lineStyle:0,visible:true}}}),createStudy('BB',{id:'default-bb'}),createStudy('VOLUME',{id:'default-volume'})];
-export function parseStudies(serialized){try{const value=JSON.parse(serialized);if(value.version!==1||!Array.isArray(value.studies)||value.studies.length>MAX_STUDIES)throw new Error();const studies=value.studies.map(validateStudy);if(new Set(studies.map(s=>s.id)).size!==studies.length)throw new Error();return studies;}catch{return defaultStudies();}}
+export function parseStudies(serialized){try{const value=JSON.parse(serialized);if(value.version!==1||!Array.isArray(value.studies)||value.studies.length>MAX_STUDIES)throw new Error();const previous=['1m','5m','15m','1h','4h','1d'];const studies=value.studies.map(s=>validateStudy({...s,timeframes:value.timeframeVersion!==2&&s.timeframes?.length===previous.length&&previous.every(tf=>s.timeframes.includes(tf))?TIMEFRAMES.map(([tf])=>tf):s.timeframes}));if(new Set(studies.map(s=>s.id)).size!==studies.length)throw new Error();return studies;}catch{return defaultStudies();}}
 export const studyLabel=study=>study.type==='FORMULA'?study.params.name:study.type+(['SMA','EMA','BB','RSI','ATR','STOCH'].includes(study.type)?' '+study.params.period:'')+(study.type==='BB'?' · '+study.params.multiplier:study.type==='MACD'?' '+[study.params.fast,study.params.slow,study.params.signal].join(' / '):'');
 export const studyPane=study=>study.type==='FORMULA'?study.params.placement==='pane':STUDIES[study.type].pane;
 export const studyActive=(study,interval)=>study.visible&&study.timeframes.includes(interval)&&Object.values(study.styles).some(style=>style.visible);

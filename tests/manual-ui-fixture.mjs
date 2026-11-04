@@ -137,5 +137,14 @@ if(process.argv.includes('--post-only')){
 }
 if(process.argv.includes('--tools-refresh-failure')){const commit=app.engine.budgetBaselines.commit.bind(app.engine.budgetBaselines),snapshot=app.engine.snapshot.bind(app.engine);let failUntil=0;app.engine.budgetBaselines.commit=async(...args)=>{const result=await commit(...args);failUntil=Date.now()+5000;return result;};app.engine.snapshot=()=>{if(Date.now()<failUntil)throw Error('UI 검증용 갱신 실패');return snapshot();};}
 if(process.argv.includes('--tools-expired-preview')){const preview=app.engine.budgetBaselines.preview.bind(app.engine.budgetBaselines);app.engine.budgetBaselines.preview=async(...args)=>{const result=await preview(...args);if(result.previewId)app.engine.budgetBaselines.plans.get(result.previewId).expiresAt=0;return result;};}
+if(process.argv.includes('--executions')){
+ const base=Math.floor(Date.now()/1000/900)*900*1000;
+ for(const [i,symbol]of ['BTCUSDT','ETHUSDT'].entries())for(const [j,ago,side,role,direction]of [[0,8,'BUY','entry','LONG'],[1,6,'SELL','exit','LONG'],[2,4,'SELL','entry','SHORT'],[3,2,'BUY','exit','SHORT']]){
+  const at=base-ago*900000+120000,id='ui-chart-'+i+'-'+j,botId=null,price=120+Math.sin(j)*2;
+  state.orders.push({id,scope:state.scope,botId,orderId:9800+i*10+j,role,direction,status:'FILLED',appliedQty:1,feesFetched:true,parameters:{symbol,side,type:'MARKET'}});
+  state.fills.push({id:id+':1',scope:state.scope,botId,symbol,side,role,direction,quantity:1,price,at:at+1000,tradeTime:at,clientOrderId:id});
+  state.fills.push({id:'fee:'+id,scope:state.scope,botId,symbol,fee:.05,tradeId:9900+i*10+j,orderId:9800+i*10+j,tradeQuantity:1,tradePrice:price,at,clientOrderId:id});
+ }
+}
 app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
 process.once('SIGINT',()=>{process.stdin.pause();app.server.close();});

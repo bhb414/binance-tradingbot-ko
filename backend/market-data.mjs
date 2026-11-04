@@ -1,3 +1,4 @@
+import {CHART_INTERVALS} from '../public/chart-timeframes.js';
 import {sharedBudget,requestWeight,publicTTL,publicKey} from './binance-rate.mjs';
 import {BinanceError} from './binance.mjs';
 import {candleHistory} from './candle-history.mjs';
@@ -47,7 +48,7 @@ export class MarketData {
     const markets=Object.keys(SOURCES),symbols=[],errors=[];result.forEach((item,index)=>{if(item.status==='fulfilled')symbols.push(...item.value);else errors.push({market:markets[index],error:item.reason.message});});if(!symbols.length)throw new Error(errors.map(e=>e.error).join(' / '));return {environment:'live',asOf:this.now(),symbols,errors};
   });}
   async quote(market,symbol,interval='15m'){
-    this.source(market);if(!['1m','3m','5m','15m','30m','1h','4h','1d'].includes(interval))throw new Error('지원하지 않는 봉 주기입니다.');
+    this.source(market);if(!CHART_INTERVALS.includes(interval))throw new Error('지원하지 않는 봉 주기입니다.');
     if(typeof symbol!=='string'||symbol.length>80)throw new Error('종목을 확인해 주세요.');
     const instrument=(await this.instruments(market)).find(row=>row.symbol===symbol);if(!instrument)throw new Error('이 시장에서 조회 가능한 종목이 아닙니다.');
     const budget=sharedBudget(this.source(market).base,this.fetch,this.now),stream=this.stream(market),read=(kind,load)=>stream?stream.read(budget,kind,symbol,load):load(),candles=force=>candleHistory(budget,this.source(market).prefix+'/klines:'+symbol+':'+interval,1000,async limit=>normalizeCandles(await this.request(market,'/klines',{symbol,interval,limit})),{force});

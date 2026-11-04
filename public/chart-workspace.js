@@ -1,11 +1,12 @@
+import {CHART_INTERVALS,chartIntervalSeconds} from './chart-timeframes.js';
 export const CHART_WORKSPACE_KEY='fw-chart-workspace-v1';
-const markets=['usdm','coinm','spot','options'],intervals=['1m','5m','15m','1h','4h','1d'],presets=['custom','1d','7d','all'];
+const markets=['usdm','coinm','spot','options'],intervals=CHART_INTERVALS,presets=['custom','1d','7d','all'];
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 const defaults=()=>({version:1,selection:{market:'usdm',symbol:'BTCUSDT',interval:'15m',candleType:'standard',range:'custom'},views:{},lines:{}});
 export const instrumentKey=(market,symbol)=>market+':'+symbol;
 export const chartViewKey=(market,symbol,interval)=>instrumentKey(market,symbol)+':'+interval;
 const validInstrument=key=>typeof key==='string'&&/^(usdm|coinm|spot|options):[A-Z0-9_\-]{2,80}$/.test(key);
-const validView=key=>typeof key==='string'&&/^(usdm|coinm|spot|options):[A-Z0-9_\-]{2,80}:(1m|5m|15m|1h|4h|1d)$/.test(key);
+const validView=key=>typeof key==='string'&&validInstrument(key.slice(0,key.lastIndexOf(':')))&&intervals.includes(key.slice(key.lastIndexOf(':')+1));
 export function normalizeChartWorkspace(value){
   const next=defaults();if(!value||value.version!==1)return next;
   const selected=value.selection||{};
@@ -38,7 +39,7 @@ export function restoredRange(offset,count){
   return {from:Math.max(-5,to-width),to};
 }
 export function presetRange(count,interval,preset){
-  const seconds={ '1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400 }[interval]||900;
+  const seconds=chartIntervalSeconds(interval)||900;
   const bars=preset==='all'?count:preset==='1d'?86400/seconds:preset==='7d'?604800/seconds:165;
   return {from:Math.max(0,count-Math.max(8,Math.min(count,bars))),to:count+7};
 }

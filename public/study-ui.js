@@ -12,7 +12,7 @@ export const getStudies=()=>structuredClone(studies);
 export function subscribeStudies(listener){listeners.add(listener);return()=>listeners.delete(listener);}
 function commit(next){
   if(next.length>MAX_STUDIES)throw new Error('지표는 최대 '+MAX_STUDIES+'개까지 추가할 수 있습니다.');
-  const checked=next.map(validateStudy);localStorage.setItem(STUDY_KEY,JSON.stringify({version:1,studies:checked}));studies=checked;
+  const checked=next.map(validateStudy);localStorage.setItem(STUDY_KEY,JSON.stringify({version:1,timeframeVersion:2,studies:checked}));studies=checked;
   for(const listener of listeners)listener();if($('#indicator-dialog').open)renderLibrary();
 }
 export function studyControls(study){const name=esc(studyLabel(study));return '<button type="button" class="study-icon-button" data-study-edit="'+study.id+'" aria-label="'+name+' 설정" title="설정">'+studyIcon('settings')+'</button><button type="button" class="study-icon-button '+(!study.visible?'is-off':'')+'" data-study-toggle="'+study.id+'" aria-label="'+name+(study.visible?' 숨기기':' 표시하기')+'" title="'+(study.visible?'숨기기':'표시하기')+'">'+studyIcon('eye')+'</button><button type="button" class="study-icon-button" data-study-remove="'+study.id+'" aria-label="'+name+' 삭제" title="삭제">'+studyIcon('close')+'</button>';}

@@ -21,9 +21,11 @@ import {budgetSelectionMarkup,createBudgetEditor} from './budget-editor.js';
 import {installSignatureHelp} from './formula-signature.js';
 import { heikinAshi } from './indicators.js';
 import { roomAvatar } from './room.js';
-import {RoomScene} from './room-motion.js';
+import {ChartExecutions} from './chart-executions.js';
+import {CHART_INTERVALS} from './chart-timeframes.js';
+import {installTimeframePicker} from './timeframe-picker.js';
 import {renderOfficeRoster} from './office-roster.js';
-import {installRoomControls} from './room-controls.js';
+import {installBotActions} from './bot-actions.js';
 import {installPositionImportUI} from './position-import-ui.js';
 import { formulaEditorMarkup, formulaExamples } from './formula-editor.js';
 import {openChartModal,syncChartModalAccount} from './chart-modal.js';
@@ -77,22 +79,22 @@ for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='�
 let chartStorage;try{chartStorage=localStorage;}catch{}
 const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
 let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
-let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, positionPriceLines, currentPriceLine, candleInspector, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, positionPriceLines, currentPriceLine, candleInspector, chartExecutions, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
 let toastTimer, selectedRuleId, symbolPickerTarget='home';
 let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
 const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
 const symbolName=symbol=>[SYMBOL_NAMES[symbol.symbol],symbol.name].filter(Boolean).join(' · ');
 const currentRule=()=>draft?.actionRules.find(rule=>rule.id===selectedRuleId);
 const rulePrefix=()=> 'actionRules.'+draft.actionRules.findIndex(rule=>rule.id===selectedRuleId);
-let selectedBotId=bots[0]?.id, mapZoom=.85, mapAutoFit=false, mapCameraReady=false, roomHasBots=false, candleType=savedChart.candleType;
+let selectedBotId=bots[0]?.id, candleType=savedChart.candleType;
 let chartRenderedKey='',chartRestoring=false,chartSaveTimer;
-const roomScene=new RoomScene($('#office-map'));
-const roomControls=installRoomControls({scene:roomScene,getBots:()=>bots,getState:()=>serverState,selectBot:id=>{selectedBotId=id;renderOffice();},openSettings:id=>openBot(id),connectionSettings:()=>goPage('settings'),refresh:syncWorkspace,api,notify:toast,icon});
-const positionImportUI=installPositionImportUI({api,getState:()=>serverState,refresh:syncWorkspace,connectionSettings:()=>goPage('settings'),notify:toast,onImported:id=>{if($('#bot-dialog').open)$('#bot-dialog').close();selectedBotId=id;goPage('bots');focusMapBot();openBot(id,'conditions');}});
+const botControls=installBotActions({getBots:()=>bots,getState:()=>serverState,openSettings:id=>openBot(id),connectionSettings:()=>goPage('settings'),refresh:syncWorkspace,api,notify:toast});
+const timeframePicker=installTimeframePicker({root:$('#chart-interval-more'),onSelect:setChartInterval});
+const positionImportUI=installPositionImportUI({api,getState:()=>serverState,refresh:syncWorkspace,connectionSettings:()=>goPage('settings'),notify:toast,onImported:id=>{if($('#bot-dialog').open)$('#bot-dialog').close();selectedBotId=id;goPage('bots');openBot(id,'conditions');}});
 function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
 async function syncWorkspace(refreshMarket=false){
   if(syncing)return;syncing=true;
-  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);transportUI?.setState(state);renderRuntimeBanner();renderBots();loadPositionInsights();loadPositionCosts();renderHomeTable();syncPositionPriceLines();syncChartModalAccount(state);if($('#bot-dialog').open)renderEditorStatus();renderActivity();multiUI?.setState();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
+  try{const state=await api('/status');serverState=state;bots=state.bots.map(upgradeActions);logs=state.logs;renderConnection(state);transportUI?.setState(state);renderRuntimeBanner();renderBots();loadPositionInsights();loadPositionCosts();renderHomeTable();syncPositionPriceLines();syncChartExecutions();syncChartModalAccount(state);if($('#bot-dialog').open)renderEditorStatus();renderActivity();multiUI?.setState();manualUI?.setState({instrument:currentInstrument(),state,quote:marketSnapshot?.market===currentMarket&&marketSnapshot?.ticker.symbol===currentSymbol?marketSnapshot:null});if(refreshMarket){await loadSymbols();await updateChart(true);}}
   catch(error){marketError=error.message;renderRuntimeBanner();throw error;}
   finally{syncing=false;}
 }
@@ -110,15 +112,12 @@ function renderRuntimeBanner(){
   const health=$('#rail-health-state');health.hidden=!view.warning;health.textContent=view.healthLabel;health.title=view.warning;
   const footer=$('#runtime-footer');footer.textContent=environment+' · '+view.orderLabel+(view.warning?' · '+view.healthLabel:'');footer.title=summary;
   $('.rail [data-page="settings"].nav-item').title=summary;
-  $('.office-local-tag').textContent='BINANCE · '+environment;
   $('.editor-demo-note').innerHTML=icon('shield')+environment+' 환경 · 저장 후 신규 진입 일시정지 · 봇 시작 시 '+(enabled?'주문 실행 가능':'API 연결·주문 허용 필요');
 }
 function goPage(page) {
   if (!['home','bots','activity','settings'].includes(page)) page='home';
   if(currentPage==='home'&&page!=='home')persistChartView();
   currentPage=page; $$('.page').forEach(el=>el.hidden=el.id!==`page-${page}`);
-  roomScene.setVisible(page==='bots');
-  if(page!=='bots')roomControls.close();
   $$('[data-page]').forEach(el=>{el.classList.toggle('active',el.dataset.page===page); if(el.dataset.page===page) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current');});
   $('#status-page').textContent=({home:'시장 조회',bots:'봇 작업실',activity:'활동 기록',settings:'설정'})[page];
   if (location.hash!==`#${page}`) history.replaceState(null,'',`#${page}`);
@@ -166,7 +165,14 @@ function addChartLine(value){
   if(drawnLines.length>=50){toast('수평선은 종목당 50개까지 저장합니다.',true);return;}
   drawnLines.push(candleSeries.createPriceLine({price:value,color:'#d0b77d',lineWidth:1,lineStyle:window.LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'수평선'}));
 }
+function setChartInterval(interval){
+  if(!CHART_INTERVALS.includes(interval))return;persistChartView();currentInterval=interval;chartWorkspace.select({interval});syncChartButtons();renderMarket();updateChart();
+}
+function syncChartExecutions(){
+  if(chartRenderedKey===chartViewKey(currentMarket,currentSymbol,currentInterval))chartExecutions?.update({state:serverState,market:currentMarket,symbol:currentSymbol,candles,interval:currentInterval});
+}
 function syncChartButtons(){
+  timeframePicker.sync(currentInterval);
   $('#candle-type').value=candleType;
   $$('[data-interval]').forEach(button=>button.classList.toggle('active',button.dataset.interval===currentInterval));
   $$('[data-range]').forEach(button=>button.classList.toggle('active',button.dataset.range===chartWorkspace.selection.range));
@@ -183,6 +189,7 @@ function initChart() {
   positionPriceLines=new PositionPriceLines(candleSeries,{lineStyle:L.LineStyle.Dashed,summary:$('#chart-entry-summary')});
   homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
   currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode});
+  chartExecutions=new ChartExecutions(candleSeries,{toggle:$('#chart-executions-toggle'),inspector:candleInspector});
   chart.subscribeClick(param=> { if (!drawingMode || !param.point) return; const p=candleSeries.coordinateToPrice(param.point.y); if (!Number.isFinite(p)) return; addChartLine(p);persistChartView(); drawingMode=false; $$('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor')); toast('차트에 수평선을 추가했습니다.'); });
   chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
   $('.chart-container').addEventListener('pointerup',()=>requestAnimationFrame(persistChartView));
@@ -193,7 +200,7 @@ function initChart() {
 async function updateChart(resetRange=true) {
   if(!chart) return;
   const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;
-  if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();homeStudies?.clear();}
+  if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();chartExecutions?.clear();homeStudies?.clear();}
   let snapshot;
   try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
   catch(error){if(request!==chartRequest)return;marketError=error.message;renderRuntimeBanner();return;}
@@ -212,7 +219,7 @@ async function updateChart(resetRange=true) {
     candleSeries.priceScale().applyOptions({autoScale:saved.price?.autoScale!==false});if(saved.price?.autoScale===false&&Number.isFinite(saved.price.from)&&Number.isFinite(saved.price.to))candleSeries.priceScale().setVisibleRange({from:saved.price.from,to:saved.price.to});
     chart.panes().forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(saved.panes?.[id])pane.setStretchFactor(saved.panes[id]);});
   }else if(previousRange)chart.timeScale().setVisibleLogicalRange(previousRange);
-  chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();syncPositionPriceLines();
+  chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();syncPositionPriceLines();syncChartExecutions();
   $('.chart-caption>.muted').textContent=time(snapshot.asOf)+' 수신';
 }
 function positionSymbolButton(symbol){
@@ -272,7 +279,7 @@ function renderHomeTable(){
   }else if(homeTab==='orders'){
     const rows=[...(account.orders||[]),...(serverState.orders||[]).filter(o=>o.kind==='algo')];$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>종목</th><th>방향 / 유형</th><th>가격 / 조건가</th><th>수량</th><th>상태</th></tr></thead><tbody>'+rows.map(o=>'<tr><td>'+o.symbol+'</td><td>'+esc(o.side)+' · '+esc(o.type)+'</td><td>'+price(o.price)+'</td><td>'+fmt(o.quantity,6)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('check')+'미체결 주문이 없습니다.</div>';
   }else{
-    const rows=(serverState.fills||[]).filter(f=>f.quantity);$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>시간</th><th>종목</th><th>방향</th><th>체결 수량</th><th>체결가</th></tr></thead><tbody>'+rows.map(f=>'<tr><td>'+time(f.at)+'</td><td>'+f.symbol+'</td><td>'+f.side+'</td><td>'+fmt(f.quantity,6)+'</td><td>'+price(f.price)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('history')+'이 앱의 체결 원장에 기록된 체결이 없습니다.</div>';
+    const rows=(serverState.fills||[]).filter(f=>f.quantity);$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>시간</th><th>종목</th><th>방향</th><th>체결 수량</th><th>체결가</th></tr></thead><tbody>'+rows.map(f=>'<tr><td>'+time(f.tradeTime||f.at)+'</td><td>'+positionSymbolButton(f.symbol)+'</td><td>'+esc(f.side||'—')+'</td><td>'+fmt(f.quantity,6)+'</td><td>'+price(f.price)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('history')+'이 앱의 체결 원장에 기록된 체결이 없습니다.</div>';
   }
 }
 
@@ -294,30 +301,13 @@ function renderBots(){
 
 function renderOffice(){
   const operating=bots.filter(budgetIncluded),archived=bots.filter(b=>!budgetIncluded(b));
-  if(operating.length&&!roomHasBots)mapCameraReady=false;roomHasBots=operating.length>0;
-  roomScene.update(operating,{selectedId:selectedBotId,filter:botFilter});
   const visible=rosterTab==='archive'?archived:operating,filter=rosterTab==='archive'?'all':botFilter;
   renderOfficeRoster($('#office-roster-list'),visible,{selectedId:selectedBotId,filter,icon,costs:positionCosts&&positionCosts.connectionId===serverState?.connectionId?positionCosts.byBot:{}});
   $('#office-roster-count').textContent=visible.filter(b=>filter==='all'||b.status===filter).length;
   for(const button of $$('[data-roster-tab]')){const active=button.dataset.rosterTab===rosterTab;button.setAttribute('aria-selected',String(active));button.classList.toggle('active',active);button.querySelector('span').textContent=button.dataset.rosterTab==='archive'?archived.length:operating.length;}
-  if(mapAutoFit)fitOfficeMap();else $('#office-map').style.setProperty('--map-zoom',mapZoom);
-  if(!mapCameraReady&&$('#office-map-viewport').clientWidth){mapCameraReady=true;requestAnimationFrame(()=>focusMapBot());}
-  $('.room-note').textContent=operating.length?'캐릭터에 마우스를 올려 시작·정지 또는 설정':'보관한 봇을 운용으로 이동하면 이 맵에 나타나요.';
-  $('#map-focus-bot').disabled=!selectedBotId;
-  roomControls.sync();
+  botControls.sync();
 }
 
-function fitOfficeMap(){
-  const viewport=$('#office-map-viewport'),svg=$('.office-map');
-  if(!svg||!viewport.clientWidth||!viewport.clientHeight)return;
-  const [,,width,height]=svg.getAttribute('viewBox').split(' ').map(Number);
-  mapZoom=Math.min(1,(viewport.clientWidth-2)/width,(viewport.clientHeight-2)/height);
-  $('#office-map').style.setProperty('--map-zoom',mapZoom);
-}
-function focusMapBot(){
-  const viewport=$('#office-map-viewport'),point=roomScene.position(selectedBotId)||{x:roomScene.layout.width/2,y:roomScene.layout.height/2};
-  viewport.scrollTo({left:Math.max(0,point.x*mapZoom-viewport.clientWidth/2),top:Math.max(0,point.y*mapZoom-viewport.clientHeight/2)});
-}
 async function toggleBot(id){
   const b=bots.find(b=>b.id===id);if(!b)return;
   if(!serverState?.connected){goPage('settings');toast('여기서 API 키를 연결한 뒤 봇을 시작하세요.',true);return;}
@@ -460,19 +450,16 @@ function openMarket(){
 function closeMarket(){ $('#market-sidebar').classList.remove('open');$('.sidebar-backdrop')?.remove(); }
 
 document.addEventListener('click',event=>{
-  const character=event.target.closest('[data-select-map-bot]');
-  if(character){roomControls.open(character.dataset.selectMapBot);return;}
   const b=event.target.closest('button');if(!b)return;
   if(b.dataset.importForBot){positionImportUI.open(null,b.dataset.importForBot);return;}
   if(b.id==='import-position-button'||b.dataset.importPosition){positionImportUI.open(b.dataset.importPosition||null);return;}
   if(b.dataset.prepareClose){preparePositionClose(b.dataset.prepareClose,b.dataset.closeOwner||'');return;}
   if(b.dataset.rosterTab){rosterTab=b.dataset.rosterTab;renderOffice();return;}
-  if(b.dataset.officeFocus&&bots.find(item=>item.id===b.dataset.officeFocus)?.budgetIncluded===false){openBot(b.dataset.officeFocus);return;}
-  if(b.dataset.officeFocus){selectedBotId=b.dataset.officeFocus;roomControls.close();renderOffice();focusMapBot();return;}
-  if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)roomControls.action(target.runtime?.runEnabled?'pause':'start',target.id);return;}
+  if(b.dataset.officeFocus){selectedBotId=b.dataset.officeFocus;openBot(selectedBotId);return;}
+  if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)botControls.action(target.runtime?.runEnabled?'pause':'start',target.id);return;}
   if(b.dataset.botTools){botTools.open(b.dataset.botTools);return;}
   if(b.id==='bot-editor-tools'){botTools.open(draft.id);return;}
-  if(b.id==='editor-start-bot'||b.id==='editor-pause-bot'){roomControls.action(b.id==='editor-start-bot'?'start':'pause',draft.id);return;}
+  if(b.id==='editor-start-bot'||b.id==='editor-pause-bot'){botControls.action(b.id==='editor-start-bot'?'start':'pause',draft.id);return;}
   if(b.dataset.botTrade){const target=bots.find(item=>item.id===b.dataset.botTrade);if(target){if($('#bot-dialog').open)$('#bot-dialog').close();goPage('home');selectSymbol(target.symbol,'usdm');manualUI.prepareBot(target.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});}return;}
   if(b.dataset.cancelBotOrder){const order=serverState.orders.find(o=>o.id===b.dataset.cancelBotOrder&&o.botId===b.dataset.ownerBot);if(order)confirmAction('미체결 잔량 취소',order.symbol+' · '+order.type+' · '+order.quantity+' 중 미체결 잔량을 취소합니다.',async()=>{await api('/bots/'+encodeURIComponent(order.botId)+'/orders/'+encodeURIComponent(order.id)+'/cancel',{method:'POST'});await syncWorkspace();},'잔량 취소');return;}
 
@@ -500,7 +487,7 @@ document.addEventListener('click',event=>{
     }
     selectSymbol(b.dataset.symbol,b.dataset.market||'usdm');if(b.closest('dialog'))b.closest('dialog').close();
   }
-  if(b.dataset.interval){persistChartView();currentInterval=b.dataset.interval;chartWorkspace.select({interval:currentInterval});$$('[data-interval]').forEach(el=>el.classList.toggle('active',el===b));renderMarket();updateChart();}
+  if(b.dataset.interval)setChartInterval(b.dataset.interval);
   if(b.dataset.range&&chart)applyChartRange(b.dataset.range);
   if(b.dataset.homeTab){homeTab=b.dataset.homeTab;$$('[data-home-tab]').forEach(el=>{el.classList.toggle('active',el===b);el.setAttribute('aria-selected',el===b);});renderHomeTable();}
   if(b.dataset.tool){drawingMode=b.dataset.tool==='line';$$('[data-tool]').forEach(el=>el.classList.toggle('active',el===b));if(drawingMode)toast('차트에서 수평선을 넣을 가격을 클릭하세요.');}
@@ -513,20 +500,6 @@ document.addEventListener('click',event=>{
   if(b.dataset.editorTab)setEditorTab(b.dataset.editorTab);
   if(b.dataset.customizeAppearance){const target=draft?.id===b.dataset.customizeAppearance?draft:bots.find(bot=>bot.id===b.dataset.customizeAppearance);if(target)appearanceUI.open(target);return;}
   if(b.dataset.formulaExample!==undefined)setFormulaExample(Number(b.dataset.formulaExample));
-  if(b.id==='room-motion'){roomScene.setMotion(!roomScene.enabled);return;}
-  if(b.id==='room-fullscreen'){
-    const panel=$('.office-panel');const request=document.fullscreenElement===panel?document.exitFullscreen():panel.requestFullscreen();request.catch(()=>toast('이 브라우저에서는 맵 전체화면을 열 수 없습니다.',true));return;
-  }
-  if(b.id==='map-focus-bot'){mapAutoFit=false;mapZoom=Math.max(.85,mapZoom);$('#office-map').style.setProperty('--map-zoom',mapZoom);focusMapBot();return;}
-  if(b.dataset.mapZoom){
-    const viewport=$('#office-map-viewport');
-    const center={x:(viewport.scrollLeft+viewport.clientWidth/2)/mapZoom,y:(viewport.scrollTop+viewport.clientHeight/2)/mapZoom};
-    mapAutoFit=b.dataset.mapZoom==='fit';
-    mapZoom=Math.max(.3,Math.min(1.6,mapZoom+(b.dataset.mapZoom==='in'?.15:-.15)));
-    $('#office-map').style.setProperty('--map-zoom',mapZoom);
-    if(b.dataset.mapZoom==='fit'){fitOfficeMap();viewport.scrollTo(0,0);}
-    else viewport.scrollTo(center.x*mapZoom-viewport.clientWidth/2,center.y*mapZoom-viewport.clientHeight/2);
-  }
   if(b.closest('#editor-actions')&&draft&&applyProtectionChoice(draft.exit,b.dataset)){renderActions();$('#form-errors').hidden=true;return;}
   if(b.id==='new-bot'||b.id==='add-bot-card')openBot();
 });
@@ -566,19 +539,8 @@ document.addEventListener('keydown',event=>{
     const results=$('#symbol-results .symbol-result'),index=results.indexOf(event.target.closest('.symbol-result'));if(index<0)return;event.preventDefault();
     const next=event.key==='Home'?0:event.key==='End'?results.length-1:Math.max(0,Math.min(results.length-1,index+(event.key==='ArrowDown'?1:-1)));results[next]?.focus();return;
   }
-  const character=event.target.closest('[data-select-map-bot]');
-  if(character&&['Enter',' '].includes(event.key)){event.preventDefault();roomControls.open(character.dataset.selectMapBot);}
   if(event.target.id==='formula-source'&&event.key==='Tab'){event.preventDefault();const textarea=event.target;textarea.setRangeText('  ',textarea.selectionStart,textarea.selectionEnd,'end');currentRule().formula=textarea.value;updateFormulaFeedback();}
 });
-const mapViewport=$('#office-map-viewport');let mapDrag=null;
-mapViewport.addEventListener('pointerdown',event=>{
-  if(event.pointerType!=='mouse'||event.target.closest('[data-select-map-bot]'))return;
-  mapDrag={x:event.clientX,y:event.clientY,left:mapViewport.scrollLeft,top:mapViewport.scrollTop};mapViewport.setPointerCapture(event.pointerId);mapViewport.classList.add('dragging');
-});
-mapViewport.addEventListener('pointermove',event=>{if(!mapDrag)return;mapViewport.scrollLeft=mapDrag.left-event.clientX+mapDrag.x;mapViewport.scrollTop=mapDrag.top-event.clientY+mapDrag.y;});
-const endMapDrag=()=>{mapDrag=null;mapViewport.classList.remove('dragging');};mapViewport.addEventListener('pointerup',endMapDrag);mapViewport.addEventListener('pointercancel',endMapDrag);
-new ResizeObserver(()=>{if(mapAutoFit)fitOfficeMap();}).observe(mapViewport);
-document.addEventListener('fullscreenchange',()=>{const button=$('#room-fullscreen'),expanded=document.fullscreenElement===$('.office-panel');button.setAttribute('aria-label',expanded?'맵 전체화면 닫기':'맵 전체화면');button.title=expanded?'맵 전체화면 닫기':'맵 전체화면';if(mapAutoFit)fitOfficeMap();else requestAnimationFrame(()=>focusMapBot());});
 $('#fit-chart').addEventListener('click',()=>applyChartRange('all'));
 $('#fullscreen-chart').addEventListener('click',()=>{try{openChartModal(currentInstrument(),{interval:currentInterval,candleType});}catch(error){toast(error.message,true);}});
 $('#clear-lines').addEventListener('click',()=>{drawnLines.forEach(l=>candleSeries.removePriceLine(l));drawnLines=[];persistChartView();toast('추가한 수평선을 지웠습니다.');});
@@ -606,7 +568,7 @@ installTradeHistoryUI({getState:()=>serverState,notify:toast});
 manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
 appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});
 botTools=installBotTools({api,getState:()=>serverState,refresh:()=>syncWorkspace(),toast,onBudgetBaselineReset(b){if(draft?.id===b.id&&$('#bot-dialog').open){draft.runtime=structuredClone(b.runtime);updateBudgetPreview();renderEditorStatus();}},onBudgetMoved(included){rosterTab=included?'operating':'archive';renderBots();if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();},onCopy(source){const copied=copyBotSettings(source);try{saveAppearance(copied,appearanceFor(source));}catch(error){toast('외형 복사: '+error.message,true);}if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(null,'basic',copied);toast('복사본을 불러왔습니다. 종목·예산을 확인한 뒤 저장하세요.');},onSettingsReset(source){if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(source.id,'basic',resetBotSettings(source));}});
-multiUI=installMultiUI({onSaved(bot){rosterTab=bot.budgetIncluded===false?'archive':'operating';},api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>roomControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot),onTools:id=>botTools.open(id)});
+multiUI=installMultiUI({onSaved(bot){rosterTab=bot.budgetIncluded===false?'archive':'operating';},api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>botControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot),onTools:id=>botTools.open(id)});
 $('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('wallet')+'계좌 정보';
 icons();syncChartButtons();renderMarket();renderHomeTable();renderBots();renderActivity();initChart();goPage(location.hash.slice(1)||'home');
 async function bootstrap(){
