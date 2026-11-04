@@ -37,13 +37,14 @@ export function validateStudy(value){
   if(value.type==='MACD'&&params.fast>=params.slow)throw new Error('빠른 기간은 느린 기간보다 짧아야 합니다.');
   if(['RSI','STOCH'].includes(value.type)&&params.lower>=params.upper)throw new Error('하단 기준은 상단 기준보다 작아야 합니다.');
   const styles={};for(const item of definition.plots){const style=value.styles?.[item.key];if(!style||!/^#[\da-f]{6}$/i.test(style.color)||!/^#[\da-f]{6}$/i.test(style.negative)||![1,2,3,4].includes(style.width)||![0,1,2].includes(style.lineStyle)||typeof style.visible!=='boolean')throw new Error('지표 선의 스타일을 확인해 주세요.');styles[item.key]={color:style.color,negative:style.negative,width:style.width,lineStyle:style.lineStyle,visible:style.visible};}
-  return {id:value.id,type:value.type,visible:value.visible,source:value.source,candle:value.candle,timeframes:[...new Set(value.timeframes)],params,styles};
+  const fill=value.type==='BB'?(value.fill??{visible:true,color:'#aa91c5',transparency:90}):null;if(fill&&(typeof fill.visible!=='boolean'||!/^#[\da-f]{6}$/i.test(fill.color)||typeof fill.transparency!=='number'||!Number.isFinite(fill.transparency)||fill.transparency<0||fill.transparency>100))throw new Error('볼린저밴드 배경색과 투명도(0~100%)를 확인해 주세요.');
+  return {...(fill?{fill:{visible:fill.visible,color:fill.color,transparency:fill.transparency}}:{}),id:value.id,type:value.type,visible:value.visible,source:value.source,candle:value.candle,timeframes:[...new Set(value.timeframes)],params,styles};
 }
 export const defaultStudies=()=>[createStudy('SMA',{id:'default-ma20'}),createStudy('SMA',{id:'default-ma60',params:{period:60},styles:{main:{color:'#be9e60',negative:'#d98e9a',width:1,lineStyle:0,visible:true}}}),createStudy('BB',{id:'default-bb'}),createStudy('VOLUME',{id:'default-volume'})];
 export function parseStudies(serialized){try{const value=JSON.parse(serialized);if(value.version!==1||!Array.isArray(value.studies)||value.studies.length>MAX_STUDIES)throw new Error();const previous=['1m','5m','15m','1h','4h','1d'];const studies=value.studies.map(s=>validateStudy({...s,timeframes:value.timeframeVersion!==2&&s.timeframes?.length===previous.length&&previous.every(tf=>s.timeframes.includes(tf))?TIMEFRAMES.map(([tf])=>tf):s.timeframes}));if(new Set(studies.map(s=>s.id)).size!==studies.length)throw new Error();return studies;}catch{return defaultStudies();}}
 export const studyLabel=study=>study.type==='FORMULA'?study.params.name:study.type+(['SMA','EMA','BB','RSI','ATR','STOCH'].includes(study.type)?' '+study.params.period:'')+(study.type==='BB'?' · '+study.params.multiplier:study.type==='MACD'?' '+[study.params.fast,study.params.slow,study.params.signal].join(' / '):'');
 export const studyPane=study=>study.type==='FORMULA'?study.params.placement==='pane':STUDIES[study.type].pane;
-export const studyActive=(study,interval)=>study.visible&&study.timeframes.includes(interval)&&Object.values(study.styles).some(style=>style.visible);
+export const studyActive=(study,interval)=>study.visible&&study.timeframes.includes(interval)&&(Object.values(study.styles).some(style=>style.visible)||study.type==='BB'&&study.fill?.visible&&study.fill.transparency<100);
 const formulaCache=new Map();
 export function compileStudyFormula(source){
   if(formulaCache.has(source))return formulaCache.get(source);

@@ -1,5 +1,6 @@
 import {actionFormulaPosition,formulaPosition} from './formula-position.js';
 import { api } from './api.js';
+import {fillActionMarkup} from './fill-action.js';
 import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
 import {chartEntryLines,PositionPriceLines} from './chart-positions.js';
@@ -290,7 +291,7 @@ function renderHomeTable(){
   }else if(homeTab==='orders'){
     const rows=[...(account.orders||[]),...(serverState.orders||[]).filter(o=>o.kind==='algo')];$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>종목</th><th>방향 / 유형</th><th>가격 / 조건가</th><th>수량</th><th>상태</th></tr></thead><tbody>'+rows.map(o=>'<tr><td>'+o.symbol+'</td><td>'+esc(o.side)+' · '+esc(o.type)+'</td><td>'+price(o.price)+'</td><td>'+fmt(o.quantity,6)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('check')+'미체결 주문이 없습니다.</div>';
   }else{
-    const rows=(serverState.fills||[]).filter(f=>f.quantity);$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>시간</th><th>종목</th><th>방향</th><th>체결 수량</th><th>체결가</th></tr></thead><tbody>'+rows.map(f=>'<tr><td>'+time(f.tradeTime||f.at)+'</td><td>'+positionSymbolButton(f.symbol)+'</td><td>'+esc(f.side||'—')+'</td><td>'+fmt(f.quantity,6)+'</td><td>'+price(f.price)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('history')+'이 앱의 체결 원장에 기록된 체결이 없습니다.</div>';
+    const rows=(serverState.fills||[]).filter(f=>f.quantity);$('#home-table').innerHTML=rows.length?'<table class="data-table"><thead><tr><th>시간</th><th>종목</th><th>매매 구분</th><th>체결 수량</th><th>체결가</th></tr></thead><tbody>'+rows.map(f=>'<tr><td>'+time(f.tradeTime||f.at)+'</td><td>'+positionSymbolButton(f.symbol)+'</td><td>'+fillActionMarkup(f)+'</td><td>'+fmt(f.quantity,6)+'</td><td>'+price(f.price)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty-table">'+icon('history')+'이 앱의 체결 원장에 기록된 체결이 없습니다.</div>';
   }
 }
 
@@ -586,6 +587,8 @@ async function bootstrap(){
   catch(error){marketError=error.message;renderRuntimeBanner();}
 }
 bootstrap();setInterval(()=>syncWorkspace().catch(()=>{}),3000);setInterval(()=>{if(currentPage==='home')updateChart(false);},3000);setInterval(()=>loadSymbols().catch(error=>{marketError=error.message;renderRuntimeBanner();}),15000);
-$('#local-clock').textContent=time();setInterval(()=>$('#local-clock').textContent=time(),1000);
+const clockFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+function updateClock(){const now=new Date(),stamp=clockFormat.format(now);for(const id of ['local-clock','rail-clock']){const node=$('#'+id);if(node.textContent!==stamp)node.textContent=stamp;if(node.tagName==='TIME')node.dateTime=now.toISOString();}}
+updateClock();setInterval(updateClock,1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateClock();});
 
 setInterval(()=>loadMarkets().catch(()=>{}),60000);
