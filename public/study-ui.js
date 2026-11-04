@@ -1,20 +1,20 @@
-import {STUDIES,STUDY_KEY,MAX_STUDIES,TIMEFRAMES,SOURCES,createStudy,validateStudy,parseStudies,defaultStudies,studyLabel,formulaStudyResult} from './chart-studies.js';
+import {STUDIES,MAX_STUDIES,TIMEFRAMES,SOURCES,createStudy,validateStudy,studyLabel,formulaStudyResult} from './chart-studies.js';
+import {api} from './api.js';
+import {StudyPersistence} from './study-persistence.js';
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const paths={settings:'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',close:'M6 6l12 12M6 18L18 6',up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6'};
 export const studyIcon=name=>'<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
-let studies;try{studies=parseStudies(localStorage.getItem(STUDY_KEY));}catch{studies=defaultStudies();}
+let studyStorage;try{studyStorage=localStorage;}catch{}
+const persistence=new StudyPersistence({storage:studyStorage,request:api,onChange(next){studies=next;for(const listener of listeners)listener();if($('#indicator-dialog').open)renderLibrary();const restore=$('#study-restore-local');if(restore)restore.hidden=!persistence.backup();},onStatus(message){const output=$('#study-save-status');if(output)output.textContent=message;}});
+let studies=structuredClone(persistence.document.studies);
 const listeners=new Set();let category='all',editing=null,toast=()=>{};
 let adding=false,context='home',previewTimer;const previewCandles={home:[],modal:[]};
 const formulaExamples=[{name:'3봉 평균 · 직접 계산',value:'(종가[0]+종가[1]+종가[2])/3',placement:'overlay'},{name:'지수이동평균 20',value:'EMA(종가, 20)',placement:'overlay'},{name:'이평선 차이',value:'EMA(종가, 12)-EMA(종가, 26)',placement:'pane'},{name:'직전 봉 대비 등락률 (%)',value:'(종가/종가[1]-1)*100',placement:'pane'},{name:'거래량 비율',value:'거래량/SMA(거래량, 20)',placement:'pane'},{name:'3봉 평균 · 구간 합계',value:'종가[0:3]/3',placement:'overlay'}];
 export function setStudyPreviewData(kind,candles){previewCandles[kind]=candles;if(editing?.type==='FORMULA'&&context===kind)scheduleFormulaPreview();}
 export const getStudies=()=>structuredClone(studies);
 export function subscribeStudies(listener){listeners.add(listener);return()=>listeners.delete(listener);}
-function commit(next){
-  if(next.length>MAX_STUDIES)throw new Error('지표는 최대 '+MAX_STUDIES+'개까지 추가할 수 있습니다.');
-  const checked=next.map(validateStudy);localStorage.setItem(STUDY_KEY,JSON.stringify({version:1,timeframeVersion:2,studies:checked}));studies=checked;
-  for(const listener of listeners)listener();if($('#indicator-dialog').open)renderLibrary();
-}
+async function commit(next){await persistence.save(next);}
 export function studyControls(study){const name=esc(studyLabel(study));return '<button type="button" class="study-icon-button" data-study-edit="'+study.id+'" aria-label="'+name+' 설정" title="설정">'+studyIcon('settings')+'</button><button type="button" class="study-icon-button '+(!study.visible?'is-off':'')+'" data-study-toggle="'+study.id+'" aria-label="'+name+(study.visible?' 숨기기':' 표시하기')+'" title="'+(study.visible?'숨기기':'표시하기')+'">'+studyIcon('eye')+'</button><button type="button" class="study-icon-button" data-study-remove="'+study.id+'" aria-label="'+name+' 삭제" title="삭제">'+studyIcon('close')+'</button>';}
 function renderLibrary(){
   const query=$('#study-search').value.toLowerCase().replace(/\s/g,'');
@@ -49,17 +49,21 @@ function updateFormulaPreview(){
 function switchSettingsTab(tab){document.querySelectorAll('[data-study-settings-tab]').forEach(button=>{const active=button.dataset.studySettingsTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',active);});for(const name of ['input','style','visibility'])$('#study-'+name+'-panel').hidden=name!==tab;}
 export function installStudyUI({notify}){
   toast=notify;$('#study-search').addEventListener('input',renderLibrary);
+  const reload=()=>persistence.load().catch(error=>toast(error.message,true));reload();
+  $('#study-load-server').addEventListener('click',reload);
+  $('#study-restore-local').hidden=!persistence.backup();
+  $('#study-restore-local').addEventListener('click',async()=>{try{const backup=persistence.backup();if(!backup)throw Error('이 기기에 복원할 지표 설정이 없습니다.');await commit(backup.studies);toast('이 기기의 이전 지표 설정을 서버에 저장했습니다.');}catch(error){toast(error.message,true);}});
   const custom=document.createElement('button');custom.type='button';custom.dataset.studyCategory='custom';custom.textContent='수식 만들기';document.querySelector('[data-study-category="all"]').after(custom);
   $('#study-settings-dialog').addEventListener('close',()=>{clearTimeout(previewTimer);editing=null;adding=false;});
-  document.addEventListener('click',event=>{
+  document.addEventListener('click',async event=>{
     const button=event.target.closest('button');if(!button)return;
     try{
       if(button.dataset.studyCategory){category=button.dataset.studyCategory;document.querySelectorAll('[data-study-category]').forEach(item=>item.classList.toggle('active',item===button));renderLibrary();}
-      if(button.dataset.studyAdd){const study=createStudy(button.dataset.studyAdd);if(study.type==='FORMULA'){if(studies.length>=MAX_STUDIES)throw new Error('지표는 최대 '+MAX_STUDIES+'개까지 추가할 수 있습니다.');openSettings(study.id,{newStudy:study});}else{commit([...studies,study]);toast(STUDIES[study.type].name+' 지표를 추가했습니다.');}}
+      if(button.dataset.studyAdd){const study=createStudy(button.dataset.studyAdd);if(study.type==='FORMULA'){if(studies.length>=MAX_STUDIES)throw new Error('지표는 최대 '+MAX_STUDIES+'개까지 추가할 수 있습니다.');openSettings(study.id,{newStudy:study});}else{await commit([...studies,study]);toast(STUDIES[study.type].name+' 지표를 추가했습니다.');}}
       if(button.dataset.studyEdit){const source=button.closest('[data-study-context]')?.dataset.studyContext;if(source)context=source;openSettings(button.dataset.studyEdit);}
-      if(button.dataset.studyToggle)commit(studies.map(study=>study.id===button.dataset.studyToggle?{...study,visible:!study.visible}:study));
-      if(button.dataset.studyRemove)commit(studies.filter(study=>study.id!==button.dataset.studyRemove));
-      if(button.dataset.studyMove){const next=[...studies],index=next.findIndex(study=>study.id===button.dataset.studyMove),target=index+Number(button.dataset.step);if(index>=0&&target>=0&&target<next.length){[next[index],next[target]]=[next[target],next[index]];commit(next);}}
+      if(button.dataset.studyToggle)await commit(studies.map(study=>study.id===button.dataset.studyToggle?{...study,visible:!study.visible}:study));
+      if(button.dataset.studyRemove)await commit(studies.filter(study=>study.id!==button.dataset.studyRemove));
+      if(button.dataset.studyMove){const next=[...studies],index=next.findIndex(study=>study.id===button.dataset.studyMove),target=index+Number(button.dataset.step);if(index>=0&&target>=0&&target<next.length){[next[index],next[target]]=[next[target],next[index]];await commit(next);}}
       if(button.dataset.studySettingsTab)switchSettingsTab(button.dataset.studySettingsTab);
     }catch(error){toast(error.name==='QuotaExceededError'?'브라우저에 지표 설정을 저장하지 못했습니다.':error.message,true);}
   });
@@ -75,5 +79,5 @@ export function installStudyUI({notify}){
     if(editing.type==='FORMULA')scheduleFormulaPreview();
   });
   $('#study-settings-form').addEventListener('change',event=>{if(event.target.id!=='study-formula-example'||!editing||event.target.value==='')return;const example=formulaExamples[Number(event.target.value)];editing.params.formula=example.value;editing.params.placement=example.placement;$('#study-formula-source').value=example.value;document.querySelector('[data-study-field="placement"]').value=example.placement;updateFormulaPreview();});
-  $('#study-settings-form').addEventListener('submit',event=>{event.preventDefault();try{const value=validateStudy(editing);if(value.type==='FORMULA'&&previewCandles[context].length){const result=formulaStudyResult(value.params.formula,previewCandles[context]);if(!result.ok)throw new Error(result.error);}if(!adding&&!studies.some(study=>study.id===value.id))throw new Error('이 지표는 이미 삭제되었습니다.');commit(adding?[...studies,value]:studies.map(study=>study.id===value.id?value:study));$('#study-settings-dialog').close();toast('지표 설정을 저장했습니다.');}catch(error){$('#study-settings-error').textContent=error.message;$('#study-settings-error').hidden=false;}});
+  $('#study-settings-form').addEventListener('submit',async event=>{event.preventDefault();try{const value=validateStudy(editing);if(value.type==='FORMULA'&&previewCandles[context].length){const result=formulaStudyResult(value.params.formula,previewCandles[context]);if(!result.ok)throw new Error(result.error);}if(!adding&&!studies.some(study=>study.id===value.id))throw new Error('이 지표는 이미 삭제되었습니다.');await commit(adding?[...studies,value]:studies.map(study=>study.id===value.id?value:study));$('#study-settings-dialog').close();toast('지표 설정을 저장했습니다.');}catch(error){$('#study-settings-error').textContent=error.message;$('#study-settings-error').hidden=false;}});
 }

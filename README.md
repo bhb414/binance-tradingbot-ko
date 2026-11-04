@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.36](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.36/binance-tradingbot-ko-v0.4.36-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.37](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.37/binance-tradingbot-ko-v0.4.37-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,12 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 지표 설정 저장
+
+지표 목록·기간·수식·색상·볼린저 배경은 서버의 .runtime/chart-settings.json에 저장합니다. 127.0.0.1·localhost·같은 Wi-Fi 주소에서 같은 설정을 불러옵니다. 처음 실행한 기존 주소의 브라우저 지표를 서버로 옮기므로, 처음 업데이트한 뒤에는 원래 사용하던 주소로 한 번 열어 주세요. 기존 브라우저 값도 보관하며 지표 창의 **이 기기 이전 설정 복원**으로 되돌릴 수 있습니다.
+
+동시에 연 다른 화면에서 저장하면 오래된 설정의 덮어쓰기를 막습니다. 지표 창의 **서버 설정 불러오기**를 눌러 최신값을 확인하세요. 아직 저장하지 않은 기본 지표로 기존 서버 설정을 덮어쓰지 않습니다. 지표의 직전 서버 백업도 보관합니다. 차트 종목·확대 범위는 기존처럼 브라우저에 저장합니다.
 
 ## 차트 유형
 
