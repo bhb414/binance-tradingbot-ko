@@ -132,5 +132,7 @@ if(process.argv.includes('--post-only')){
  const bot=await app.engine.saveBot(makeBot({id:'ui-post-only',name:'메이커 재시도 예시',symbol:'BTCUSDT',budget:40,exit:{takeProfitEnabled:false,stopLossEnabled:false},actionRules:[makeActionRule({formula:'TRUE@1m',order:{type:'LIMIT',price:'bid',ticks:0,timeout:5,remainder:'cancel',postOnly:true}})]}));
  app.engine.client.placeOrder=async()=>{throw new BinanceError('Post Only rejected',{code:-5022,status:400});};await app.engine.startBot(bot.id);await app.engine.tick();
 }
+if(process.argv.includes('--tools-refresh-failure')){const commit=app.engine.budgetBaselines.commit.bind(app.engine.budgetBaselines),snapshot=app.engine.snapshot.bind(app.engine);let failUntil=0;app.engine.budgetBaselines.commit=async(...args)=>{const result=await commit(...args);failUntil=Date.now()+5000;return result;};app.engine.snapshot=()=>{if(Date.now()<failUntil)throw Error('UI 검증용 갱신 실패');return snapshot();};}
+if(process.argv.includes('--tools-expired-preview')){const preview=app.engine.budgetBaselines.preview.bind(app.engine.budgetBaselines);app.engine.budgetBaselines.preview=async(...args)=>{const result=await preview(...args);if(result.previewId)app.engine.budgetBaselines.plans.get(result.previewId).expiresAt=0;return result;};}
 app.server.listen(8897,'127.0.0.1',()=>console.log('UI mock, no external orders: http://127.0.0.1:8897/#home'));
 process.once('SIGINT',()=>{process.stdin.pause();app.server.close();});
