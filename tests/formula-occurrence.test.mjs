@@ -75,6 +75,6 @@ test('custom chart formulas can plot counts without changing raw price data or p
 });
 
 test('editor insertions and nested signature help explain count bounds and transition semantics',()=>{
- for(const [source]of FORMULA_OCCURRENCE_INSERTS)assert.doesNotThrow(()=>formulaTimeframes(source));for(const example of formulaExamples)assert.doesNotThrow(()=>formulaTimeframes(example.value));
+ for(const [source]of FORMULA_OCCURRENCE_INSERTS){assert.match(source,/^[가-힣]+\(\)$/);assert.doesNotMatch(source,/@|\[/);}for(const example of formulaExamples)assert.doesNotThrow(()=>formulaTimeframes(example.value));
  let text='발생(상향돌파(종가, EMA(종가, 20)), 10, ';let help=signatureAt(text,text.length);assert.equal(help.name,'발생');assert.equal(help.argument,2);assert.match(help.help[2],/최소/);text+='1, ';help=signatureAt(text,text.length);assert.equal(help.argument,3);assert.match(help.help[3],/최대/);text='신규발생(';assert.match(signatureAt(text,text.length).help[0],/거짓 → 참/);const markup=formulaEditorMarkup({formula:''});assert.match(markup,/발생횟수/);assert.match(markup,/연속 3봉 참/);
 });

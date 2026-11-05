@@ -1,3 +1,4 @@
+import {insertFormulaSnippet} from './formula-snippets.js';
 import {homeOpenOrders,homeOrderTable} from './home-orders.js';
 import {actionFormulaPosition,formulaPosition} from './formula-position.js';
 import { api } from './api.js';
@@ -552,8 +553,7 @@ $('#indicator-button').addEventListener('click',openStudyLibrary);
 document.addEventListener('change',event=>{
   if(event.target.id!=='formula-insert')return;
   const value=event.target.value;if(!value)return;
-  const textarea=$('#formula-source'),start=textarea.selectionStart,end=textarea.selectionEnd;
-  textarea.setRangeText(value,start,end,'end');currentRule().formula=textarea.value;event.target.value='';updateFormulaFeedback();textarea.focus();
+  const textarea=$('#formula-source');insertFormulaSnippet(textarea,value);currentRule().formula=textarea.value;event.target.value='';updateFormulaFeedback();
 });
 document.addEventListener('keydown',event=>{
   if(event.target.id==='symbol-search'&&['ArrowDown','Enter'].includes(event.key)&&!event.isComposing){

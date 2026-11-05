@@ -243,6 +243,7 @@
     'min': 'min', '최소': 'min', 'max': 'max', '최대': 'max',
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
     'ema': 'ema', '지수이평': 'ema', 'rsi': 'rsi',
+    'vwma':'vwma', '거래량가중이평':'vwma', '거래량가중이동평균':'vwma',
     'nw':'nw', '나다라야왓슨':'nw', 'nadarayawatson':'nw',
     '봉': 'frame', 'frame': 'frame',
     'stdev': 'stdev', '표준편차': 'stdev',
@@ -280,15 +281,31 @@
     const children=node.type==='binary'?[node.left,node.right]:node.type==='call'?node.args:node.value&&typeof node.value==='object'?[node.value]:[];
     return children.every(historicalCondition);
   }
+  function vwmaVolume(source){
+    const markets=new Set();
+    function visit(node){
+      if(node.type==='symbol'){markets.add(node.symbol);return;}
+      if(node.type==='variable'&&calendarConstant(node.name)==null)markets.add('');
+      if(node.type==='call'&&resolveFunction(node.name)==='atr')markets.add('');
+      const children=node.type==='binary'?[node.left,node.right]:node.type==='call'?node.args:node.value&&typeof node.value==='object'?[node.value]:[];children.forEach(visit);
+    }
+    visit(source);if(markets.size>1)throw new FormulaError('여러 종목을 조합한 VWMA는 세 번째 인수에 거래량을 지정하세요. 예: VWMA(A.종가/B.종가, 6, A.거래량)',source.position);
+    const name=[...markets][0],value={type:'variable',name:'거래량'};
+    return name?{type:'symbol',symbol:name,value}:value;
+  }
   function validateAst(node) {
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
-      if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
+      if (['sma','ema','vwma','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(name==='vwma'){
+        if(!historicalCondition(node.args[0])||node.args[2]&&!historicalCondition(node.args[2]))throw new FormulaError('VWMA에는 봉 데이터와 거래량을 사용하세요. 현재 시간·현재 포지션의 과거 이력은 없습니다',node.position);
+        if(!node.args[2])vwmaVolume(node.args[0]);
       }
       if(name==='percentile'){
         const period=node.args[1],rank=node.args[2];
@@ -522,6 +539,15 @@
       const count=occurrenceCount(node.args[0],context,index,node.args[1].value,name==='countStarts'||name==='occursStarts');if(count===null)return null;
       return name==='countTrue'||name==='countStarts'?count:count>=node.args[2].value&&count<=(node.args[3]?.value??node.args[1].value)?1:0;
     }
+    if(name==='vwma'){
+      const key='vwma:'+expressionKey(node,context);
+      if(!context.indicatorCache.has(key)){
+        const volume={type:'nonnegative',value:node.args[2]||vwmaVolume(node.args[0])};
+        context.indicatorCache.set(key,{volume,product:{type:'binary',operator:'*',left:node.args[0],right:volume}});
+      }
+      const cached=context.indicatorCache.get(key),period=node.args[1].value,weighted=rolling(cached.product,context,index,period,'mean'),volume=rolling(cached.volume,context,index,period,'mean');
+      return finite(weighted)&&finite(volume)&&volume>0?weighted/volume:null;
+    }
     if(name==='percentile')return rollingPercentile(node.args[0],context,index,node.args[1].value,node.args[2].value);
     if(name==='nw')return kernelMean(node.args[0],context,index,node.args[1].value,node.args[2].value);
     if (name === 'abs') { const value = evaluateNode(node.args[0], context, index); return finite(value) ? Math.abs(Number(value)) : null; }
@@ -591,6 +617,7 @@
       const series = context.series[resolveVariable(node.name)];
       return series ? series[index] : null;
     }
+    if(node.type==='nonnegative'){const value=evaluateNode(node.value,context,index);return finite(value)&&value>=0?value:null;}
     if (node.type === 'lag') return evaluateNode(node.value, context, index - node.lag);
     if(node.type==='range'){
       let sum=0;for(let offset=node.start;offset<node.end;offset++){const value=evaluateNode(node.value,context,index-offset);if(!finite(value))return null;sum+=value;}return sum;

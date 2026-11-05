@@ -56,7 +56,7 @@ test('standalone calendars need no explicit frame and do not add subscriptions t
 });
 
 test('calendar insertion choices, examples and signatures explain the clock and timezone',()=>{
- for(const [source]of FORMULA_TIME_INSERTS)assert.doesNotThrow(()=>formulaTimeframes(source));
+ for(const [source]of FORMULA_TIME_INSERTS){assert.match(source,/^[가-힣]+\(\)$/);assert.doesNotMatch(source,/@|\[/);}
  for(const example of formulaExamples)assert.doesNotThrow(()=>formulaTimeframes(example.value));
  const source='시간범위(930,1600,',sig=signatureAt(source,source.length);assert.equal(sig.calendar,true);assert.equal(sig.argument,2);assert.match(sig.help[2],/서머타임/);
  const html=formulaEditorMarkup({formula:''});assert.match(html,/시간범위/);assert.match(html,/현재 감시 시각/);assert.match(html,/휴장일/);

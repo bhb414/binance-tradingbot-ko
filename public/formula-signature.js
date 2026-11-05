@@ -1,3 +1,4 @@
+import {installFormulaCompletion} from './formula-snippets.js';
 import './analysis-formula.js';
 const occurrenceHelp=['봉마다 확인할 조건. 참인 봉을 각각 1회로 셉니다. 주문 횟수가 아닙니다.','최근 N봉 · 1~500. 현재 봉 포함이며 전체 뒤 [1]을 붙이면 완성봉만 셉니다.','최소 횟수 포함 · 0~N.','최대 횟수 포함 · 생략하면 N.'];
 const startHelp=['거짓 → 참으로 바뀐 봉만 1회로 셉니다. 3봉 연속 참이면 신규 발생은 1회입니다.',...occurrenceHelp.slice(1)];
@@ -16,6 +17,7 @@ const signature={
   crossUp:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 아래에서 위로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≤ B에서 현재 A > B로 바뀌는 순간입니다.']},
   crossDown:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 위에서 아래로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≥ B에서 현재 A < B로 바뀌는 순간입니다.']},
   sma:{params:['데이터','기간'],help:['평균을 계산할 데이터. 예: 종가, 거래량.','평균에 사용할 봉 수 · 1~500 정수.']},
+  vwma:{params:['데이터','기간','거래량 (선택)'],help:['거래량 가중이동평균. 예: 종가 또는 하이킨종가. 현재·과거 봉만 사용합니다.','현재 봉 포함 · 1~500 정수. 가격 × 거래량 합계 ÷ 거래량 합계입니다.','생략하면 데이터 종목의 거래량. 여러 종목을 조합한 데이터에는 A.거래량처럼 직접 지정합니다. 거래량 합계가 0이거나 누락·음수이면 미확인입니다.']},
   ema:{params:['데이터','기간'],help:['지수이동평균을 계산할 데이터. 예: 종가.','EMA 기간 · 1~500 정수.']},
   percentile:{params:['데이터','조회 봉 수','백분위 (0~100)'],help:['값을 작은 순서로 정렬한 뒤 해당 위치를 선형 보간합니다. 누락값이 있으면 미확인입니다.','현재 포함 · 1~500 정수. 함수 뒤 [1]은 직전 완성봉부터 조회합니다.','5와 95 사이가 과거 차이값 분포의 중앙 약 90%입니다. 미래 포함 확률이나 최근 실제 가격 전체의 포함률은 아닙니다.']},
   nw:{params:['데이터','계산 봉 수','Bandwidth'],help:['가우시안 NW 중심선. 예: 하이킨종가. 현재·과거 봉만 사용하며 기본 NW 지표의 Gaussian 중심선과 같습니다.','현재 봉 포함 · 2~500 정수. 전체 창이 준비된 뒤부터 계산합니다.','곡선 부드러움 · 0.1~300. 클수록 부드럽고 반응이 느립니다. 예: 8. ATR 배수와는 다릅니다.']},
@@ -44,22 +46,22 @@ export function signatureAt(source,caret){
   return {...definition,name:call.name,argument:call.arg};
 }
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function installSignatureHelp(textarea,popup){
-  let dismissed=false;const controller=new AbortController();
-  const listen=(element,event,handler,options={})=>element.addEventListener(event,handler,{...options,signal:controller.signal});
-  function hide(){popup.hidden=true;textarea.setAttribute('aria-describedby','formula-syntax-note');}
+export function installSignatureHelp(textarea,popup,options={}){
+  let dismissed=false;const controller=new AbortController(),originalDescription=textarea.getAttribute('aria-describedby');
+  const listen=(element,event,handler,options={})=>element?.addEventListener(event,handler,{...options,signal:controller.signal});
+  function hide(){popup.hidden=true;if(originalDescription)textarea.setAttribute('aria-describedby',originalDescription);else textarea.removeAttribute('aria-describedby');}
   function update(reset=false){
     if(reset)dismissed=false;
     const help=signatureAt(textarea.value,textarea.selectionStart);
     if(document.activeElement!==textarea||dismissed||!help){hide();return;}
-    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.position?'현재 보유분 기준 · @봉주기·[1]로 과거 손익이 되지 않습니다.':help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
-    popup.hidden=false;textarea.setAttribute('aria-describedby','formula-signature');
+    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.position?'현재 보유분 기준 · @봉주기·[1]로 과거 손익이 되지 않습니다.':help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':options.chart?'현재 차트 봉 주기 · 직전 봉: [1]':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
+    popup.hidden=false;textarea.setAttribute('aria-describedby',popup.id);
     const mirror=document.createElement('div'),style=getComputedStyle(textarea);
     for(const key of ['font','lineHeight','letterSpacing','padding','border','boxSizing','wordBreak','overflowWrap','tabSize'])mirror.style[key]=style[key];
     Object.assign(mirror.style,{position:'fixed',visibility:'hidden',whiteSpace:'pre-wrap',width:textarea.clientWidth+'px',height:'auto'});
     mirror.textContent=textarea.value.slice(0,textarea.selectionStart);const marker=document.createElement('span');marker.textContent='\u200b';mirror.append(marker);document.body.append(mirror);
     const rect=textarea.getBoundingClientRect(),lineHeight=parseFloat(style.lineHeight),caretTop=rect.top+marker.offsetTop-textarea.scrollTop;
-    const boundary=textarea.closest('dialog').getBoundingClientRect(),viewportWidth=document.documentElement.clientWidth;
+    const boundary=(textarea.closest('dialog')||textarea.parentElement).getBoundingClientRect(),viewportWidth=document.documentElement.clientWidth;
     const width=Math.min(430,rect.width-12,boundary.width-24,viewportWidth-24);popup.style.width=width+'px';
     const left=Math.max(12,boundary.left+12,Math.min(rect.left+marker.offsetLeft-textarea.scrollLeft,Math.min(viewportWidth,boundary.right)-width-12));
     let top=caretTop+lineHeight+6;
@@ -70,5 +72,6 @@ export function installSignatureHelp(textarea,popup){
   listen(textarea,'input',()=>update(true));listen(textarea,'click',()=>update(true));listen(textarea,'keyup',event=>{if(event.key!=='Escape')update();});listen(textarea,'focus',()=>update(true));listen(textarea,'blur',hide);listen(textarea,'scroll',()=>update());
   listen(textarea,'keydown',event=>{if(event.key==='Escape'&&!popup.hidden){event.preventDefault();event.stopPropagation();dismissed=true;hide();}if(event.ctrlKey&&event.shiftKey&&event.code==='Space'){event.preventDefault();update(true);}});
   listen(textarea.closest('.editor-body'),'scroll',hide,{passive:true});listen(window,'resize',hide);
-  return {update,hide,dispose(){hide();controller.abort();}};
+  const completion=installFormulaCompletion(textarea,{...options,onShow(){hide();}});
+  return {update,hide(){hide();completion.hide();},dispose(){hide();completion.dispose();controller.abort();}};
 }

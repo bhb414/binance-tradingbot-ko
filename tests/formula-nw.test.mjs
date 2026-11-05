@@ -70,7 +70,7 @@ test('kernel calculation is bounded, caches nested histories and only calculates
 
 test('saved custom formulas preserve expressions and editor examples explain Gaussian NW versus ATR width',async()=>{
  const source='NW(하이킨종가, 100, 8) + ATR(14) * 1.5',study=make('FORMULA',{name:'NW ATR 상단',placement:'overlay',formula:source}),saved=decodeStudies(JSON.stringify({version:1,timeframeVersion:2,studies:[study]}));assert.equal(saved.studies[0].params.formula,source);assert.equal(formulaStudyResult(source,rows).ok,true);
- assert.match(formulaEditorMarkup({formula:''}),/NW · 가우시안 중심선/);for(const example of formulaExamples)assert.doesNotThrow(()=>formulaTimeframes(example.value));
+ assert.match(formulaEditorMarkup({formula:''}),/value="NW\(\)"/);for(const example of formulaExamples)assert.doesNotThrow(()=>formulaTimeframes(example.value));
  const text='NW(하이킨종가, 100, ';const help=signatureAt(text,text.length);assert.equal(help.argument,2);assert.match(help.help[2],/Bandwidth|부드러움/);
  const ui=await fs.readFile(new URL('../public/study-ui.js',import.meta.url),'utf8');assert.ok(ui.includes(source));assert.ok(ui.includes(source.replace(' + ',' - ')));
 });
