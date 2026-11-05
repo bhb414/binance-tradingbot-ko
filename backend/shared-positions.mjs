@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {isTemporary} from './binance-rate.mjs';
+import {sharedQuantityPending,reconcileConfirmedSharedFees} from './confirmed-shared-fees.mjs';
 const terminal=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MATCH','FINISHED']);
 const number=v=>Number(v||0),near=(a,b)=>Math.abs(a-b)<=Math.max(1e-8,Math.abs(b)*1e-8);
 const fields=['quantity','entryPrice','entries','realized','lastEntryAt','lastExitAt','positionEpoch','direction'];
@@ -67,8 +68,10 @@ export class SharedPositions{
  }
  async accepted(b,o,data){
   const q=number(data.executedQty),quote=number(data.cumQuote||data.cumQuoteQty)||q*number(data.avgPrice);if(q+1e-12<o.appliedQty)throw Error('주문 누적 체결 수량이 감소했습니다.');
-  o.orderId=data.orderId||o.orderId;o.status=data.status||o.status;o.sharedManaged=true;o.sharedPending=q>number(o.sharedRecordedQty);o.appliedQty=q;o.appliedQuote=quote;o.feesFetched=!o.sharedPending;
+  const confirmed=o.feesFetched&&!o.sharedPending&&!sharedQuantityPending(q,number(o.appliedQty))&&!sharedQuantityPending(number(o.appliedQty),q);
+  o.orderId=data.orderId||o.orderId;o.status=data.status||o.status;o.sharedManaged=true;o.sharedPending=sharedQuantityPending(q,number(o.sharedRecordedQty));o.appliedQty=q;o.appliedQuote=quote;o.feesFetched=q===0||confirmed&&!o.sharedPending;if(q>0&&!o.sharedPending&&!o.feesFetched)reconcileConfirmedSharedFees(this.e.state,o);
   try{await this.sync(o.parameters.symbol,{force:o.sharedPending});}catch(error){if(!isTemporary(error))throw error;this.e.defer(error);}
+  if(q>0&&!o.feesFetched)reconcileConfirmedSharedFees(this.e.state,o);
  }
  watched(book){const e=this.e,symbol=book.symbol;return book.pending||this.exposure(symbol)||Object.values(book.members).some(p=>p.quantity>1e-10)||Object.values(book.manual).some(p=>p.quantity>1e-10)||e.state.bots.some(b=>b.symbol===symbol&&(b.runtime.runEnabled||b.runtime.quantity||b.runtime.syncHold))||e.state.orders.some(o=>o.scope===e.state.scope&&o.parameters.symbol===symbol&&(!terminal.has(o.status)||o.parameters.type==='LIMIT'&&!o.fallbackDone&&['CANCELED','EXPIRED'].includes(o.status)&&(o.orderPolicy?.remainder||'cancel')==='market'));}
  async syncAll({beforeEach=async()=>{}}={}){for(const book of Object.values(this.books).filter(b=>b.scope===this.e.state.scope)){await beforeEach();await this.sync(book.symbol);}}

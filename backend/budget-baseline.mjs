@@ -25,7 +25,7 @@ export class BudgetBaselines{
   }
   this.checkOrders(members);
   if(members.some(b=>b.runtime.syncHold||e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))throw Error('포지션·체결 원장을 대조 중입니다. 확인이 끝난 뒤 다시 시도하세요.');
-  if(members.some(b=>e.ownOrders(b).some(o=>o.appliedQty>0&&!o.feesFetched)))throw Error('체결 수수료 확인이 끝난 뒤 재설정하세요.');
+  const pending=members.flatMap(b=>e.ownOrders(b)).find(o=>o.appliedQty>0&&!o.feesFetched);if(pending)throw Error(pending.parameters.symbol+' · 주문 '+(pending.orderId||pending.id)+'의 체결 수수료 확인이 끝난 뒤 재설정하세요.');
   const view=e.budgetSelection.view(root),realized=Number(view.runtime.realized)||0,before=effectiveBudget(view),after=e.budgetLimit({...view,runtime:{...view.runtime,budgetBaseline:{realized,withheld:view.runtime.budgetWithheld||0}}}),other=e.allocatedBudget(root.id),wallet=e.accountSnapshot?.walletBalance;
   if(!Number.isFinite(wallet))throw Error('선물지갑 잔고를 확인하지 못했습니다.');
   const increase=budgetIncluded(root)&&after>before+1e-8,allowed=root.budgetShortfall==='available'||!increase||other+after<=wallet+1e-8,warnings=[],running=!!root.runtime.runEnabled||members.some(b=>b.runtime.runEnabled),held=members.some(b=>b.runtime.quantity>0);

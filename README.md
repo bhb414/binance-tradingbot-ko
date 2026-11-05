@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.38](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.38/binance-tradingbot-ko-v0.4.38-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.39](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.39/binance-tradingbot-ko-v0.4.39-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,10 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 과거 체결의 수수료 확인
+
+봇의 담당 종목을 변경해도 과거 주문은 원래 종목으로 조회합니다. 공유 체결 수량의 미세한 소수점 차이가 수수료 미확인으로 남지 않도록 처리하며, 이미 저장된 배정 체결·수수료가 모두 일치하는 경우 확인 표시만 복구합니다. 매매 손익·체결·수수료를 중복 반영하지 않습니다. 실제 수수료가 누락돼 예산 손익 기준 재설정을 보류할 때는 해당 종목과 주문 번호를 표시합니다.
 
 ## 미체결 주문 기한
 

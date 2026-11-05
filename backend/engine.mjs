@@ -15,6 +15,7 @@ import {PositionReconciliation} from './position-reconciliation.mjs';
 import {SharedPositions} from './shared-positions.mjs';
 import {OrderCancellation} from './order-cancellation.mjs';
 import {OrderDeadlines} from './order-deadlines.mjs';
+import {reconcileConfirmedSharedFees,sharedQuantityPending} from './confirmed-shared-fees.mjs';
 import {ClosePositionFlow,knownOrderSettlement} from './close-position-flow.mjs';
 import {CloseOrderRecovery,pendingMarketRemainder} from './close-order-recovery.mjs';
 import {managementWasEnabled} from './management-state.mjs';
@@ -239,8 +240,9 @@ export class TradingEngine {
   }
   recordBudgetProfit(b,gross){const root=b.multiBotId?this.multi.get(b.multiBotId):b;root.runtime.budgetWithheld=(Number(root.runtime.budgetWithheld)||0)+withheldProfit(root,gross);}
   async applyOrder(b,o,data){
-    if(this.shared.active(o.parameters.symbol)&&o.kind!=='ledger'){await this.shared.accepted(b,o,data);return;}
     const quantity=number(data.executedQty),quote=number(data.cumQuote||data.cumQuoteQty)||(quantity*number(data.avgPrice));
+    if(o.parameters.symbol!==b.symbol&&(sharedQuantityPending(quantity,number(o.appliedQty))||sharedQuantityPending(number(o.appliedQty),quantity)))throw new Error('이전 종목 '+o.parameters.symbol+' 주문의 체결 수량 대조가 필요합니다. 현재 종목 포지션은 변경하지 않았습니다.');
+    if(this.shared.active(o.parameters.symbol)&&o.kind!=='ledger'){await this.shared.accepted(b,o,data);return;}
     if(quantity+1e-12<o.appliedQty)throw new Error('주문 누적 체결 수량이 감소했습니다. 새 진입을 중단합니다.');
     const delta=quantity-o.appliedQty,r=b.runtime,beforeQuantity=r.quantity,beforePrice=r.entryPrice;
     if(delta>1e-12){const value=quote-o.appliedQuote;if(!(value>0))throw new Error('체결 금액을 확인할 수 없습니다.');const fillPrice=value/delta;
@@ -257,13 +259,15 @@ export class TradingEngine {
     o.appliedQty=quantity;o.appliedQuote=quote;o.status=data.status||o.status;o.orderId=data.orderId||o.orderId;
   }
   async refreshOrder(b,o,{includeFees=true}={}){
+    if(includeFees&&reconcileConfirmedSharedFees(this.state,o)&&!active(o))return;
+    const symbol=o.parameters.symbol;
     try{
       if(o.kind==='algo'){
         const data=await this.client.queryAlgo(o.id);o.algoStatus=data.algoStatus;
-        if(data.actualOrderId&&String(data.actualOrderId)!=='0'){o.childOrderId=data.actualOrderId;await this.applyOrder(b,o,await this.client.queryOrder(b.symbol,{orderId:data.actualOrderId}));}
+        if(data.actualOrderId&&String(data.actualOrderId)!=='0'){o.childOrderId=data.actualOrderId;await this.applyOrder(b,o,await this.client.queryOrder(symbol,{orderId:data.actualOrderId}));}
         else o.status=['NEW','TRIGGERING','TRIGGERED'].includes(data.algoStatus)?data.algoStatus==='NEW'?'NEW':'UNKNOWN':data.algoStatus||'UNKNOWN';
-      }else await this.applyOrder(b,o,await this.client.queryOrder(b.symbol,o.id));
-      if(includeFees&&!active(o)&&o.orderId&&!o.feesFetched&&!o.sharedManaged){const fills=await this.client.trades(b.symbol,o.orderId);for(const trade of fills){const legacyKey='fee:'+o.orderId+':'+trade.id,key='fee:'+o.scope+':'+b.symbol+':'+o.orderId+':'+trade.id;if(this.state.fills.some(f=>f.id===key||f.id===legacyKey&&f.scope===o.scope&&f.botId===b.id&&f.symbol===b.symbol))continue;const fee=number(trade.commission);if(trade.commissionAsset==='USDT')b.runtime.realized-=fee;this.state.fills.push({id:key,scope:o.scope,botId:b.id,at:number(trade.time)||this.now(),symbol:b.symbol,fee,feeAsset:trade.commissionAsset,clientOrderId:o.id,orderId:o.orderId,tradeId:trade.id,tradeQuantity:Number(trade.qty)||null,tradePrice:Number(trade.price)||null,positionEpoch:this.state.fills.find(f=>f.scope===o.scope&&f.clientOrderId===o.id&&f.quantity>0)?.positionEpoch??null,leverage:o.leverage||null,direction:o.direction});}o.feesFetched=true;}
+      }else await this.applyOrder(b,o,await this.client.queryOrder(symbol,o.id));
+      if(includeFees&&!active(o)&&o.orderId&&!o.feesFetched&&!o.sharedManaged){const fills=await this.client.trades(symbol,o.orderId);for(const trade of fills){const legacyKey='fee:'+o.orderId+':'+trade.id,key='fee:'+o.scope+':'+symbol+':'+o.orderId+':'+trade.id;if(this.state.fills.some(f=>f.id===key||f.id===legacyKey&&f.scope===o.scope&&f.botId===b.id&&f.symbol===symbol))continue;const fee=number(trade.commission);if(trade.commissionAsset==='USDT')b.runtime.realized-=fee;this.state.fills.push({id:key,scope:o.scope,botId:b.id,at:number(trade.time)||this.now(),symbol,fee,feeAsset:trade.commissionAsset,clientOrderId:o.id,orderId:o.orderId,tradeId:trade.id,tradeQuantity:Number(trade.qty)||null,tradePrice:Number(trade.price)||null,positionEpoch:this.state.fills.find(f=>f.scope===o.scope&&f.clientOrderId===o.id&&f.quantity>0)?.positionEpoch??null,leverage:o.leverage||null,direction:o.direction});}o.feesFetched=true;}
     }catch(error){if([-2013,-2011,-4143].includes(error.code)){o.lastQueryError=error.code;if(o.status==='UNKNOWN'&&!knownOrderSettlement(o))b.runtime.error='주문 접수 여부가 아직 확인되지 않았습니다. 중복 전송하지 않고 조회를 계속합니다.';}else throw error;}
   }
   async cancelStandard(b,o,abortRemainder=false){this.storage.healthy();if(abortRemainder){o.fallbackDone=true;await this.checkpoint();}try{o.timing||={};o.timing.cancelRequestedAt||=this.now();const result=await this.client.cancelOrder(b.symbol,o.id);await this.applyOrder(b,o,result);if(o.status==='CANCELED')o.timing.cancelConfirmedAt||=this.now();}catch(error){if(![-2011,-2013].includes(error.code)&&!error.uncertain)throw error;}await this.refreshOrder(b,o);if(o.status==='CANCELED'){o.timing||={};o.timing.cancelConfirmedAt||=this.now();}await this.checkpoint();}
