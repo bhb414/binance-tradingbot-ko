@@ -111,7 +111,7 @@ export class MultiBots{
     const market=await e.market(b.symbol,item.interval),info=await e.symbolInfo(b.symbol),view=e.orderView(b,item.rule,actionDirection(item.rule.action)),usage=e.decorate(b);
     if(usage.used+usage.reserved>=b.budget){e.blockEntry(b,item.rule,new EntryCapacityError('no-margin',{remainingBudget:0}));blocked=true;break;}
     const limits=await e.leverageLimits(b.symbol);if(view.leverage>leverageCap(limits,b.budget))throw Error(b.name+' · 레버리지 한도 초과');
-    try{const plan=entryOrder(view,info,{...market.book,lastPrice:market.ticker.lastPrice},Infinity,e.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),e.hedge);required+=plan.margin;}
+    try{const plan=entryOrder(view,info,await e.entryBook(b.symbol,market),Infinity,e.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),e.hedge);required+=plan.entryCost?.required??plan.margin;}
     catch(error){if(!isEntryCapacityError(error))throw error;e.blockEntry(b,item.rule,error);blocked=true;break;}
    }
    if(blocked){p.runtime.lastEvaluation.blocked='최소 주문 기준 또는 잔여 예산 대기';continue;}
