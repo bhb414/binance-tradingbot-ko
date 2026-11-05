@@ -244,6 +244,7 @@
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
     'ema': 'ema', '지수이평': 'ema', 'rsi': 'rsi',
     'vwma':'vwma', '거래량가중이평':'vwma', '거래량가중이동평균':'vwma',
+    'nextbar':'nextBar', '다음봉':'nextBar', '가정봉':'nextBar',
     'nw':'nw', '나다라야왓슨':'nw', 'nadarayawatson':'nw',
     '봉': 'frame', 'frame': 'frame',
     'stdev': 'stdev', '표준편차': 'stdev',
@@ -293,15 +294,32 @@
     const name=[...markets][0],value={type:'variable',name:'거래량'};
     return name?{type:'symbol',symbol:name,value}:value;
   }
+  function projectionMarket(source){
+    const markets=new Set();
+    function visit(node){
+      if(node.type==='symbol'){markets.add(node.symbol);return;}
+      if(node.type==='variable'&&calendarConstant(node.name)==null)markets.add('');
+      if(node.type==='call'&&resolveFunction(node.name)==='atr')markets.add('');
+      const children=node.type==='binary'?[node.left,node.right]:node.type==='call'?node.args:node.value&&typeof node.value==='object'?[node.value]:[];children.forEach(visit);
+    }
+    visit(source);if(markets.size>1)throw new FormulaError('다음봉 계산식은 한 종목을 사용하세요. 종목별 다음봉 결과를 함수 밖에서 조합할 수 있습니다',source.position);
+    return [...markets][0]||'';
+  }
+  function hasProjection(node){return node.type==='call'&&resolveFunction(node.name)==='nextBar'||(node.type==='binary'?[node.left,node.right]:node.type==='call'?node.args:node.value&&typeof node.value==='object'?[node.value]:[]).some(hasProjection);}
   function validateAst(node) {
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nextBar: [5,6], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','vwma','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(name==='nextBar'){
+        if(!historicalCondition(node.args[0]))throw new FormulaError('다음봉 계산식에는 봉 데이터 지표·조건을 사용하세요. 현재 시각·포지션의 미래값은 가정하지 않습니다',node.position);
+        if(node.args.some(hasProjection))throw new FormulaError('다음봉은 한 번에 1봉을 가정합니다. 함수 안에 다음봉을 중첩하지 마세요',node.position);
+        projectionMarket(node.args[0]);
       }
       if(name==='vwma'){
         if(!historicalCondition(node.args[0])||node.args[2]&&!historicalCondition(node.args[2]))throw new FormulaError('VWMA에는 봉 데이터와 거래량을 사용하세요. 현재 시간·현재 포지션의 과거 이력은 없습니다',node.position);
@@ -359,6 +377,7 @@
   // mean is stored relative to an observed price to preserve small deviations.
   function rolling(node, context, index, period, mode) {
     if(index<period-1)return null;
+    if(context.projection&&index===context.projection.index+1)return projectedRolling(node,context,index,period,mode);
     const key='rolling:'+expressionKey(node,context)+':'+period;
     if(!context.indicatorCache.has(key)){
       const size=2**Math.ceil(Math.log2(period));
@@ -393,9 +412,86 @@
       const value=cache.anchors[1]+cache.means[1],deviation=Math.sqrt(Math.max(0,cache.moments[1]/period));
       if(finite(value))mean=value;if(finite(deviation))stdev=deviation;
     }
-    cache.values.set(index,{mean,stdev});return cache.values.get(index)[mode];
+    cache.values.set(index,{mean,stdev,anchor:cache.anchors[1],offset:cache.means[1],moment:cache.moments[1]});return cache.values.get(index)[mode];
   }
 
+  function historicalValue(node,context,index){
+    const key='history:'+expressionKey(node,context);
+    if(!context.indicatorCache.has(key))context.indicatorCache.set(key,new Map());
+    const values=context.indicatorCache.get(key);if(!values.has(index))values.set(index,evaluateNode(node,context,index));return values.get(index);
+  }
+  function projectedRolling(node,context,index,period,mode){
+    const key='projected-rolling:'+expressionKey(node,context)+':'+period;
+    if(!context.indicatorCache.has(key)){
+      const current=evaluateNode(node,context,index);let mean=null,stdev=null;
+      if(finite(current)){
+        if(period===1){mean=current;stdev=0;}
+        else{
+          const parent=context.projection.parent,previous=rolling(node,parent,index-1,period-1,'mean'),state=parent.indicatorCache.get('rolling:'+expressionKey(node,parent)+':'+(period-1))?.values.get(index-1);
+          if(finite(previous)&&state){const delta=(current-state.anchor)-state.offset;mean=state.anchor+state.offset+delta/period;stdev=Math.sqrt(Math.max(0,(state.moment+delta*delta*((period-1)/period))/period));}
+        }
+      }
+      context.indicatorCache.set(key,{mean,stdev});
+    }
+    return context.indicatorCache.get(key)[mode];
+  }
+  // A virtual prefix ends at the anchor plus one user-specified candle. Views
+  // never expose the real next candle, even when a historical feed contains it.
+  function projectNextBar(node,context,index){
+    const key='nextbar:'+expressionKey(node,context);
+    if(!context.indicatorCache.has(key))context.indicatorCache.set(key,new Map());
+    const cache=context.indicatorCache.get(key);if(cache.has(index))return cache.get(index);
+    const input=node.args.slice(1).map(arg=>evaluateNode(arg,context,index));
+    if(!input.every(finite)){cache.set(index,null);return null;}
+    const [open,high,low,close,volume=null]=input;
+    if(high<Math.max(open,close)||low>Math.min(open,close)||high<low)throw new FormulaError('다음봉 고가는 시가·종가 이상, 저가는 시가·종가 이하여야 합니다',node.position);
+    if(volume!==null&&volume<0)throw new FormulaError('다음봉 거래량은 0 이상으로 입력하세요',node.position);
+    const market=projectionMarket(node.args[0]),feed=market?context.symbols?.[market]:context.series;
+    if(!feed){cache.set(index,null);return null;}
+    const previousOpen=feed.heikinOpen?.[index],previousClose=feed.heikinClose?.[index],heikinOpen=finite(previousOpen)&&finite(previousClose)?(previousOpen+previousClose)/2:null,heikinClose=(open+high+low+close)/4;
+    const future={open,high,low,close,volume,heikinOpen,heikinClose,heikinHigh:finite(heikinOpen)?Math.max(high,heikinOpen,heikinClose):null,heikinLow:finite(heikinOpen)?Math.min(low,heikinOpen,heikinClose):null};
+    let projected;
+    function view(original,selected){
+      const keys=new Set([...Object.keys(original||{}),...Object.keys(future)]),output={};
+      for(const field of keys){
+        if(!Array.isArray(original?.[field])&&!Object.hasOwn(future,field))continue;
+        const actual=original?.[field]||[];output[field]=new Proxy([],{has(target,property){return typeof property==='string'&&/^\d+$/.test(property)?Number(property)<index+2:Reflect.has(target,property);},get(target,property,receiver){
+          if(property==='length')return index+2;
+          if(typeof property==='string'&&/^\d+$/.test(property)){
+            const at=Number(property);if(at<=index)return actual[at];if(at!==index+1||!selected)return null;
+            if(Object.hasOwn(future,field))return future[field];
+            if(/^sma(5|20|60)$/.test(field))return rolling(market?{type:'symbol',symbol:market,value:{type:'variable',name:'종가'}}:{type:'variable',name:'종가'},projected,index+1,Number(field.slice(3)),'mean');
+            return null;
+          }
+          return Reflect.get(target,property,receiver);
+        }});
+      }
+      return output;
+    }
+    const series=view(context.series,!market);series.symbols=Object.create(null);
+    for(const [name,original]of Object.entries(context.symbols||{}))series.symbols[name]=view(original,name===market);
+    projected=makeContext(series,{length:index+2,maxSteps:context.maxSteps,now:context.now},context.budget);projected.projection={parent:context,index};
+    const value=evaluateNode(node.args[0],projected,index+1);cache.set(index,value);return value;
+  }
+  // Reuse actual historical EMA/RSI state, then apply exactly one assumed step.
+  function projectedSmooth(node,context,index,period,name){
+    const {parent}=context.projection,source=node.args[0],current=evaluateNode(source,context,index),previous=historicalValue(node,parent,index-1);
+    if(!finite(current))return null;
+    if(name==='ema')return finite(previous)?current*(2/(period+1))+previous*(1-2/(period+1)):rolling(source,context,index,period,'mean');
+    const key='rsi:'+JSON.stringify(source)+':'+period,state=parent.indicatorCache.get(key+':state');
+    let gain=state?.gains[index-1],loss=state?.losses[index-1];
+    const before=historicalValue(source,parent,index-1);if(!finite(before))return null;
+    if(finite(previous)&&finite(gain)&&finite(loss)){const delta=current-before;gain=(gain*(period-1)+Math.max(0,delta))/period;loss=(loss*(period-1)+Math.max(0,-delta))/period;}
+    else{
+      if(index<period)return null;gain=0;loss=0;
+      for(let i=index-period+1;i<=index;i++){
+        context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');
+        const a=evaluateNode(source,context,i),b=evaluateNode(source,context,i-1);if(!finite(a)||!finite(b))return null;gain+=Math.max(0,a-b);loss+=Math.max(0,b-a);
+      }
+      gain/=period;loss/=period;
+    }
+    return !gain&&!loss?50:!loss?100:100-100/(1+gain/loss);
+  }
   // Cache only values actually requested. Sliding windows advance in O(1) after
   // their first full window; missing observations never become false events.
   function occurrenceCount(condition,context,index,period,starts){
@@ -458,6 +554,13 @@
   function wilderAtr(context, index, period) {
     const high = context.series.high, low = context.series.low, close = context.series.close;
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
+    if(context.projection&&index===context.projection.index+1){
+      const {parent}=context.projection,previous=wilderAtr(parent,index-1,period),h=high[index],l=low[index],c=close[index],before=parent.series.close?.[index-1];
+      if(![h,l,c].every(finite))return null;
+      const range=finite(before)?Math.max(h-l,Math.abs(h-before),Math.abs(l-before)):h-l;
+      if(finite(previous))return (previous*(period-1)+range)/period;
+      if(index<period-1)return null;let sum=0;for(let i=index-period+1;i<=index;i++){context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');const hi=high[i],lo=low[i],cl=close[i],prev=i&&[high[i-1],low[i-1],close[i-1]].every(finite)?close[i-1]:null;if(![hi,lo,cl].every(finite))return null;sum+=finite(prev)?Math.max(hi-lo,Math.abs(hi-prev),Math.abs(lo-prev)):hi-lo;}return sum/period;
+    }
     const cacheKey = `atr:${period}`;
     if (!context.indicatorCache.has(cacheKey)) {
       const length = Math.min(context.length, high.length, low.length, close.length);
@@ -496,6 +599,7 @@
 
   function evaluateCall(node, context, index) {
     const name = resolveFunction(node.name);
+    if(name==='nextBar')return projectNextBar(node,context,index);
     if(['currentReturn','priceChange','currentPnl','hasPosition'].includes(name))return context.series[name]?.[index]??null;
 
     if(['weekday','clockTime','timeWindow'].includes(name)){
@@ -513,9 +617,10 @@
     if (name === 'ema' || name === 'rsi') {
       const period = readWindowPeriod(node.args[1],context,index,0);
       if (!period) return null;
+      if(context.projection&&index===context.projection.index+1)return projectedSmooth(node,context,index,period,name);
       const cacheKey = `${name}:${JSON.stringify(node.args[0])}:${period}`;
       if (!context.indicatorCache.has(cacheKey)) {
-        const values=Array(context.length).fill(null); let previous=null, average=null, gain=0, loss=0, seed=[];
+        const values=Array(context.length).fill(null),gains=name==='rsi'?Array(context.length).fill(null):[],losses=name==='rsi'?Array(context.length).fill(null):[]; let previous=null, average=null, gain=0, loss=0, seed=[];
         for (let i=0;i<context.length;i++) {
           const value=evaluateNode(node.args[0],context,i);
           if (!finite(value)) { previous=null;average=null;gain=0;loss=0;seed=[];continue; }
@@ -528,10 +633,10 @@
             const delta=value-previous;previous=value;
             if (seed.length<period) { seed.push(delta);gain+=Math.max(0,delta);loss+=Math.max(0,-delta);if(seed.length<period)continue;gain/=period;loss/=period; }
             else { gain=(gain*(period-1)+Math.max(0,delta))/period;loss=(loss*(period-1)+Math.max(0,-delta))/period; }
-            values[i]=gain===0&&loss===0?50:loss===0?100:100-100/(1+gain/loss);
+            gains[i]=gain;losses[i]=loss;values[i]=gain===0&&loss===0?50:loss===0?100:100-100/(1+gain/loss);
           }
         }
-        context.indicatorCache.set(cacheKey,values);
+        context.indicatorCache.set(cacheKey,values);if(name==='rsi')context.indicatorCache.set(cacheKey+':state',{gains,losses});
       }
       return context.indicatorCache.get(cacheKey)[index] ?? null;
     }
@@ -600,6 +705,7 @@
   }
 
   function evaluateNode(node, context, index) {
+    if(context.projection&&index<=context.projection.index)return historicalValue(node,context.projection.parent,index);
     context.steps += 1;
     if (context.steps > context.maxSteps) throw new FormulaError('조건식 계산량이 너무 큽니다');
     if (index < 0 || index >= context.length) return null;
