@@ -1,9 +1,9 @@
+import {automationEnabled} from './bot-stop.mjs';
 import {knownOrderSettlement} from './close-position-flow.mjs';
 import {rememberDeletedBot} from './history-bots.mjs';
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
 import {prepareBudgetPolicy} from '../public/budget-policy.js';
 import {budgetIncluded} from '../public/budget.js';
-import {managementWasEnabled} from './management-state.mjs';
 import {isStorageError} from './storage-recovery.mjs';
 import {makeBot,effectiveBudget} from '../public/core.js';
 import {makeMultiBot,validateMulti,multiAliases,multiAllocations,memberId} from '../public/multi-bot.js';
@@ -19,13 +19,13 @@ export class MultiBots{
  has(id){return this.groups.some(p=>p.id===id);}
  get(id){const p=this.groups.find(p=>p.id===id);if(!p)throw Error('다중종목 봇을 찾을 수 없습니다.');return p;}
  workers(p){return p.legs.map(leg=>this.e.state.bots.find(b=>b.id===memberId(p,leg))).filter(Boolean);}
- init(){this.e.state.multiBots||=[];for(const p of this.groups){p.runtime={...initial(),...p.runtime,managementEnabled:managementWasEnabled(p.runtime)||this.workers(p).some(b=>b.runtime.managementEnabled),runEnabled:false};for(const b of this.workers(p))b.runtime.runEnabled=false;}}
- stopFlags(){for(const p of this.groups){p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;}}
+ init(){this.e.state.multiBots||=[];for(const p of this.groups){p.runtime={...initial(),...p.runtime,managementEnabled:false,runEnabled:false};for(const b of this.workers(p))b.runtime.runEnabled=false;}}
+ stopFlags(){for(const p of this.groups){p.runtime.runEnabled=false;p.runtime.managementEnabled=false;for(const b of this.workers(p)){b.runtime.runEnabled=false;b.runtime.managementEnabled=false;}}}
  realized(p){return this.workers(p).reduce((s,b)=>s+Number(b.runtime.realized||0),Number(p.runtime?.realizedCarry)||0);}
  syncBudgets(p){const allocations=multiAllocations(this.e.budgetView({...p,runtime:{...p.runtime,realized:this.realized(p)}}),this.realized(p));for(const leg of allocations){const b=this.e.state.bots.find(b=>b.id===memberId(p,leg));if(b){b.budget=leg.budget;b.budgetMode='fixed';b.budgetType='amount';b.budgetShortfall=p.budgetShortfall;b.maxEntries=p.maxEntries;b.budgetIncluded=p.budgetIncluded;}}return allocations;}
  view(p){
   const members=this.workers(p).map(b=>({...this.e.decorate(b),alias:b.multiAlias,parentId:p.id})),held=members.filter(b=>b.quantity>0),realized=this.realized(p),used=members.reduce((s,b)=>s+b.used,0),reserved=members.reduce((s,b)=>s+b.reserved,0),pnl=members.reduce((s,b)=>s+b.pnl,Number(p.runtime?.realizedCarry)||0),orders=members.some(b=>this.e.ownOrders(b).some(active));
-  return {...this.e.budgetView({...p,runtime:{...p.runtime,realized}}),statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,quantity:held.length,realized,orderRetry:members.find(b=>b.runtime.orderRetry)?.runtime.orderRetry||null,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:this.e.waiting||p.runtime.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:this.e.budgetLimit({...p,runtime:{...p.runtime,realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:p.runtime.runEnabled||held.length||orders?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
+  return {...this.e.budgetView({...p,runtime:{...p.runtime,realized}}),statsReset:p.statsReset?.scope===this.e.state.scope?p.statsReset:null,kind:'multi',symbol:p.legs.map(l=>l.symbol).join(' / '),members,quantity:held.length,entryPrice:null,positionDirection:'MULTI',leverage:held.length?held.reduce((s,b)=>s+b.leverage,0)/held.length:3,runtime:{...p.runtime,pendingOrderCount:members.reduce((n,b)=>n+(b.runtime.pendingOrderCount||0),0),stopPending:members.find(b=>b.runtime.stopPending)?.runtime.stopPending||null,quantity:held.length,realized,orderRetry:members.find(b=>b.runtime.orderRetry)?.runtime.orderRetry||null,entryBlocked:p.runtime.runEnabled?(members.find(b=>b.runtime.entryBlocked)?.runtime.entryBlocked||null):null,waiting:members.find(b=>b.runtime.stopPending)?.runtime.waiting||this.e.waiting||p.runtime.waiting||members.find(b=>b.runtime.waiting)?.runtime.waiting||null},effectiveBudget:this.e.budgetLimit({...p,runtime:{...p.runtime,realized}}),used,reserved,pnl,fees:members.reduce((s,b)=>s+b.fees,0),costsPending:members.some(b=>b.costsPending),status:automationEnabled(p.runtime)?'running':'paused',entryPaused:!p.runtime.runEnabled,task:held.length?'position':orders?'waiting':'watching',error:p.runtime.error,budgetWarning:members.some(b=>b.used+b.reserved>b.budget+1e-8)?'일부 종목의 사용 증거금이 배정 비중 한도를 초과했습니다. 기존 보유분은 유지하며 새 진입만 제한합니다.':null};
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
@@ -35,16 +35,16 @@ export class MultiBots{
   const errors=validateMulti(p,{symbols,balance:Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));await e.budgetSelection.assertSave(p,old);
   const locked=old&&this.workers(old).some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active));
   if(locked&&(old.margin!==p.margin||JSON.stringify(old.legs.map(l=>[l.alias,l.symbol]))!==JSON.stringify(p.legs.map(l=>[l.alias,l.symbol]))))throw Error('보유·미해결 주문이 있을 때는 종목·별칭·증거금 모드를 바꿀 수 없습니다.');
-  p.statsReset=old?.statsReset||null;p.runtime={...initial(),...old?.runtime,runEnabled:false,cancelEntries:true};if(!budgetIncluded(p))p.runtime.managementEnabled=false;
+  p.statsReset=old?.statsReset||null;p.runtime={...initial(),...old?.runtime,runEnabled:false,managementEnabled:false,cancelEntries:false};if(!budgetIncluded(p))p.runtime.managementEnabled=false;
   const keep=new Set(p.legs.map(leg=>memberId(p,leg)));p.runtime.realizedCarry=(Number(p.runtime.realizedCarry)||0)+e.state.bots.filter(b=>oldIds.has(b.id)&&!keep.has(b.id)).reduce((sum,b)=>sum+Number(b.runtime.realized||0),0);e.state.bots=e.state.bots.filter(b=>!oldIds.has(b.id)||keep.has(b.id));
   for(const leg of p.legs){
    let b=e.state.bots.find(b=>b.id===memberId(p,leg));if(!b){b={...makeBot({id:memberId(p,leg),symbol:leg.symbol,actionRules:[],exit:p.exit}),runtime:{runEnabled:false,quantity:0,entryPrice:0,entries:0,realized:0,lastExitAt:0,lastEntryAt:0,ruleSignals:{},positionEpoch:0,error:null,syncHold:false}};e.state.bots.push(b);}
-   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;b.runtime.orderRetries={};if(!budgetIncluded(p))b.runtime.managementEnabled=false;
+   Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});e.botStop.mark(b);if(!budgetIncluded(p))b.runtime.managementEnabled=false;
    for(const rule of p.actionRules)if(JSON.stringify(old?.actionRules.find(r=>r.id===rule.id))!==JSON.stringify(rule))delete b.runtime.ruleSignals[rule.id];
   }
   if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}prepareBudgetPolicy(p,this.realized(p));this.syncBudgets(p);
   e.note(old?'다중종목 봇 저장':'다중종목 봇 생성',p.name+' · '+p.legs.map(l=>l.symbol+' '+l.weight+'%').join(' / '),p.id);
-  try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}e.positionInsights.cache=null;return this.view(p);
+  try{await e.checkpoint();}catch(error){if(!isStorageError(error))e.store.state=before;throw error;}for(const b of this.workers(p))await e.botStop.advance(b);e.positionInsights.cache=null;return this.view(p);
  }
  async start(id){
   const e=this.e,p=this.get(id);e.requireTrading();if(!budgetIncluded(p))throw Error('보관 중인 봇입니다. 운용으로 이동한 뒤 시작하세요.');if(p.runtime.runEnabled)return this.view(p);const workers=this.workers(p);if(workers.length!==p.legs.length)throw Error('종목별 운용 기록이 누락되었습니다.');
@@ -53,14 +53,14 @@ export class MultiBots{
    for(const rule of p.actionRules.filter(r=>r.enabled))await e.formulaMarkets(p.legs[0].symbol,rule.formula,new Map(),multiAliases(p));
    for(const b of workers)await e.startRuntime(b.id);
    p.runtime.runEnabled=true;p.runtime.managementEnabled=true;p.runtime.stopSignals={};p.runtime.error=null;p.runtime.cancelEntries=false;p.runtime.closeAll=false;for(const b of workers)b.runtime.error=null;
-  }catch(error){if(isStorageError(error)){e.storage.stop(p.id);throw error;}p.runtime.runEnabled=false;for(const b of workers)b.runtime.runEnabled=false;await e.checkpoint();throw error;}
+  }catch(error){if(isStorageError(error)){e.storage.stop(p.id);throw error;}p.runtime.runEnabled=false;p.runtime.managementEnabled=false;for(const b of workers){b.runtime.runEnabled=false;b.runtime.managementEnabled=false;}await e.checkpoint();throw error;}
   e.note('다중종목 감시 시작',p.name,p.id);await e.checkpoint();return this.view(p);
  }
  async cancelEntries(p){if(!this.e.tradingEnabled)return;for(const b of this.workers(p))for(const o of this.e.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.e.cancelStandard(b,o,true);p.runtime.cancelEntries=false;}
- async pause(id){const p=this.get(id);p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.cancelEntries(p);this.e.note('다중종목 신규 진입 중지',p.name+' · 보유 포지션 관리는 계속합니다.',p.id);await this.e.checkpoint();return this.view(p);}
+ async pause(id){const p=this.get(id);p.runtime.runEnabled=false;p.runtime.managementEnabled=false;p.runtime.cancelEntries=false;p.runtime.closeAll=false;for(const b of this.workers(p))this.e.botStop.mark(b);await this.e.checkpoint();for(const b of this.workers(p))await this.e.botStop.advance(b);this.e.note('다중종목 봇 정지',p.name+' · 자동 매매 중지 · 보유 포지션 유지 · 미체결·TP/SL 취소',p.id);await this.e.checkpoint();return this.view(p);}
  async remove(id){const p=this.get(id),workers=this.workers(p);if(workers.some(b=>b.runtime.quantity>0||this.e.ownOrders(b).some(active)))throw Error('보유·미해결 주문이 있으면 삭제할 수 없습니다.');rememberDeletedBot(this.e.state,p,workers,{now:this.e.now(),walletBalance:this.e.accountSnapshot?.walletBalance,availableBalance:this.e.accountSnapshot?.availableBalance});const ids=new Set(workers.map(b=>b.id));this.e.state.bots=this.e.state.bots.filter(b=>!ids.has(b.id));this.e.state.multiBots=this.groups.filter(b=>b.id!==id);await this.e.checkpoint();return {ok:true};}
- async close(id){const p=this.get(id);this.e.requireTrading();p.runtime.closeAll=true;p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.closePending(p);return this.view(p);}
- async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리');}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
+ async close(id){const p=this.get(id);this.e.requireTrading();p.runtime.closeAll=true;p.runtime.runEnabled=false;p.runtime.managementEnabled=false;for(const b of this.workers(p)){b.runtime.runEnabled=false;b.runtime.managementEnabled=false;}await this.e.checkpoint();await this.closePending(p);return this.view(p);}
+ async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리',{userRequested:true});}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
  position(p,rule=null){return rule?portfolioActionFormulaPosition(this.view(p),rule,{account:this.e.liveAccount(),positionMode:this.e.hedge?'HEDGE':'ONE_WAY'}):portfolioFormulaPosition(this.view(p));}
  async evaluate(p,rule,cache){
   const snapshots=await this.e.formulaMarkets(p.legs[0].symbol,rule.formula,cache,multiAliases(p)),result=evaluateRuleFormula(rule.formula,snapshots,this.position(p,rule),{now:this.e.now()+(this.e.client.offset||0)});
@@ -82,7 +82,7 @@ export class MultiBots{
   return outcome;
  }
  async tick(p,{pendingOnly=false}={}){
-  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}if(workers.some(b=>b.runtime.closePending||b.runtime.guardWaiting||b.runtime.closeRecovery))return;
+  const e=this.e,workers=this.workers(p);this.syncBudgets(p);if(!budgetIncluded(p)||!e.tradingEnabled)return;if(p.runtime.cancelEntries)await this.cancelEntries(p);if(p.runtime.closeAll){await this.closePending(p);return;}if(!automationEnabled(p.runtime)||workers.some(b=>b.runtime.stopPending))return;if(workers.some(b=>b.runtime.closePending||b.runtime.guardWaiting||b.runtime.closeRecovery))return;
   const accountManagement=p.runtime.managementEnabled&&p.actionRules.some(rule=>rule.enabled&&rule.targets?.some(t=>t.enabled&&t.closeScope==='account'&&!isEntry(t.action)&&e.rulePosition(workers.find(b=>b.multiAlias===t.alias),t).quantity>0));
   if(!p.runtime.runEnabled&&!accountManagement&&!workers.some(b=>b.runtime.quantity>0||e.ownOrders(b).some(active)))return;
   if(workers.some(b=>e.shared.active(b.symbol)&&e.shared.book(b.symbol).pending))return;

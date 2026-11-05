@@ -16,7 +16,7 @@ test('bot-attributed manual orders update the stopped bot ledger, fees and budge
   const filled=await engine.serial(()=>engine.manual.submit(first.id));assert.equal(filled.status,'FILLED');assert.equal(filled.botId,bot.id);
   const runtime=engine.bot(bot.id).runtime;assert.equal(runtime.quantity,1);assert.equal(runtime.entries,1);assert.equal(runtime.runEnabled,false);assert.equal(runtime.realized,-.01);assert.equal(runtime.syncHold,false);
   await engine.serial(()=>engine.manual.submit(first.id));assert.equal(exchange.calls.filter(c=>c.method==='place').length,1);
-  await assert.rejects(()=>engine.serial(()=>engine.manual.preview(input)),/정지는 신규 진입만/);
+  await assert.rejects(()=>engine.serial(()=>engine.manual.preview(input)),/보유분·주문이 남아/);
   await assert.rejects(()=>engine.serial(()=>engine.manual.preview({...input,botId:bot.id,amount:'3'})),/운용예산/);
   await assert.rejects(()=>engine.serial(()=>engine.manual.preview({...input,botId:bot.id,direction:'SHORT'})),/반대 방향/);
   const close=await engine.serial(()=>engine.manual.preview({...input,botId:bot.id,action:'CLOSE',type:'MARKET',amount:'.5'.replace(/^\./,'0.')}));

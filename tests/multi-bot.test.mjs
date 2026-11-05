@@ -65,9 +65,9 @@ test('unknown multi-symbol order acceptance is queried without resending and sta
  const store={state:structuredClone(h.store.state),async load(){},async save(){}},restored=await new TradingEngine(store,{now:()=>h.x.now,clientFactory:()=>h.client}).init();await restored.connect({environment:'testnet',apiKey:'fabricated-multi-key',secret:'fabricated-multi-secret',allowTrading:true});await restored.tick();assert.equal(h.x.calls.length,2);assert.equal(restored.snapshot().bots[0].runtime.runEnabled,false);
 });
 
-test('stopping new entries preserves independently managed exits, and STOP can fire again after explicit start',async()=>{
+test('stopping a multi bot suspends every leg exit, and STOP can fire again after explicit start',async()=>{
  const h=await harness(),p=config();p.actionRules.push(multiRule(p.legs,{formula:'(A.종가 < 90)@1h',targets:[multiTarget('A',{action:'CLOSE_ALL',sizePercent:100})]}));
- await h.engine.saveBot(p);await h.engine.startBot(p.id);await h.engine.tick();await h.engine.pauseBot(p.id);h.x.prices.BTCUSDT=80;await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,0);assert.ok(h.x.quantities.ETHUSDT<0);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,false);
+ await h.engine.saveBot(p);await h.engine.startBot(p.id);await h.engine.tick();await h.engine.pauseBot(p.id);const held=h.x.quantities.BTCUSDT;h.x.prices.BTCUSDT=80;await h.engine.tick();assert.equal(h.x.quantities.BTCUSDT,held);assert.ok(h.engine.multi.workers(h.engine.multi.get(p.id)).every(b=>!b.runtime.managementEnabled));assert.ok(h.x.quantities.ETHUSDT<0);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,false);
  const stop=multiRule(p.legs,{action:'STOP_BOT',formula:'TRUE@1h'}),next={...p,actionRules:[stop]};await h.engine.saveBot(next);for(let i=0;i<2;i++){await h.engine.startBot(p.id);await h.engine.tick();assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,false);}
 });
 test('opposing entry signals for the same symbol are held without blocking other symbols',async()=>{
@@ -84,11 +84,11 @@ test('temporary cross-symbol data errors preserve the group start state and reco
  const h=await harness(),p=await h.engine.saveBot(config());await h.engine.startBot(p.id);const market=h.engine.market.bind(h.engine);let fail=true;h.engine.market=async(s,tf)=>{if(s==='ETHUSDT'&&fail)throw Object.assign(Error('temporary feed'),{temporary:true,retryAt:h.x.now+3000});return market(s,tf);};
  await h.engine.tick();assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,true);assert.equal(h.x.calls.length,0);h.x.now+=4000;fail=false;await h.engine.tick();assert.equal(h.x.calls.length,2);
 });
-test('saved weights and budget modes split the effective group capital; exposed symbols stay locked and failed saves roll back',async()=>{
+test('saved weights and budget modes split the effective group capital; exposed symbols stay locked and failed saves preserve prior config while remaining stopped',async()=>{
  const h=await harness(),p=config({budgetMode:'pnl'});await h.engine.saveBot(p);const workers=h.engine.multi.workers(h.engine.multi.get(p.id));workers[0].runtime.realized=-100;h.engine.multi.syncBudgets(h.engine.multi.get(p.id));assert.deepEqual(workers.map(b=>b.budget),[540,360]);
  await h.engine.startBot(p.id);await h.engine.tick();const changed={...p,legs:p.legs.map((l,i)=>({...l,weight:i?70:30}))};await h.engine.saveBot(changed);assert.equal(h.engine.snapshot().bots[0].runtime.runEnabled,false);assert.ok(Math.abs(h.engine.snapshot().bots[0].members[0].budget-270)<1e-8);
  await assert.rejects(()=>h.engine.saveBot({...changed,legs:[{...changed.legs[0],symbol:'SOLUSDT'},changed.legs[1]]}),/보유/);
- const before=structuredClone(h.store.state);h.store.save=async()=>{throw Error('disk full');};await assert.rejects(()=>h.engine.saveBot({...changed,budget:700}),/원장 저장/);assert.deepEqual(h.store.state,before);
+ const before=structuredClone(h.store.state);h.store.save=async()=>{throw Error('disk full');};await assert.rejects(()=>h.engine.saveBot({...changed,budget:700}),/원장 저장/);assert.equal(h.engine.multi.get(p.id).budget,before.multiBots[0].budget);assert.deepEqual(h.engine.multi.get(p.id).legs,before.multiBots[0].legs);assert.ok(h.engine.multi.workers(h.engine.multi.get(p.id)).every((b,i)=>b.runtime.quantity===before.bots[i].runtime.quantity&&!b.runtime.runEnabled&&!b.runtime.managementEnabled));assert.equal(h.engine.multi.get(p.id).runtime.runEnabled,false);assert.equal(h.engine.multi.get(p.id).runtime.managementEnabled,false);
 });
 test('cross-symbol historical expressions keep gap boundaries, Korean indicators and numeric instrument names',()=>{
  const rows=[1,2,3,4].map(i=>({time:i*3600,closeTime:(i+1)*3600000-1,open:i,high:i,low:i,close:i,volume:1})),a={serverNow:5*3600000-1,candles:rows},b={...a,candles:rows.filter((_,i)=>i!==2)};

@@ -6,18 +6,18 @@ const terminal=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MAT
 const reasons={EPERM:'파일 교체 권한 또는 잠금',EACCES:'파일 접근 권한 또는 잠금',EBUSY:'다른 프로그램이 파일 사용 중',ENOSPC:'디스크 공간 부족',EIO:'디스크 입출력 오류',EROFS:'읽기 전용 디스크',EDQUOT:'디스크 할당량 초과',EMFILE:'열린 파일 한도 초과',ENFILE:'시스템 파일 한도 초과',ETIMEDOUT:'디스크 응답 지연',EVERIFY:'저장 파일 대조 실패'};
 export const isStorageError=error=>error?.storage===true;
 export class StorageRecovery{
- constructor(engine){this.e=engine;this.durable=null;this.binding=null;this.fault=null;this.events=[];this.stops=new Map();this.off=false;this.checking=false;this.lastAttempt=0;}
+ constructor(engine){this.e=engine;this.durable=null;this.binding=null;this.fault=null;this.events=[];this.stops=new Map();this.cancellations=new Set();this.off=false;this.checking=false;this.lastAttempt=0;}
  capture(){this.durable=structuredClone(this.e.state);this.bind();}
  bind(){this.binding={scope:this.e.state.scope,connectionId:this.e.connectionId};}
  blocked(){return Object.assign(Error(this.e.writeError||'원장 저장·주문 대조가 끝날 때까지 주문을 보류합니다.'),{storage:true});}
  healthy(){if(this.fault)throw this.blocked();}
  applyStops(){
   if(this.off)this.e.state.orderPermission={scope:this.e.state.scope,enabled:false};
-  for(const b of [...this.e.state.bots,...this.e.multi.groups]){const stop=this.stops.get(b.id);if(stop)Object.assign(b.runtime,stop);if(this.off)b.runtime.runEnabled=false;}
+  for(const b of [...this.e.state.bots,...this.e.multi.groups]){const stop=this.stops.get(b.id);if(stop)Object.assign(b.runtime,stop);if(this.off){b.runtime.runEnabled=false;b.runtime.managementEnabled=false;}}
  }
  rememberStops(){
   if(this.e.state.orderPermission?.enabled===false||this.e.state.orderPermission===null&&this.durable?.orderPermission?.enabled===true)this.off=true;
-  for(const b of [...this.e.state.bots,...this.e.multi.groups]){const old=[...(this.durable?.bots||[]),...(this.durable?.multiBots||[])].find(old=>old.id===b.id);if(old?.runtime.runEnabled&&!b.runtime.runEnabled)this.stops.set(b.id,{runEnabled:false,error:b.runtime.error||null,syncHold:b.runtime.syncHold||false});}
+  for(const b of [...this.e.state.bots,...this.e.multi.groups]){const old=[...(this.durable?.bots||[]),...(this.durable?.multiBots||[])].find(old=>old.id===b.id);if(b.runtime.stopRequestId&&b.runtime.stopRequestId!==old?.runtime.stopRequestId)this.cancellations.add(b.id);if(old&&(old.runtime.runEnabled&&!b.runtime.runEnabled||old.runtime.managementEnabled&&!b.runtime.managementEnabled||b.runtime.stopRequestId!==old.runtime.stopRequestId))this.stops.set(b.id,{runEnabled:false,managementEnabled:b.runtime.managementEnabled,stopRequestId:b.runtime.stopRequestId,stopPending:structuredClone(b.runtime.stopPending||null),...(!b.runtime.managementEnabled?{closePending:null,closeRecovery:null,guardWaiting:false,orderRetries:{}}:{}),error:b.runtime.error||null,syncHold:b.runtime.syncHold||false});}
  }
  rewind(){if(this.durable)this.e.store.state=structuredClone(this.durable);this.applyStops();for(const event of this.events)if(!this.e.state.logs.some(log=>log.id===event.id))this.e.state.logs.unshift(event);this.e.state.logs=this.e.state.logs.slice(0,1000);}
  event(title,message,level='error'){
@@ -43,8 +43,8 @@ export class StorageRecovery{
   if(!this.fault)return false;
   const targets=id?(this.e.multi.has(id)?[this.e.multi.get(id),...this.e.multi.workers(this.e.multi.get(id))]:[this.e.bot(id)]):[...this.e.state.bots,...this.e.multi.groups];
   if(!id){this.off=true;this.e.tradingEnabled=false;this.e.state.orderPermission={scope:this.e.state.scope,enabled:false};}
-  for(const b of targets){this.stops.set(b.id,{runEnabled:false,error:b.runtime.error||null,syncHold:b.runtime.syncHold||false});b.runtime.runEnabled=false;}
-  this.event('저장 대기 중 정지 요청',id?(targets[0].name+' · 신규 진입 정지 · 저장 복구 후 미체결 진입 취소 확인'):'주문 허용 꺼짐 · 저장 복구 후에도 꺼짐 유지','info');return true;
+  for(const b of targets){if(id&&!this.e.multi.has(b.id)){this.e.botStop.mark(b);this.cancellations.add(b.id);}b.runtime.runEnabled=false;b.runtime.managementEnabled=false;if(this.e.multi.has(b.id)){b.runtime.closeAll=false;b.runtime.cancelEntries=false;}this.stops.set(b.id,{runEnabled:false,managementEnabled:false,stopRequestId:b.runtime.stopRequestId,stopPending:structuredClone(b.runtime.stopPending||null),...(!b.runtime.managementEnabled?{closePending:null,closeRecovery:null,guardWaiting:false,orderRetries:{}}:{}),error:b.runtime.error||null,syncHold:b.runtime.syncHold||false});}
+  this.event('저장 대기 중 정지 요청',id?(targets[0].name+' · 봇 정지 · 저장 복구 후 미체결·TP/SL 취소 확인'):'주문 허용 꺼짐 · 저장 복구 후에도 꺼짐 유지','info');return true;
  }
  status(){if(!this.fault)return null;const{resume,...view}=this.fault;return {...view,offRequested:this.off};}
  async reconnectReadOnly(){
@@ -93,8 +93,8 @@ export class StorageRecovery{
    completion=this.event('원장 저장 복구',this.fault.code+' · 저장 파일·거래소 주문·포지션 대조 완료 · '+(restored?'기존 주문 허용 상태 복원':'주문 허용 꺼짐 유지'),'info');
    this.fault.phase='saving';await e.store.save();await e.store.verify?.();this.capture();await this.diagnostic('recovered');
    this.fault=null;this.events=[];e.writeError=null;e.connectionError=null;e.tradingEnabled=!!restored;this.off=false;
-   const stopped=[...this.stops.keys()];this.stops.clear();
-   if(e.tradingEnabled)for(const b of e.state.bots.filter(b=>stopped.includes(b.id)))try{await e.pauseRuntime(b);}catch(error){if(isStorageError(error))throw error;b.runtime.error=e.client.redact?.(error.message)||'정지 후 미체결 확인 필요';e.note('정지 후 미체결 확인',b.name+' · '+b.runtime.error,b.id,'error');}
+   const stopped=[...this.cancellations];this.stops.clear();this.cancellations.clear();
+   if(e.connected)for(const b of e.state.bots.filter(b=>stopped.includes(b.id)))try{await e.pauseRuntime(b);}catch(error){if(isStorageError(error))throw error;b.runtime.error=e.client.redact?.(error.message)||'정지 후 미체결 확인 필요';e.note('정지 후 미체결 확인',b.name+' · '+b.runtime.error,b.id,'error');}
    return true;
   }catch(error){
    if(completion&&this.fault===incident){this.events=this.events.filter(event=>event.id!==completion.id);e.state.logs=e.state.logs.filter(event=>event.id!==completion.id);if(this.durable?.storageHealth)e.state.storageHealth=structuredClone(this.durable.storageHealth);else delete e.state.storageHealth;}

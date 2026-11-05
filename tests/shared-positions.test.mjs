@@ -39,14 +39,14 @@ test('external additions remain manual and external reductions are proportionall
  h.trade('SELL',h.x.quantity,{reduceOnly:true});await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.a.runtime.error,null);assert.equal(h.x.calls.length,2);
 });
 test('bot-scoped close leaves other bots and manual quantities intact',async()=>{
- const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','bot')]});h.a=h.e.bot('a');await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,q);assert.ok(Math.abs(h.x.quantity-q*2)<1e-8);assert.equal(h.b.runtime.error,null);
+ const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','bot')]});h.a=h.e.bot('a');await h.e.startBot('a');await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,q);assert.ok(Math.abs(h.x.quantity-q*2)<1e-8);assert.equal(h.b.runtime.error,null);
 });
 test('account-scoped close closes every bot and manual share of the symbol',async()=>{
- const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','account')]});h.a=h.e.bot('a');await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.x.quantity,0);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);assert.ok(Math.abs(Number(h.x.calls.at(-1).quantity)-q*3)<1e-8);
+ const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','account')]});h.a=h.e.bot('a');await h.e.startBot('a');await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.x.quantity,0);assert.equal(h.b.runtime.runEnabled,true);assert.equal(h.b.runtime.error,null);assert.ok(Math.abs(Number(h.x.calls.at(-1).quantity)-q*3)<1e-8);
 });
 test('a flat bot may close account holdings and native reversal closes bot shares before recording a manual opposite holding',async()=>{
  const h=await twoBots(),q=h.x.quantity;h.trade('SELL',q+1);await h.e.tick();assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.e.shared.book('BTCUSDT').manual.SHORT.quantity,1);assert.equal(h.a.runtime.error,null);assert.equal(h.b.runtime.error,null);
- await h.e.saveBot({...h.a,actionRules:[rule('EXIT_SHORT','account')]});await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.e.shared.book('BTCUSDT').manual.SHORT.quantity,0);
+ await h.e.saveBot({...h.a,actionRules:[rule('EXIT_SHORT','account')]});await h.e.startBot('a');await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.e.shared.book('BTCUSDT').manual.SHORT.quantity,0);
 });
 test('shared history fees sum once across bot allocations and funding weights include the manual share',async()=>{
  const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();const time=h.x.now;assert.ok(Math.abs(h.e.shared.fundingShare('a','BTCUSDT',time)-1/3)<1e-8);
@@ -81,7 +81,7 @@ test('opposite-side bot entries net the same account position and all bots retai
  const h=await harness();for(const [id,action]of [['a','ENTER_LONG'],['b','ENTER_SHORT']])await h.e.saveBot(makeBot({id,name:id,budget:100,maxEntries:1,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule(action)]}));await h.e.startBot('a');await h.e.startBot('b');await h.e.tick();assert.equal(h.e.bot('a').runtime.quantity,0);assert.equal(h.e.bot('b').runtime.quantity,0);assert.equal(h.x.quantity,0);assert.equal(h.e.bot('a').runtime.error,null);assert.equal(h.e.bot('b').runtime.error,null);assert.equal(h.x.calls.length,2);
 });
 
-test('account-scoped rearm detects a new account position cycle without repeating on a partial close',async()=>{const h=await twoBots();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','account')]});await h.e.tick();assert.equal(h.x.quantity,0);const count=h.x.calls.length;h.trade('BUY',1);await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,count+1);assert.equal(h.e.bot('a').runtime.error,null);});
+test('account-scoped rearm detects a new account position cycle without repeating on a partial close',async()=>{const h=await twoBots();await h.e.saveBot({...h.a,actionRules:[rule('EXIT_LONG','account')]});await h.e.startBot('a');await h.e.tick();assert.equal(h.x.quantity,0);const count=h.x.calls.length;h.trade('BUY',1);await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,count+1);assert.equal(h.e.bot('a').runtime.error,null);});
 
 test('single account-scoped current return uses the physical account entry and leverage',async()=>{const h=await twoBots();h.x.price=110;h.x.revision++;await h.e.refreshAccount(true);const b=h.e.bot('a'),p=h.e.rulePosition(b,rule('EXIT_LONG','account'));assert.ok(Math.abs(p.quantity-h.x.quantity)<1e-8);assert.equal(p.entryPrice,h.x.entry);assert.equal(p.leverage,2);});
 
@@ -90,23 +90,23 @@ test('account-scoped limit remainder keeps the same proportional scope on market
  h.client.placeOrder=async p=>{h.x.calls.push({...p});const data=h.trade(p.side,p.type==='LIMIT'?1:Number(p.quantity),{owner:p.newClientOrderId,reduceOnly:p.reduceOnly==='true'});if(p.type==='LIMIT'){Object.assign(data,{status:'PARTIALLY_FILLED',origQty:p.quantity,type:'LIMIT'});Object.assign(h.x.orders.get(data.clientOrderId),data);}return data;};
  h.client.cancelOrder=async(s,id)=>{const data=h.x.orders.get(id);data.status='CANCELED';return {...data};};
  const exit=rule('EXIT_LONG','account');exit.sizePercent=50;exit.order={type:'LIMIT',price:'ask',ticks:0,timeout:1,remainder:'market',postOnly:false};
- await h.e.saveBot({...h.a,actionRules:[exit]});await h.e.tick();h.x.now+=2000;await h.e.tick();
+ await h.e.saveBot({...h.a,actionRules:[exit]});await h.e.startBot('a');await h.e.tick();h.x.now+=2000;await h.e.tick();
  assert.equal(h.x.calls.at(-1).type,'MARKET');assert.equal(h.e.state.orders.filter(o=>o.kind==='standard'&&o.parent).at(-1).closeScope,'account');
  assert.ok(Math.abs(h.e.bot('a').runtime.quantity-q/2)<.002);assert.ok(Math.abs(h.b.runtime.quantity-q/2)<.002);assert.ok(Math.abs(h.e.shared.book('BTCUSDT').manual.LONG.quantity-q/2)<.002);
 });
-test('a paused multi-symbol bot may close an account target without owning that position',async()=>{
+test('a running multi-symbol bot may close an account target without owning that position',async()=>{
  const h=await twoBots(),q=h.a.runtime.quantity;h.trade('BUY',q);await h.e.tick();const original=h.client.exchangeInfo;
  h.client.exchangeInfo=async()=>{const data=await original();return {symbols:[...data.symbols,{...data.symbols[0],symbol:'ETHUSDT',baseAsset:'ETH'}]};};
  const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'B',symbol:'ETHUSDT',weight:50}],targets=[multiTarget('A',{...rule('EXIT_LONG','account'),alias:'A'}),multiTarget('B',{...rule('EXIT_LONG'),alias:'B',enabled:false})];
  await h.e.saveBot(makeMultiBot({id:'multi-account',name:'shared multi',budget:20,legs,margin:'CROSSED',exit:off,actionRules:[multiRule(legs,{formula:'TRUE@1m',targets})]}));
  assert.deepEqual(h.e.multi.get('multi-account').actionRules[0].targets.map(t=>t.closeScope),['account','bot']);
- await h.e.tick();assert.ok(h.x.quantity>0,'saving a new multi manager must not execute exits');await h.e.startBot('multi-account');await h.e.pauseBot('multi-account');await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.e.multi.get('multi-account').runtime.runEnabled,false);assert.equal(h.e.multi.get('multi-account').runtime.error,null);
+ await h.e.tick();assert.ok(h.x.quantity>0,'saving a new multi manager must not execute exits');await h.e.startBot('multi-account');await h.e.tick();assert.equal(h.x.quantity,0);assert.equal(h.a.runtime.quantity,0);assert.equal(h.b.runtime.quantity,0);assert.equal(h.e.multi.get('multi-account').runtime.runEnabled,true);assert.equal(h.e.multi.get('multi-account').runtime.error,null);
 });
 
 test('unstarted account-exit bots and copied settings cannot manage account positions before first start',async()=>{
  const h=await harness();await h.e.saveBot(makeBot({id:'source-exit',name:'source',budget:100,margin:'CROSSED',exit:off,actionRules:[rule('EXIT_LONG','account')]}));h.trade('BUY',1);await h.e.refreshAccount(true);await h.e.tick();
  assert.equal(h.x.calls.length,0,'saving a bot must not activate account exits');assert.equal(h.x.quantity,1);
- await h.e.startBot('source-exit');await h.e.pauseBot('source-exit');await h.e.tick();assert.equal(h.x.quantity,0,'an explicitly started manager continues exits after entry pause');
+ await h.e.startBot('source-exit');await h.e.tick();assert.equal(h.x.quantity,0,'an explicitly running manager executes its exit');
 });
 test('a shared partial limit fill and its market remainder count as one entry',async()=>{
  const h=await harness();
@@ -137,12 +137,12 @@ test('copied account-wide exits remain inactive until the copy itself is started
  assert.equal(h.x.calls.length,0);assert.equal(h.e.bot(copy.id).runtime.managementEnabled,false);assert.equal(h.x.quantity,1);
 });
 
-test('legacy started managers recover management state while newly copied managers remain unarmed',async()=>{
+test('legacy managers and copied managers remain stopped after restart',async()=>{
  const h=await harness();for(const id of ['legacy-manager','never-started'])await h.e.saveBot(makeBot({id,name:id,budget:100,margin:'CROSSED',exit:off,actionRules:[rule('EXIT_LONG','account')]}));
  for(const bot of h.e.state.bots)delete bot.runtime.managementEnabled;h.e.bot('legacy-manager').runtime.lastEvaluation={at:h.x.now,rules:[]};
  const e=await new TradingEngine(h.store,{now:()=>h.x.now,clientFactory:()=>h.client}).init();await e.connect({environment:'testnet',apiKey:'fabricated-shared-key',secret:'fabricated-shared-secret',allowTrading:true});
- assert.equal(e.bot('legacy-manager').runtime.managementEnabled,true);assert.equal(e.bot('never-started').runtime.managementEnabled,false);
- h.trade('BUY',1);await e.refreshAccount(true);await e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,1);
+ assert.equal(e.bot('legacy-manager').runtime.managementEnabled,false);assert.equal(e.bot('never-started').runtime.managementEnabled,false);
+ h.trade('BUY',1);await e.refreshAccount(true);await e.tick();assert.equal(h.x.quantity,1);assert.equal(h.x.calls.length,0);await e.startBot('legacy-manager');await e.tick();assert.equal(h.x.quantity,0);assert.equal(h.x.calls.length,1);
 });
 
 test('saved profiles do not reserve wallet capital and legacy bots remain included',async()=>{

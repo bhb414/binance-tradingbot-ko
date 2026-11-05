@@ -1,3 +1,4 @@
+import {automationEnabled} from './bot-stop.mjs';
 import {isTemporary,isLocalRateLimit} from './binance-rate.mjs';
 import {isStorageError} from './storage-recovery.mjs';
 const eligible=new Set(['NEW','PARTIALLY_FILLED','UNKNOWN','CANCELED','EXPIRED']);
@@ -12,6 +13,7 @@ export class OrderDeadlines{
  candidates(handled=new Set()){
   const e=this.e,rows=[];
   for(const b of e.state.bots){
+   if(!automationEnabled(b.runtime)||b.runtime.stopPending)continue;
    const key=b.multiBotId?'multi:'+b.multiBotId:b.id;if(handled.has(key))continue;
    const deadlines=e.ownOrders(b).map(o=>orderDeadline(o,b)).filter(at=>at!==null);
    if(deadlines.length)rows.push({b,key,at:Math.max(Math.min(...deadlines),(this.checked.get(key)||0)+1000)});

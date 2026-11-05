@@ -7,15 +7,16 @@ const active=o=>!terminal.has(o.status),number=v=>Number(v)||0;
 export class ClosePositionFlow{
  constructor(engine){this.e=engine;}
  recoverLegacy(){for(const b of this.e.state.bots)if(b.runtime.error===LEGACY_CLOSE_WAIT&&!b.runtime.closePending)this.begin(b,'이전 정리 결과 대조',{legacy:true});}
- begin(b,reason,{legacy=false}={}){const r=b.runtime;if(r.closePending)return r.closePending;const intent={id:randomUUID(),at:this.e.now(),retryAt:0,reason,epoch:r.positionEpoch,direction:r.direction,held:r.quantity>0,legacy,orders:this.e.ownOrders(b).filter(active).map(o=>o.id),cancelAt:{}};r.closePending=intent;return intent;}
+ begin(b,reason,{legacy=false,userRequested=false}={}){const r=b.runtime;if(r.closePending)return r.closePending;const intent={id:randomUUID(),at:this.e.now(),retryAt:0,reason,epoch:r.positionEpoch,direction:r.direction,held:r.quantity>0,legacy,userRequested,orders:this.e.ownOrders(b).filter(active).map(o=>o.id),cancelAt:{}};r.closePending=intent;return intent;}
  wait(b){const intent=b.runtime.closePending;b.runtime.waiting={kind:'order-settlement',message:'정리 체결·취소 확인 중 · 확인 후 자동 계속',retryAt:intent.retryAt};return false;}
  async finish(b,{stale=false}={}){const e=this.e,r=b.runtime,intent=r.closePending;for(const o of e.ownOrders(b).filter(o=>intent.orders.includes(o.id)&&o.parameters.type==='LIMIT'))o.fallbackDone=true;if(r.error===LEGACY_CLOSE_WAIT)r.error=null;if(r.waiting?.kind==='order-settlement')r.waiting=null;delete r.closePending;if(!r.quantity){r.guardKey=null;e.clearGuardWait(b);}e.note('정리 결과 대조 완료',b.name+' · '+(stale?'이전 포지션 정리 종료 · 현재 포지션 추가 주문 없음':'보유 수량·미체결 대조 완료 · 중복 청산 없음'),b.id);await e.checkpoint();return true;}
- async request(b,reason){this.e.requireTrading();const existing=!!b.runtime.closePending;this.begin(b,reason);if(!existing)await this.e.checkpoint();return this.advance(b,{force:!existing});}
- async advance(b,{force=false}={}){
+ async request(b,reason,options={}){this.e.requireTrading();if(b.runtime.stopPending)throw Error('정지 주문의 취소·체결 확인 후 정리해 주세요.');const existing=!!b.runtime.closePending;this.begin(b,reason,options);if(!existing)await this.e.checkpoint();return this.advance(b,{force:!existing});}
+ async advance(b,{force=false,readOnly=false}={}){
   const e=this.e,r=b.runtime,intent=r.closePending;if(!intent)return true;if(!e.connected||!force&&e.now()<intent.retryAt)return this.wait(b);intent.retryAt=e.now()+3000;
   const owned=e.ownOrders(b),submitted=owned.filter(o=>o.closeIntentId===intent.id);for(const o of owned.filter(active)){const check=e.orderChecks.get(o);if(!check||e.now()-check.at>=1000||check.revision!==(e.client.accountRevision||0))await e.pollTrackedOrder(o,()=>e.refreshOrder(b,o),{force:true});}
   await e.refreshAccount(true);await e.syncBotPosition(b,true);
   if(r.syncHold)return this.wait(b);
+  if(readOnly){if(!r.quantity&&!e.ownOrders(b).some(active))return this.finish(b);r.waiting={kind:'order-settlement',message:'봇 정지 · 기존 주문 체결 확인 중 · 자동 정리 없음',retryAt:intent.retryAt};return false;}
   if((intent.held||intent.legacy)&&r.positionEpoch!==intent.epoch||intent.held&&r.quantity&&r.direction!==intent.direction){const old=e.ownOrders(b).filter(o=>active(o)&&(intent.orders.includes(o.id)||o.closeIntentId===intent.id));for(const o of old){if(!e.tradingEnabled||o.status==='UNKNOWN'||o.childOrderId||o.parameters.type==='MARKET')continue;if(o.kind==='algo')await e.cancelGuard(b,o);else await e.cancelStandard(b,o,true);}if(old.some(active))return this.wait(b);return this.finish(b,{stale:true});}
   if(intent.legacy){if(!r.quantity&&!e.ownOrders(b).some(active))return this.finish(b);return this.wait(b);}
   if(submitted.some(o=>o.status==='REJECTED'&&!['reduce-only-resolved'].includes(o.errorKind))){if(r.closeRecovery)return this.wait(b);return false;}

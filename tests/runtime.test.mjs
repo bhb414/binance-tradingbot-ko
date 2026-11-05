@@ -52,14 +52,14 @@ test('a persisted order intent precedes transmission, and a steady signal cannot
   const {engine,exchange,store,id}=await harness();exchange.beforeSend=p=>assert.ok(store.saved.at(-1).orders.some(o=>o.id===p.newClientOrderId&&o.status==='UNKNOWN'));
   await engine.startBot(id);await engine.tick();await engine.tick();
   assert.equal(exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(exchange.calls.filter(c=>c.method==='placeAlgo').length,2);assert.ok(engine.bot(id).runtime.quantity>0);assert.equal(engine.bot(id).runtime.entries,1);
-  await engine.pauseBot(id);assert.equal(engine.bot(id).runtime.runEnabled,false);assert.equal(engine.decorate(engine.bot(id)).task,'position');assert.equal(engine.decorate(engine.bot(id)).status,'running');
+  await engine.pauseBot(id);assert.equal(engine.bot(id).runtime.runEnabled,false);assert.equal(engine.decorate(engine.bot(id)).task,'position');assert.equal(engine.decorate(engine.bot(id)).status,'paused');
   assert.ok(!JSON.stringify(store.state).includes('test-secret'));assert.ok(!JSON.stringify(store.state).includes('test-key-1234567890'));
 });
 test('an accepted order with a lost response is queried and recovered without resending, including after restart',async()=>{
   const {engine,exchange,store,id}=await harness();exchange.uncertain=true;await engine.startBot(id);await engine.tick();const intent=store.state.orders.find(o=>o.role==='entry');assert.equal(intent.status,'UNKNOWN');
   const recoveredStore=new MemoryStore(store.state),recovered=await new TradingEngine(recoveredStore,{now:()=>exchange.now,clientFactory:()=>new FakeClient(exchange)}).init();
   await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});exchange.fill(intent.id,Number(intent.parameters.quantity));await recovered.tick();await recovered.tick();
-  assert.equal(exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(recovered.bot(id).runtime.quantity,Number(intent.parameters.quantity));assert.equal(recovered.bot(id).runtime.runEnabled,false);assert.equal(exchange.calls.filter(c=>c.method==='placeAlgo').length,2);
+  assert.equal(exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(recovered.bot(id).runtime.quantity,Number(intent.parameters.quantity));assert.equal(recovered.bot(id).runtime.runEnabled,false);assert.equal(exchange.calls.filter(c=>c.method==='placeAlgo').length,0);
 });
 test('partial LIMIT cancellation converts only the remaining quantity and counts one logical entry',async()=>{
   const {engine,exchange,id}=await harness();const b=engine.bot(id);b.actionRules[0].order={type:'LIMIT',price:'bid',ticks:0,timeout:10,remainder:'market',postOnly:true};await engine.startBot(id);await engine.tick();
@@ -109,21 +109,21 @@ test('single-sided protection reacts only to the enabled TP or SL for both long 
   }
 });
 
-test('saving one disabled protection keeps the other; disabling both cancels owned guards without closing holdings',async()=>{
+test('saving stops and cancels guards; explicit start applies the remaining enabled protection',async()=>{
   const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const quantity=h.exchange.quantity;
-  await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,stopLossEnabled:false}});await h.engine.tick();let active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.equal(active.length,1);assert.equal(active[0].type,'TAKE_PROFIT_MARKET');
+  await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,stopLossEnabled:false}});assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);await h.engine.startBot(h.id);await h.engine.tick();let active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.equal(active.length,1);assert.equal(active[0].type,'TAKE_PROFIT_MARKET');
   await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,takeProfitEnabled:false}});await h.engine.tick();active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.equal(active.length,0);assert.equal(h.exchange.quantity,quantity);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.engine.bot(h.id).runtime.guardKey,null);
 });
 
 test('unconfirmed cancellation is surfaced and retried before declaring protections removed',async()=>{
   const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const cancel=h.engine.client.cancelAlgo.bind(h.engine.client);h.engine.client.cancelAlgo=async()=>({code:200});
   await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,takeProfitEnabled:false,stopLossEnabled:false}});await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.error,null);assert.match(h.engine.bot(h.id).runtime.waiting.message,/취소 확인/);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,2);
-  h.engine.client.cancelAlgo=cancel;await h.engine.tick();assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);assert.equal(h.engine.bot(h.id).runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
+  h.engine.client.cancelAlgo=cancel;h.exchange.now+=3000;await h.engine.tick();assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);assert.equal(h.engine.bot(h.id).runtime.error,null);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
 });
 
-test('disabled protection survives restart and read-only edits do not cancel exchange orders',async()=>{
+test('saving also cancels guards with new-order permission off, and disabled protection survives restart',async()=>{
   const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();h.engine.tradingEnabled=false;const mutations=h.exchange.mutations.length;
-  await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,takeProfitEnabled:false,stopLossEnabled:false}});await h.engine.tick();assert.equal(h.exchange.mutations.length,mutations);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,2);
+  await h.engine.saveBot({...h.engine.bot(h.id),exit:{...h.engine.bot(h.id).exit,takeProfitEnabled:false,stopLossEnabled:false}});await h.engine.tick();assert.equal(h.exchange.mutations.length,mutations+2);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);
   const recovered=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(recovered.bot(h.id).exit.takeProfitEnabled,false);assert.equal(recovered.bot(h.id).exit.stopLossEnabled,false);
   await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:true});await recovered.tick();assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);assert.ok(h.exchange.quantity>0);
 });
@@ -259,11 +259,11 @@ test('stop conditions work without a position and win over a simultaneous entry 
   await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.equal(h.exchange.calls.length,0);
 });
 
-test('stop condition cancels partial entry residual permanently, preserves holdings, and continues protective management',async()=>{
+test('stop condition cancels partial entry residual permanently, preserves holdings, and stops protective management',async()=>{
   const entry=marketRule('ENTER_LONG','TRUE',{order:{type:'LIMIT',price:'bid',ticks:0,timeout:10,remainder:'market',postOnly:true}}),h=await actionHarness([entry,marketRule('STOP_BOT','종가 > 100')]);
   await h.engine.startBot(h.id);await h.engine.tick();const b=h.engine.bot(h.id),order=h.engine.ownOrders(b).find(o=>o.role==='entry');h.exchange.fill(order.id,1);h.exchange.signalClose=101;h.exchange.now+=15000;await h.engine.tick();
   assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.quantity,1);assert.equal(order.status,'CANCELED');assert.equal(order.fallbackDone,true);
-  await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,2);
+  await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);
   h.exchange.signalClose=100;await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
 });
 
@@ -308,7 +308,7 @@ test('import supports TradFi and selects a hedge side without adopting or closin
 
 test('held bot budgets remain editable below current margin; exchange mode and leverage stay locked',async()=>{
   const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const b=h.engine.bot(h.id),held=b.runtime.quantity,mutations=h.exchange.mutations.length;
-  const saved=await h.engine.saveBot({...b,budget:10});assert.equal(saved.budget,10);assert.equal(saved.quantity,held);assert.ok(saved.budgetWarning);assert.equal(saved.runtime.runEnabled,false);assert.equal(h.exchange.mutations.length,mutations);
+  const saved=await h.engine.saveBot({...b,budget:10});assert.equal(saved.budget,10);assert.equal(saved.quantity,held);assert.ok(saved.budgetWarning);assert.equal(saved.runtime.runEnabled,false);assert.equal(saved.runtime.managementEnabled,false);assert.equal(h.exchange.mutations.length,mutations+2);
   await assert.rejects(()=>h.engine.saveBot({...h.engine.bot(h.id),leverage:4}),/변경할 수 없습니다/);await assert.rejects(()=>h.engine.saveBot({...h.engine.bot(h.id),margin:'CROSSED'}),/변경할 수 없습니다/);
   await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.engine.bot(h.id).runtime.quantity,held);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);
 });
@@ -491,19 +491,19 @@ test('leveraged software protection closes only at the requested return for each
   price=100+sign*.6;await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);
  }
 });
-test('explicit price basis preserves live guards; changing the basis replaces only owned guards and persists after restart',async()=>{
+test('saved price basis applies guards only after explicit start and persists after restart',async()=>{
  const h=await actionHarness([marketRule('ENTER_LONG','TRUE',{leverage:20})]),b=h.engine.bot(h.id);delete b.exit.basis;await h.engine.startBot(h.id);await h.engine.tick();const before=h.exchange.calls.filter(c=>c.method==='placeAlgo').length,qty=h.exchange.quantity;
  await h.engine.saveBot({...h.engine.bot(h.id),exit:{...b.exit,basis:'price'}});await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,before);
- await h.engine.saveBot({...h.engine.bot(h.id),exit:{...b.exit,basis:'leveraged',takeProfit:10,stopLoss:10}});await h.engine.tick();
+ await h.engine.saveBot({...h.engine.bot(h.id),exit:{...b.exit,basis:'leveraged',takeProfit:10,stopLoss:10}});await h.engine.startBot(h.id);await h.engine.tick();
  const active=[...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW');assert.deepEqual(active.map(o=>o.triggerPrice).sort(),['100.5','99.5']);assert.equal(h.exchange.quantity,qty);
  const restored=await new TradingEngine(new MemoryStore(h.store.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();assert.equal(restored.bot(h.id).exit.basis,'leveraged');assert.equal(restored.bot(h.id).runtime.runEnabled,false);
 });
 
-test('calendar entry windows and scheduled exits use the live engine clock while paused positions stay managed',async()=>{
+test('calendar exits wait for explicit restart when the bot is stopped',async()=>{
  const entry=marketRule('ENTER_LONG','TRUE',{formula:'요일() = 월요일 AND 시간범위(900, 1000)'}),exit=marketRule('EXIT_LONG','TRUE',{formula:'시각() >= 901'}),h=await actionHarness([entry,exit]);
  h.exchange.now=Date.parse('2026-01-04T23:59:59Z');await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.quantity,0);
  h.exchange.now=Date.parse('2026-01-05T00:00:00Z');await h.engine.tick();assert.ok(h.exchange.quantity>0);
- await h.engine.pauseBot(h.id);h.exchange.now=Date.parse('2026-01-05T00:01:00Z');await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);
+ await h.engine.pauseBot(h.id);const held=h.exchange.quantity;h.exchange.now=Date.parse('2026-01-05T00:01:00Z');await h.engine.tick();assert.equal(h.exchange.quantity,held);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.quantity,0);
 });
 
 test('single-bot calendar evaluates current clock instead of a reused snapshot time',async()=>{
@@ -759,8 +759,8 @@ test('a definite reduce-only rejection after a protective fill reconciles withou
 test('a reduce-only rejection with remaining holdings waits for reconciliation then retains a real error',async()=>{
  const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]),b=h.engine.bot(h.id);await h.engine.startBot(h.id);await h.engine.tick();rejectClose(h);h.exchange.signalClose=101;await h.engine.tick();assert.equal(b.runtime.runEnabled,true);assert.ok(b.runtime.closeRecovery);await h.engine.tick();assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);h.exchange.now+=16000;await h.engine.tick();assert.equal(b.runtime.runEnabled,false);assert.match(b.runtime.error,/ReduceOnly/);assert.ok(b.runtime.quantity>0);
 });
-test('a user pause during reduce-only reconciliation is preserved after a later protective fill',async()=>{
- const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]),b=h.engine.bot(h.id);await h.engine.startBot(h.id);await h.engine.tick();rejectClose(h);h.exchange.signalClose=101;await h.engine.tick();await h.engine.pauseBot(h.id);raceProtectiveFill(h);h.exchange.now+=4000;await h.engine.tick();assert.equal(b.runtime.quantity,0);assert.equal(b.runtime.error,null);assert.equal(b.runtime.runEnabled,false);
+test('a user stop aborts reduce-only recovery and removes untriggered guards',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]),b=h.engine.bot(h.id);await h.engine.startBot(h.id);await h.engine.tick();rejectClose(h);h.exchange.signalClose=101;await h.engine.tick();const held=b.runtime.quantity;await h.engine.pauseBot(h.id);raceProtectiveFill(h);h.exchange.now+=4000;await h.engine.tick();assert.equal(b.runtime.quantity,held);assert.equal(b.runtime.runEnabled,false);assert.equal(b.runtime.managementEnabled,false);assert.equal(b.runtime.closeRecovery,undefined);
 });
 
 test('an old-position exit remainder cannot close a later position',async()=>{
@@ -865,3 +865,37 @@ test('a blocked single-bot deletion does not create a deleted statistics profile
 
 
 test('non-shared settlement recovers losses from a previously increased budget exactly once',async()=>{const {engine,id}=await harness(),b=engine.bot(id);Object.assign(b,{budget:200,budgetMode:'pnl',profitReinvestPercent:50,budgetRecovery:'full',budgetLossCarry:'carry'});Object.assign(b.runtime,{quantity:2,entryPrice:100,direction:'LONG'});const o={id:'recovery-exit',scope:engine.state.scope,botId:id,kind:'standard',role:'exit',direction:'LONG',status:'NEW',appliedQty:0,appliedQuote:0,parameters:{symbol:'BTCUSDT',type:'LIMIT',side:'SELL',quantity:'2'}};engine.state.orders.push(o);await engine.applyOrder(b,o,{executedQty:'1',cumQuote:'200',status:'PARTIALLY_FILLED'});assert.equal(engine.budgetLimit(b),250);await engine.applyOrder(b,o,{executedQty:'2',cumQuote:'260',status:'FILLED'});assert.equal(engine.budgetLimit(b),210);assert.equal(b.runtime.budgetRecoveryDebt,40);Object.assign(b.runtime,{quantity:1,entryPrice:100,direction:'LONG'});const next={...o,id:'recovery-after-loss',appliedQty:0,appliedQuote:0,status:'NEW',parameters:{...o.parameters,quantity:'1'}};engine.state.orders.push(next);await engine.applyOrder(b,next,{executedQty:'1',cumQuote:'160',status:'FILLED'});assert.equal(engine.budgetLimit(b),260);assert.equal(b.runtime.budgetRecoveryDebt,0);const runtime=structuredClone(b.runtime);await engine.applyOrder(b,next,{executedQty:'1',cumQuote:'160',status:'FILLED'});assert.deepEqual(b.runtime,runtime);});
+
+
+test('full stop cancels only owned guards, keeps holdings and blocks exit formulas and software TP/SL',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]);await h.engine.startBot(h.id);await h.engine.tick();const b=h.engine.bot(h.id),qty=b.runtime.quantity;
+ h.exchange.algos.set('external-guard',{clientAlgoId:'external-guard',algoStatus:'NEW',type:'STOP_MARKET'});
+ await h.engine.pauseBot(h.id);assert.equal(b.runtime.managementEnabled,false);assert.equal(b.runtime.stopPending,null);assert.equal(h.exchange.algos.get('external-guard').algoStatus,'NEW');assert.ok(h.engine.ownOrders(b).filter(o=>o.kind==='algo').every(o=>o.status==='CANCELED'));
+ h.exchange.signalClose=120;h.engine.client.premium=async()=>({markPrice:'120'});h.exchange.now+=120000;await h.engine.tick();await h.engine.tick({deadlinesOnly:true});assert.equal(b.runtime.quantity,qty);assert.equal(h.exchange.quantity,qty);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.exchange.calls.filter(c=>c.method==='placeAlgo').length,2);assert.equal(h.engine.decorate(b).status,'paused');
+});
+test('full stop cancels an exit LIMIT and permanently disables its market remainder until a new signal',async()=>{
+ const exit=marketRule('EXIT_LONG','종가 > 100',{order:{type:'LIMIT',price:'ask',ticks:0,timeout:5,remainder:'market',postOnly:false}}),h=await actionHarness([marketRule('ENTER_LONG'),exit]);h.engine.bot(h.id).exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();h.exchange.signalClose=101;await h.engine.tick();const b=h.engine.bot(h.id),qty=b.runtime.quantity,o=h.engine.ownOrders(b).find(o=>o.role==='exit');assert.equal(o.status,'NEW');await h.engine.pauseBot(h.id);assert.equal(o.status,'CANCELED');assert.equal(o.fallbackDone,true);h.exchange.now+=20000;await h.engine.tick();assert.equal(b.runtime.quantity,qty);assert.equal(h.exchange.calls.length,2);await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.calls.length,2);
+});
+test('unconfirmed stop cancellations survive restart and retry with order permission off without creating new orders',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();const cancel=h.engine.client.cancelAlgo.bind(h.engine.client);h.engine.client.cancelAlgo=async()=>({code:200});await h.engine.pauseBot(h.id);assert.ok(h.engine.bot(h.id).runtime.stopPending);await assert.rejects(()=>h.engine.startBot(h.id),/취소·체결 확인/);
+ const recovered=await new TradingEngine(new MemoryStore(h.engine.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init();await recovered.connect({environment:'testnet',apiKey:'test-key-1234567890',secret:'test-secret-1234567890',allowTrading:false});h.exchange.now+=4000;await recovered.tick();const r=recovered.bot(h.id).runtime;assert.equal(r.stopPending,null);assert.equal(r.runEnabled,false);assert.equal(r.managementEnabled,false);assert.ok(r.quantity>0);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal([...h.exchange.algos.values()].filter(o=>o.algoStatus==='NEW').length,0);
+});
+test('a native order already triggering when stopped is reconciled without a replacement close',async()=>{
+ const h=await closeWaitHarness(),b=h.engine.bot(h.id),qty=b.runtime.quantity;await h.engine.pauseBot(h.id);assert.ok(b.runtime.stopPending);assert.equal(b.runtime.closePending,undefined);h.exchange.fill(h.pending.id,qty/2);h.pending.order.status='CANCELED';h.pending.native.algoStatus='FINISHED';h.exchange.now+=4000;await h.engine.tick();assert.equal(b.runtime.stopPending,null);assert.equal(b.runtime.quantity,qty/2);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(b.runtime.managementEnabled,false);
+});
+test('explicit manual full close remains available after full stop',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();await h.engine.pauseBot(h.id);assert.ok(h.exchange.quantity>0);await h.engine.closeBot(h.id);await h.engine.tick();assert.equal(h.exchange.quantity,0);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,2);
+});
+test('stop during a disk failure cannot resume exits or guards after storage recovers',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]);await h.engine.startBot(h.id);await h.engine.tick();const qty=h.exchange.quantity;h.store.fail=true;await assert.rejects(()=>h.engine.pauseBot(h.id));assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.engine.bot(h.id).runtime.runEnabled,false);h.store.fail=false;h.exchange.now+=6000;assert.equal(await h.engine.storage.recover({force:true}),true);h.exchange.signalClose=120;await h.engine.tick();assert.equal(h.exchange.quantity,qty);assert.equal(h.exchange.calls.filter(c=>c.method==='placeOrder').length,1);assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.engine.ownOrders(h.engine.bot(h.id)).filter(o=>o.kind==='algo'&&o.status==='NEW').length,0);
+});
+test('saving held settings fully stops and keeps the holding until explicitly started',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]);await h.engine.startBot(h.id);await h.engine.tick();const qty=h.exchange.quantity;await h.engine.saveBot({...h.engine.bot(h.id),actionRules:[marketRule('EXIT_LONG')]});await h.engine.tick();assert.equal(h.exchange.quantity,qty);assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.engine.ownOrders(h.engine.bot(h.id)).filter(o=>o.kind==='algo'&&o.status==='NEW').length,0);await h.engine.startBot(h.id);await h.engine.tick();assert.equal(h.exchange.quantity,0);
+});
+
+test('a stop remains durable when entry was already paused and saving the stop fails',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();h.engine.bot(h.id).runtime.runEnabled=false;await h.engine.checkpoint();h.store.fail=true;await assert.rejects(()=>h.engine.pauseBot(h.id));assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);h.store.fail=false;h.exchange.now+=6000;await h.engine.storage.recover({force:true});assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.engine.ownOrders(h.engine.bot(h.id)).filter(o=>o.kind==='algo'&&o.status==='NEW').length,0);
+});
+test('turning global order permission off during a storage fault preserves exchange guards',async()=>{
+ const h=await harness();await h.engine.startBot(h.id);await h.engine.tick();h.store.fail=true;await assert.rejects(()=>h.engine.checkpoint());await h.engine.setTrading(false);h.store.fail=false;h.exchange.now+=6000;await h.engine.storage.recover({force:true});assert.equal(h.engine.tradingEnabled,false);assert.equal(h.engine.bot(h.id).runtime.managementEnabled,false);assert.equal(h.engine.ownOrders(h.engine.bot(h.id)).filter(o=>o.kind==='algo'&&o.status==='NEW').length,2);
+});
