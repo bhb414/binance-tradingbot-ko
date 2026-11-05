@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawn} from 'node:child_process';
+import {updateReleaseApplication} from '../backend/zip-update.mjs';
 import {git,repositoryInfo,BRANCH} from '../backend/app-update.mjs';
 import {checkReleaseUpdate} from '../backend/release-update.mjs';
 import {acquireLock,lockActive,serverAt} from '../backend/app-lifecycle.mjs';
@@ -19,8 +20,7 @@ async function runNode(cwd,args){
 async function ensureStopped(root,dataDirectory,port){
   if(await lockActive(path.join(dataDirectory,'server.lock'))||await serverAt(port))throw Error('프로그램이 실행 중입니다. run.cmd 실행 창을 종료한 뒤 update.cmd를 다시 실행해 주세요. 봇·보호 주문은 임의로 중지하지 않습니다.');
 }
-export async function updateApplication(root,{checkOnly=false,checkRelease=checkReleaseUpdate,dataDirectory=process.env.WORKROOM_DATA_DIR||path.join(root,'.runtime'),port=process.env.PORT||8896,onProgress=console.log}={}){
-  if(checkOnly){const status=await checkRelease(root);onProgress('현재 v'+status.version+' · 정식 릴리즈 v'+status.latest+' · '+(status.available?'새 버전 있음':status.ahead?'설치 버전이 정식 릴리즈보다 앞서 있습니다.':'최신 릴리즈입니다.')+' · 버전 확인은 Git 불필요; update.cmd 적용은 Git 필요');return status;}
+export async function updateSourceApplication(root,{dataDirectory=process.env.WORKROOM_DATA_DIR||path.join(root,'.runtime'),port=process.env.PORT||8896,onProgress=console.log}={}){
   const release=await acquireLock(path.join(root,'.runtime','update.lock'));let stage=null;
   try{
     await ensureStopped(root,dataDirectory,port);
@@ -48,6 +48,10 @@ export async function updateApplication(root,{checkOnly=false,checkRelease=check
     finally{await release();}
   }
 }
+export async function updateApplication(root,options={}){
+  if(options.checkOnly){const status=await (options.checkRelease||checkReleaseUpdate)(root);(options.onProgress||console.log)('현재 v'+status.version+' · 정식 릴리즈 v'+status.latest+' · '+(status.available?'새 버전 있음':status.ahead?'설치 버전이 정식 릴리즈보다 앞서 있습니다.':'최신 릴리즈입니다.')+' · 확인·업데이트 모두 Git 불필요');return status;}
+  return options.method==='source'?updateSourceApplication(root,options):updateReleaseApplication(root,options);
+}
 if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){
-  const root=fileURLToPath(new URL('../',import.meta.url));try{await updateApplication(root,{checkOnly:process.argv.includes('--check')});}catch(error){console.error('업데이트 중단: '+(error.message||'실패'));process.exitCode=1;}
+  const root=fileURLToPath(new URL('../',import.meta.url));try{await updateApplication(root,{checkOnly:process.argv.includes('--check'),method:process.argv.includes('--source')?'source':'release'});}catch(error){console.error('업데이트 중단: '+(error.message||'실패'));process.exitCode=1;}
 }

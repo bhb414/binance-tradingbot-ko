@@ -16,7 +16,7 @@ test('ZIP release checks use public HTTPS without Git metadata or changing priva
  await mkdir(path.join(root,'.runtime'));await writeFile(path.join(root,'.runtime','state.json'),'private-journal');
  const before=await readdir(root);let calls=0;
  const check=createReleaseChecker({fetchImpl:async(url,options)=>{calls++;assert.equal(url,LATEST_RELEASE_API);assert.equal(options.redirect,'error');assert.ok(options.signal instanceof AbortSignal);assert.equal(options.headers.Authorization,undefined);return ok(release());}});
- const status=await check(root);assert.equal(status.version,'0.4.35');assert.equal(status.latest,'0.4.36');assert.equal(status.available,true);assert.equal(status.applyRequiresGit,true);assert.equal(status.downloadUrl,release().assets[0].browser_download_url);assert.deepEqual(await readdir(root),before);assert.equal(await readFile(path.join(root,'.runtime','state.json'),'utf8'),'private-journal');assert.equal(calls,1);
+ const status=await check(root);assert.equal(status.version,'0.4.35');assert.equal(status.latest,'0.4.36');assert.equal(status.available,true);assert.equal(status.applyRequiresGit,false);assert.equal(status.downloadUrl,release().assets[0].browser_download_url);assert.deepEqual(await readdir(root),before);assert.equal(await readFile(path.join(root,'.runtime','state.json'),'utf8'),'private-journal');assert.equal(calls,1);
 }));
 test('release versions compare numerically and never offer a downgrade',()=>fixture(async root=>{
  const check=createReleaseChecker({fetchImpl:async()=>ok(release('0.4.10'))});

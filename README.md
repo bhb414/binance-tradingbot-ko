@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.52](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.52/binance-tradingbot-ko-v0.4.52-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.53](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.53/binance-tradingbot-ko-v0.4.53-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -265,7 +265,9 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 ## 업데이트
 
-설정의 **업데이트 확인**과 **npm run update:check**는 Git 없이 공개 릴리즈 버전을 조회합니다. **실제 업데이트는 Git이 필요합니다.** [Git for Windows](https://git-scm.com/downloads/win) 설치 후 프로그램을 종료하고 **update.cmd**를 실행합니다. 끝나면 run.cmd로 다시 시작합니다. 키·봇 설정·매매 기록은 .runtime 폴더에 보존됩니다.
+설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
+
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.53 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 

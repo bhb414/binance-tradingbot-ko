@@ -13,13 +13,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-where git >nul 2>nul
-if errorlevel 1 (
-  echo Git for Windows 설치 후 다시 실행해 주세요.
-  pause
-  exit /b 1
-)
-node.exe tools/update.mjs
-set "WORKROOM_UPDATE_EXIT=%errorlevel%"
-pause
-exit /b %WORKROOM_UPDATE_EXIT%
+rem Keep the final command on one line: this file may replace itself.
+node.exe tools/update.mjs & call set "WORKROOM_UPDATE_EXIT=%%errorlevel%%" & pause & call exit /b %%WORKROOM_UPDATE_EXIT%%

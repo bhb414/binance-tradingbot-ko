@@ -45,7 +45,7 @@ export function createReleaseChecker({fetchImpl=globalThis.fetch,now=Date.now,ca
   if(pkg.name!=='binance-tradingbot-ko')throw Error('앱 설치 폴더를 확인해 주세요.');
   parseVersion(pkg.version,{local:true});
   const remote=await load(),comparison=compareStableToLocal(remote.latest,pkg.version);
-  return {version:pkg.version,...remote,available:comparison>0,ahead:comparison<0,source:'github-release',applyRequiresGit:true,command:'update.cmd'};
+  return {version:pkg.version,...remote,available:comparison>0,ahead:comparison<0,source:'github-release',applyRequiresGit:false,command:'update.cmd'};
  };
 }
 export const checkReleaseUpdate=createReleaseChecker();
