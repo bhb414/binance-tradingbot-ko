@@ -12,6 +12,7 @@ import {installBotTools,copyBotSettings,resetBotSettings} from './bot-tools.js';
 import {appearanceFor,saveAppearance} from './avatar.js';
 import {botStatusMarkup} from './bot-status.js';
 import {installTradeHistoryUI} from './trade-history-ui.js';
+import {installAccountEquityUI} from './account-equity-ui.js';
 import { installConnectionUI,renderConnection,setConnectionLocal } from './connection-ui.js';
 import {installNetworkUI} from './network-ui.js';
 import {installTransportUI} from './transport-ui.js';
@@ -589,11 +590,12 @@ installNetworkUI({toast,onContext:setConnectionLocal});
 const transportUI=installTransportUI({toast,refresh:syncWorkspace});
 installStudyUI({notify:toast});
 installTradeHistoryUI({getState:()=>serverState,notify:toast});
+installAccountEquityUI();
 manualUI=installManualUI({notify:toast,refresh:()=>syncWorkspace(),settings:()=>goPage('settings')});
 appearanceUI=installAppearanceUI({notify:toast,onSaved(){renderOffice();const summary=$('#bot-appearance-summary');if(summary&&draft)summary.innerHTML=appearanceCard(draft);renderEditorStatus();}});
 botTools=installBotTools({api,getState:()=>serverState,refresh:()=>syncWorkspace(),toast,onBudgetBaselineReset(b){if(draft?.id===b.id&&$('#bot-dialog').open){draft.runtime=structuredClone(b.runtime);updateBudgetPreview();renderEditorStatus();}},onBudgetMoved(included){rosterTab=included?'operating':'archive';renderBots();if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();},onCopy(source){const copied=copyBotSettings(source);try{saveAppearance(copied,appearanceFor(source));}catch(error){toast('외형 복사: '+error.message,true);}if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(null,'basic',copied);toast('복사본을 불러왔습니다. 종목·예산을 확인한 뒤 저장하세요.');},onSettingsReset(source){if($('#bot-dialog').open)$('#bot-dialog').close();$('#multi-bot-dialog')?.close();openBot(source.id,'basic',resetBotSettings(source));}});
 multiUI=installMultiUI({onSaved(bot){rosterTab=bot.budgetIncluded===false?'archive':'operating';},api,getState:()=>serverState,getSymbols:()=>SYMBOLS,getInsights:()=>positionInsights,refresh:()=>syncWorkspace(),toast,pickSymbol:callback=>{multiSymbolPick=callback;showSymbols('multi');},onToggle:(kind,id)=>botControls.action(kind,id),onTrade:(member,close)=>{goPage('home');selectSymbol(member.symbol,'usdm');if(close){const position=serverState?.account?.positions.find(p=>p.symbol===member.symbol&&(serverState.positionMode!=='HEDGE'||p.positionSide===member.positionDirection));if(!position){toast('보유 포지션을 찾을 수 없습니다.',true);return;}manualUI.prepareClose(position,member.id);}else manualUI.prepareBot(member.id);if(matchMedia('(max-width:900px)').matches)openMarket();$('#manual-order-ticket').scrollIntoView({block:'start'});},appearance:bot=>appearanceUI.open(bot),onTools:id=>botTools.open(id)});
-$('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('wallet')+'계좌 정보';
+$('#mobile-market-button').setAttribute('aria-label','호가와 주문 열기');$('.read-only-label').innerHTML=icon('chart')+'계좌 추이';
 icons();syncChartButtons();renderMarket();renderHomeTable();renderBots();renderActivity();initChart();goPage(location.hash.slice(1)||'home');
 async function bootstrap(){
   try{await syncWorkspace();await loadSymbols();await loadMarkets();if(!localStorage.getItem('fw-migrated-v2')&&legacyBots.length){let imported=true;for(const legacy of legacyBots.filter(old=>!bots.some(b=>b.id===old.id))){try{await api('/bots',{method:'POST',body:legacy});}catch(error){imported=false;toast('이전 설정 가져오기: '+error.message,true);}}if(imported)localStorage.setItem('fw-migrated-v2','true');await syncWorkspace();}await updateChart(true);}

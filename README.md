@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.54](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.54/binance-tradingbot-ko-v0.4.54-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.55](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.55/binance-tradingbot-ko-v0.4.55-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -16,9 +16,19 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
 
+## 계좌 전체 잔고 추이
+
+홈의 **계좌 추이** 또는 기록 화면의 **계좌 잔고 추이**에서 USDT 선물계좌 전체를 조회합니다. 지갑 잔고(실현손익·이미 반영된 수수료·펀딩 포함)와 평가잔고(지갑 잔고 + 현재 미실현손익)를 두 선으로 표시합니다. 수동 거래와 모든 봇의 거래를 포함하며 봇 예산과는 별개입니다. 현물·COIN-M·USDC 자산은 합산하지 않습니다.
+
+기간 필터 대신 **기록 주기**를 설정합니다. 기본 1분이며 5초~1일 사이를 직접 입력할 수도 있습니다. 주기를 바꿔도 기존 관측값은 유지하고, 그래프를 이동·확대하거나 이전 기록을 불러볼 수 있습니다. 설정과 기록은 서버에 저장하므로 같은 서버에 접속하는 PC·휴대폰에서 공유합니다.
+
+기록은 기능 적용 후부터 시작합니다. 서버가 켜지고 계좌·시세가 확인되는 동안 브라우저를 닫아도 기록됩니다. 앱 종료·연결 중단 시간과 기록 시작 이전은 소급해서 채우지 않습니다. 기존 계좌 스냅샷과 마크가격 수신값을 사용하므로 잔고 그래프를 위해 바이낸스 REST 호출을 추가하지 않습니다.
+
+입출금·계정 간 이체도 실제 잔고에 반영됩니다. ‘첫 기록 대비 변화’는 자금 이동을 포함한 잔고 변화이며 순수 매매 수익률이 아닙니다. 미실현손익에는 아직 발생하지 않은 정리 수수료·향후 펀딩을 미리 빼지 않습니다. 계좌 API 키 식별별로 기록을 분리하며, 기록은 **.runtime/account-equity.sqlite**에 보존됩니다. 프로그램을 종료한 후 .runtime 폴더 전체를 함께 보관하세요.
+
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.54](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.54/binance-tradingbot-ko-v0.4.54-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.55](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.55/binance-tradingbot-ko-v0.4.55-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -273,7 +283,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.54 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.55 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
