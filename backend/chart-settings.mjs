@@ -26,7 +26,7 @@ export class ChartSettingsStore{
  save(input){
   const run=async()=>{
    const current=await this.load();if(!Number.isSafeInteger(input?.revision)||input.revision!==current.revision)throw Object.assign(Error('다른 화면에서 지표 설정이 변경됐습니다. 서버 설정을 다시 불러온 뒤 수정해 주세요.'),{httpStatus:409});
-   const serialized=JSON.stringify(input.document);if(!serialized||Buffer.byteLength(serialized)>60000)throw Error('지표 설정 크기를 확인해 주세요.');
+   const serialized=JSON.stringify(input.document);if(!serialized||Buffer.byteLength(serialized)>400000)throw Error('지표 설정 크기를 확인해 주세요.');
    const next={revision:current.revision+1,document:decodeStudies(serialized),updatedAt:this.now()};
    if(this.filename){
     await fs.mkdir(path.dirname(this.filename),{recursive:true});const temp=this.filename+'.'+randomUUID()+'.tmp';

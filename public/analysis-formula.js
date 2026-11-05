@@ -230,6 +230,7 @@
   }
 
   const functionAliases = {
+    '조건':'choose','if':'choose','최고':'highest','highest':'highest','최저':'lowest','lowest':'lowest',
     '현재수익률':'currentReturn','진입증거금수익률':'currentReturn','currentreturn':'currentReturn','roi':'currentReturn',
     '가격변동률':'priceChange','현재가격변동률':'priceChange','pricechange':'priceChange',
     '현재손익':'currentPnl','평가손익':'currentPnl','currentpnl':'currentPnl',
@@ -310,7 +311,7 @@
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nextBar: [5,6], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {choose:[3],highest:[2],lowest:[2],occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nextBar: [5,6], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','vwma','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
@@ -600,6 +601,8 @@
   function evaluateCall(node, context, index) {
     const name = resolveFunction(node.name);
     if(name==='nextBar')return projectNextBar(node,context,index);
+    if(name==='choose'){const condition=evaluateNode(node.args[0],context,index);return finite(condition)?evaluateNode(node.args[truthy(condition)?1:2],context,index):null;}
+    if(name==='highest'||name==='lowest'){const period=readWindowPeriod(node.args[1],context,index,0);if(!period||index<period-1)return null;let value=null;for(let i=index-period+1;i<=index;i++){const n=evaluateNode(node.args[0],context,i);if(!finite(n))return null;value=value===null?n:name==='highest'?Math.max(value,n):Math.min(value,n);}return value;}
     if(['currentReturn','priceChange','currentPnl','hasPosition'].includes(name))return context.series[name]?.[index]??null;
 
     if(['weekday','clockTime','timeWindow'].includes(name)){

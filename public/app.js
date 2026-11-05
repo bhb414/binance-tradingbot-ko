@@ -241,7 +241,7 @@ function drawHomeChart(snapshot,market,symbol,interval,resetRange=false){
     candleSeries.priceScale().applyOptions({autoScale:saved.price?.autoScale!==false});if(saved.price?.autoScale===false&&Number.isFinite(saved.price.from)&&Number.isFinite(saved.price.to))candleSeries.priceScale().setVisibleRange({from:saved.price.from,to:saved.price.to});
     chart.panes().forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(saved.panes?.[id])pane.setStretchFactor(saved.panes[id]);});
   }else if(previousRange)chart.timeScale().setVisibleLogicalRange(previousRange);
-  chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();syncPositionPriceLines();syncChartExecutions();
+  if(changed||resetRange)homeStudies.revealFuture();chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();syncPositionPriceLines();syncChartExecutions();
   $('.chart-caption>.muted').textContent=time(snapshot.asOf)+' 수신';
 }
 function positionSymbolButton(symbol){

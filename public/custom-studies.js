@@ -1,11 +1,11 @@
 import {validateStudy} from './chart-studies.js';
 import {randomId} from './id.js';
 export const MAX_CUSTOM_STUDIES=50;
-export function validateCustomStudy(value){if(value?.type!=='FORMULA')throw Error('내 지표에는 수식 지표만 저장할 수 있습니다.');return validateStudy(value);}
-export const customStudyKey=study=>JSON.stringify([study.params.name.trim(),study.params.formula.trim(),study.params.placement]);
+export function validateCustomStudy(value){if(!['FORMULA','SCRIPT'].includes(value?.type))throw Error('내 지표에는 수식·스크립트 지표만 저장할 수 있습니다.');return validateStudy(value);}
+export const customStudyKey=study=>JSON.stringify([study.params.name.trim(),(study.params.script||study.params.formula).trim(),study.params.placement]);
 export function customStudyCopy(study){return validateCustomStudy({...structuredClone(study),id:'custom-'+randomId(),visible:true});}
 export function customChartCopy(study){return validateCustomStudy({...structuredClone(study),id:'study-'+randomId(),visible:true});}
-export function migrateCustomStudies(studies){const keys=new Set(),saved=[];for(const study of studies||[]){if(study.type!=='FORMULA')continue;const checked=validateCustomStudy(study),key=customStudyKey(checked);if(keys.has(key))continue;keys.add(key);saved.push(customStudyCopy(checked));if(saved.length===MAX_CUSTOM_STUDIES)break;}return saved;}
+export function migrateCustomStudies(studies){const keys=new Set(),saved=[];for(const study of studies||[]){if(!['FORMULA','SCRIPT'].includes(study.type))continue;const checked=validateCustomStudy(study),key=customStudyKey(checked);if(keys.has(key))continue;keys.add(key);saved.push(customStudyCopy(checked));if(saved.length===MAX_CUSTOM_STUDIES)break;}return saved;}
 export class CustomStudyPersistence{
  constructor({request,onChange=()=>{},onStatus=()=>{}}){this.request=request;this.onChange=onChange;this.onStatus=onStatus;this.studies=[];this.revision=0;this.ready=false;this.busy=false;}
  apply(result){if(!Number.isSafeInteger(result.revision)||result.revision<0||!Array.isArray(result.studies)||result.studies.length>MAX_CUSTOM_STUDIES)throw Error('내 지표 목록 형식을 확인해 주세요.');const studies=result.studies.map(validateCustomStudy);if(new Set(studies.map(s=>s.id)).size!==studies.length)throw Error('내 지표 식별자가 중복됐습니다.');this.revision=result.revision;this.studies=studies;this.onChange(structuredClone(studies));}

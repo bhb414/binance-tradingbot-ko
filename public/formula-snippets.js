@@ -2,11 +2,11 @@ import './analysis-formula.js';
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const prices=['시가','고가','저가','종가','거래량','하이킨시가','하이킨고가','하이킨저가','하이킨종가'];
 const positions=['현재수익률','가격변동률','현재손익','포지션보유','평균매수가'];
-const functions=[['다음봉','가정한 다음 봉의 지표·조건 계산'],['SMA','이동평균'],['EMA','지수이동평균'],['VWMA','거래량 가중이동평균'],['NW','나다라야–왓슨 중심선'],['백분위수','과거 분포'],['표준편차','모집단 표준편차'],['RSI','상대강도지수'],['ATR','일반 봉 평균 진폭'],['볼린저상단','상단선'],['볼린저중심','중심선'],['볼린저하단','하단선'],['상향돌파','앞 값이 뒤 값을 상향 돌파'],['하향돌파','앞 값이 뒤 값을 하향 돌파'],['발생','최근 참인 봉 수 범위'],['발생횟수','최근 참인 봉 수'],['신규발생','거짓→참 발생 수 범위'],['신규발생횟수','거짓→참 발생 수'],['절대값','절대값'],['최대','두 값 중 큰 값'],['최소','두 값 중 작은 값'],['증감','N봉 전과의 차이'],['변화율','N봉 전 대비 변화율'],['범위내','하한·상한 사이']];
-export function formulaSnippets({chart=false,symbols=[]}={}){
+const functions=[['조건','판단에 따라 값 선택'],['최고','최근 N봉 최고값'],['최저','최근 N봉 최저값'],['다음봉','가정한 다음 봉의 지표·조건 계산'],['SMA','이동평균'],['EMA','지수이동평균'],['VWMA','거래량 가중이동평균'],['NW','나다라야–왓슨 중심선'],['백분위수','과거 분포'],['표준편차','모집단 표준편차'],['RSI','상대강도지수'],['ATR','일반 봉 평균 진폭'],['볼린저상단','상단선'],['볼린저중심','중심선'],['볼린저하단','하단선'],['상향돌파','앞 값이 뒤 값을 상향 돌파'],['하향돌파','앞 값이 뒤 값을 하향 돌파'],['발생','최근 참인 봉 수 범위'],['발생횟수','최근 참인 봉 수'],['신규발생','거짓→참 발생 수 범위'],['신규발생횟수','거짓→참 발생 수'],['절대값','절대값'],['최대','두 값 중 큰 값'],['최소','두 값 중 작은 값'],['증감','N봉 전과의 차이'],['변화율','N봉 전 대비 변화율'],['범위내','하한·상한 사이']];
+export function formulaSnippets({chart=false,symbols=[],script=false}={}){
  const api=globalThis.AnalysisFormula,item=(name,description,group,fn=false)=>({name,description,group,insert:name+(fn?'()':''),function:fn,aliases:Object.entries(fn?api.functionAliases:api.variableAliases).filter(([,canonical])=>canonical===(fn?api.functionAliases:api.variableAliases)[name.toLowerCase()]).map(([alias])=>alias)});
  const result=prices.map(name=>item(name,name.startsWith('하이킨')?'하이킨아시 가격':'일반 봉 데이터','봉 데이터'));
- result.push(...functions.map(([name,description])=>item(name,description,'함수',true)));
+ result.push(...functions.map(([name,description])=>item(name,description,'함수',true)));if(script)result.push(item('선','수식을 선으로 표시 · 선택한 봉 수만큼 이동','스크립트',true),item('예상선','최근 기울기를 미래 봉 위치에 연장','스크립트',true));
  if(!chart){
   result.push(...positions.slice(0,4).map(name=>item(name,'현재 보유 포지션','현재 포지션',true)),item('평균매수가','현재 평균 진입가','현재 포지션'));
   result.push(...[['요일','현재 요일'],['시각','현재 시각'],['시간범위','현재 시각이 범위 안인지']].map(([name,description])=>item(name,description,'요일·시간',true)));

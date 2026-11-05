@@ -32,7 +32,7 @@ function draw(reset=false){
   syncExecutions();
   $('#modal-chart-quote').textContent=Number.isFinite(last)?last.toLocaleString('en-US',{maximumFractionDigits:precision})+' '+selected.quoteAsset:'—';
   $('#modal-chart-status').textContent=raw.length?'실전 공개 시세 · '+$('#modal-interval').selectedOptions[0].text+' · '+chartTypeCaption(selectedType)+' · 설정 지표 '+getStudies().length+'개':'이 종목의 해당 주기에 표시할 봉이 없습니다.';
-  $('#modal-chart').setAttribute('aria-label',selected.symbol+' '+$('#modal-interval').value+' 가격 차트');if(reset&&raw.length)chart.timeScale().setVisibleLogicalRange({from:Math.max(0,raw.length-150),to:raw.length+6});
+  $('#modal-chart').setAttribute('aria-label',selected.symbol+' '+$('#modal-interval').value+' 가격 차트');if(reset&&raw.length)chart.timeScale().setVisibleLogicalRange({from:Math.max(0,raw.length-150),to:raw.length+6});if(reset)studies.revealFuture();
 }
 async function refresh(reset=false){
   if(!selected||!$('#market-chart-dialog').open)return;const version=++request,key=selected.market+':'+selected.symbol+':'+$('#modal-interval').value;
