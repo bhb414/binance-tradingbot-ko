@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.42](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.42/binance-tradingbot-ko-v0.4.42-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.43](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.43/binance-tradingbot-ko-v0.4.43-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,14 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 기기 간 즐겨찾기 공유
+
+종목 검색의 별 목록은 서버의 **.runtime/favorites.json**에 저장합니다. PC·같은 Wi-Fi·휴대폰에서 같은 목록을 사용하며, 종목 검색을 열거나 화면으로 돌아올 때 동기화합니다. 목록을 열어 둔 동안에도 서버의 로컬 저장 목록을 확인하며 추가 바이낸스 조회는 하지 않습니다. **동기화** 버튼으로 직접 다시 불러올 수도 있습니다.
+
+기존 기기는 업데이트 후 한 번씩 새로고침하면 그 브라우저에 저장했던 즐겨찾기를 공통 목록에 합칩니다. 원래 브라우저 목록은 별도 백업 키에 보존합니다. 이전 목록은 한 번만 가져오며, 서버에서 명시적으로 삭제한 별은 다른 기기의 오래된 목록에서 되살리지 않습니다. 사용자가 별을 직접 다시 누르면 추가할 수 있습니다.
+
+종목별 추가·삭제만 반영하므로 동시에 다른 별을 바꿔도 전체 목록을 덮어쓰지 않습니다. 현물·선물 등 시장별 식별자를 구분하고, 빈 목록도 그대로 유지합니다. 저장 실패 시 성공으로 표시하거나 기존 목록을 덮어쓰지 않습니다. 서버 재시작·업데이트에도 파일을 보존합니다.
 
 ## 보조지표
 

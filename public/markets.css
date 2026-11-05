@@ -30,3 +30,5 @@
   .modal-chart-canvas{margin:0 3px;min-height:230px}.modal-chart-footer{font-size:8px;padding:9px 12px}.modal-chart-footer>a{display:none}
   .symbol-market-filters{gap:5px}.symbol-market-filters button{font-size:9px;padding:7px 8px}#main-symbol{font-size:13px;max-width:42vw}
 }
+
+.favorites-sync-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 9px;color:#7a8e73;font-size:10px;line-height:1.7}.favorites-sync-row>span{min-width:0;overflow-wrap:anywhere}.favorites-sync-row>button{flex-shrink:0;border:1px solid #e1e8dc;border-radius:4px;background:#fff;color:#6a835f;padding:4px 7px;font:inherit}.symbol-favorite:disabled{cursor:wait;opacity:.5}@media(max-width:540px){.favorites-sync-row{font-size:9px}}

@@ -37,7 +37,7 @@ import {StudyRenderer} from './study-renderer.js';
 import {installStudyUI,openStudyLibrary} from './study-ui.js';
 import {MARKET_FILTERS,productLabel,instrumentName,matchesMarket,isTradfi} from './markets.js';
 import {marketKey} from './markets.js';
-import {FAVORITES_KEY,readFavorites,toggleFavorite} from './favorites.js';
+import {FavoritesPersistence} from './favorites-persistence.js';
 import {installManualUI} from './manual-ui.js';
 import {installMultiUI} from './multi-ui.js';
 import {positionRows} from './positions-ui.js';
@@ -77,7 +77,12 @@ try{const saved=JSON.parse(localStorage.getItem('fw-bots-v1')||'null');if(Array.
 let positionCosts=null,positionCostsKey='',positionCostsAt=0,positionCostsPending=null;
 let positionInsights=null,positionInsightsKey='',positionInsightsAt=0,positionInsightsPending=null;
 let serverState=null,marketSnapshot=null,marketError=null,chartRequest=0,formulaRequest=0,syncing=false;
-let manualUI,appearanceUI,multiUI,botTools,multiSymbolPick,favorites;try{favorites=readFavorites(localStorage.getItem(FAVORITES_KEY));}catch{favorites=readFavorites(null);}
+let manualUI,appearanceUI,multiUI,botTools,multiSymbolPick,favorites;
+let favoritesStorage;try{favoritesStorage=localStorage;}catch{}
+const favoriteStore=new FavoritesPersistence({storage:favoritesStorage,request:api,onChange(next){const changed=JSON.stringify(next)!==JSON.stringify(favorites);favorites=next;if(changed&&$('#symbol-dialog').open)renderSymbolResults($('#symbol-search').value);paintFavoriteState();},onStatus(message){const output=$('#favorites-sync-status');if(output&&output.textContent!==message)output.textContent=message;paintFavoriteState();}});
+favorites=[...favoriteStore.keys];
+function paintFavoriteState(){document.querySelectorAll('[data-favorite-key]').forEach(button=>{button.disabled=!favoriteStore.ready||favoriteStore.saving;});}
+function refreshFavorites(){return favoriteStore.load().catch(()=>{});}
 for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='—';}
 
 let chartStorage;try{chartStorage=localStorage;}catch{}
@@ -447,7 +452,7 @@ async function saveBot(event,confirmed=false){
 }
 
 function showSymbols(target='home'){
-  symbolPickerTarget=['bot','multi'].includes(target)?target:'home';symbolResultLimit=100;$('#symbol-dialog h2').textContent=symbolPickerTarget!=='home'?'담당 종목 찾기':'바이낸스 상품 찾기';$('#symbol-dialog .eyebrow').textContent=symbolPickerTarget!=='home'?'BOT SYMBOL':'BINANCE MARKETS';$('#symbol-search').value='';$('#symbol-market-filters').hidden=symbolPickerTarget!=='home';renderSymbolResults('');$('#symbol-dialog').showModal();$('#symbol-search').focus();if(symbolPickerTarget==='home'&&!marketCatalogReady)loadMarkets().catch(error=>{marketError=error.message;renderSymbolResults($('#symbol-search').value);});
+  symbolPickerTarget=['bot','multi'].includes(target)?target:'home';symbolResultLimit=100;$('#symbol-dialog h2').textContent=symbolPickerTarget!=='home'?'담당 종목 찾기':'바이낸스 상품 찾기';$('#symbol-dialog .eyebrow').textContent=symbolPickerTarget!=='home'?'BOT SYMBOL':'BINANCE MARKETS';$('#symbol-search').value='';$('#symbol-market-filters').hidden=symbolPickerTarget!=='home';renderSymbolResults('');$('#symbol-dialog').showModal();$('#symbol-search').focus();refreshFavorites();if(symbolPickerTarget==='home'&&!marketCatalogReady)loadMarkets().catch(error=>{marketError=error.message;renderSymbolResults($('#symbol-search').value);});
 }
 function renderSymbolResults(query) {
   const bot=symbolPickerTarget!=='home',normalize=text=>String(text).toLowerCase().replace(/[\s/\-]/g,''),term=normalize(query),current=bot?draft?.symbol:currentSymbol;
@@ -457,7 +462,7 @@ function renderSymbolResults(query) {
   $('#symbol-market-filters').innerHTML=bot?'':[['favorites','★ 즐겨찾기 '+favorites.length],...MARKET_FILTERS].map(([key,label])=>'<button type="button" data-market-filter="'+key+'" aria-pressed="'+(key===marketFilter)+'" class="'+(key===marketFilter?'active':'')+'">'+label+'</button>').join('');
   const note=$('#symbol-market-note');note.hidden=bot||!marketCatalogErrors.length;note.textContent=marketCatalogErrors.map(e=>e.error).join(' / ');
   $('#symbol-result-count').textContent=!bot&&!marketCatalogReady?'바이낸스 상품 목록을 불러오는 중…':items.length+'개 상품'+(bot?' · 봇 매매 지원 종목':' · 별을 눌러 즐겨찾기');
-  $('#symbol-results').innerHTML=items.slice(0,symbolResultLimit).map(s=>{const saved=favorites.includes(marketKey(s));return '<div class="symbol-result-row"><button type="button" class="symbol-favorite '+(saved?'active':'')+'" data-favorite-key="'+esc(marketKey(s))+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 즐겨찾기 '+(saved?'삭제':'추가')+'" aria-pressed="'+saved+'">'+(saved?'★':'☆')+'</button><button type="button" class="symbol-result '+(s.symbol===current&&(bot||s.market===currentMarket)?'selected':'')+'" data-market="'+s.market+'" data-symbol="'+esc(s.symbol)+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 선택"><span class="coin-icon" style="color:'+(s.color||'#8aa497')+';background:#f0f5eb">'+coinGlyph(s.symbol)+'</span><span class="symbol-result-name"><strong>'+esc(s.symbol)+'</strong><small>'+esc(bot?s.name:instrumentName(s))+' · '+esc(productLabel(s))+'</small></span><span class="symbol-result-quote">'+price(s.price)+(s.symbol===current&&(bot||s.market===currentMarket)?'<small>선택됨</small>':'')+'</span></button></div>';}).join('')+(items.length>symbolResultLimit?'<button type="button" id="symbol-show-more" class="symbol-show-more">'+(items.length-symbolResultLimit)+'개 더 보기 · 검색으로 좁힐 수 있습니다</button>':'')||'<div class="empty-table">'+(!bot&&!marketCatalogReady?'상품 목록을 불러오는 중입니다.':marketFilter==='favorites'&&!term?'즐겨찾기가 없습니다. 전체 목록에서 별을 눌러 추가하세요.':'검색 결과가 없습니다. 다른 종목명이나 심볼을 입력하세요.')+'</div>';
+  $('#symbol-results').innerHTML=items.slice(0,symbolResultLimit).map(s=>{const saved=favorites.includes(marketKey(s));return '<div class="symbol-result-row"><button type="button" class="symbol-favorite '+(saved?'active':'')+'" data-favorite-key="'+esc(marketKey(s))+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 즐겨찾기 '+(saved?'삭제':'추가')+'" aria-pressed="'+saved+'" '+(!favoriteStore.ready||favoriteStore.saving?'disabled':'')+'>'+(saved?'★':'☆')+'</button><button type="button" class="symbol-result '+(s.symbol===current&&(bot||s.market===currentMarket)?'selected':'')+'" data-market="'+s.market+'" data-symbol="'+esc(s.symbol)+'" aria-label="'+esc(s.symbol+' '+productLabel(s))+' 선택"><span class="coin-icon" style="color:'+(s.color||'#8aa497')+';background:#f0f5eb">'+coinGlyph(s.symbol)+'</span><span class="symbol-result-name"><strong>'+esc(s.symbol)+'</strong><small>'+esc(bot?s.name:instrumentName(s))+' · '+esc(productLabel(s))+'</small></span><span class="symbol-result-quote">'+price(s.price)+(s.symbol===current&&(bot||s.market===currentMarket)?'<small>선택됨</small>':'')+'</span></button></div>';}).join('')+(items.length>symbolResultLimit?'<button type="button" id="symbol-show-more" class="symbol-show-more">'+(items.length-symbolResultLimit)+'개 더 보기 · 검색으로 좁힐 수 있습니다</button>':'')||'<div class="empty-table">'+(!bot&&!marketCatalogReady?'상품 목록을 불러오는 중입니다.':marketFilter==='favorites'&&!term?'즐겨찾기가 없습니다. 전체 목록에서 별을 눌러 추가하세요.':'검색 결과가 없습니다. 다른 종목명이나 심볼을 입력하세요.')+'</div>';
 }
 function openMarket(){
   $('#market-sidebar').classList.add('open');if(!$('.sidebar-backdrop')){const backdrop=document.createElement('div');backdrop.className='sidebar-backdrop';backdrop.addEventListener('click',closeMarket);document.body.append(backdrop);}$('#close-market').focus();
@@ -480,7 +485,8 @@ document.addEventListener('click',event=>{
   if(b.dataset.homeProtection){openBot(b.dataset.homeProtection,'actions');return;}
   if(b.dataset.cancelBotOrder){const order=serverState.orders.find(o=>o.id===b.dataset.cancelBotOrder&&o.botId===b.dataset.ownerBot);if(order)confirmAction('미체결 잔량 취소',order.symbol+' · '+order.type+' · '+order.quantity+' 중 미체결 잔량을 취소합니다.',async()=>{await api('/bots/'+encodeURIComponent(order.botId)+'/orders/'+encodeURIComponent(order.id)+'/cancel',{method:'POST'});await syncWorkspace();},'잔량 취소');return;}
 
-  if(b.dataset.favoriteKey){try{const next=toggleFavorite(favorites,b.dataset.favoriteKey);localStorage.setItem(FAVORITES_KEY,JSON.stringify(next));favorites=next;renderSymbolResults($('#symbol-search').value);}catch(error){toast(error.message,true);}return;}
+  if(b.dataset.favoriteKey){favoriteStore.set(b.dataset.favoriteKey,!favorites.includes(b.dataset.favoriteKey)).catch(error=>toast(error.message,true));return;}
+  if(b.id==='favorites-refresh'){favoriteStore.load().catch(error=>toast(error.message,true));return;}
   if(b.dataset.bookPrice){manualUI?.setBookPrice(b.dataset.bookPrice);return;}
   if(b.id==='apply-whole-frame'){
     try{const textarea=$('#formula-source'),source=applyWholeTimeframe(textarea.value,$('#formula-whole-frame').value);if(source.length>1000)throw new Error('수식은 1,000자 이하여야 합니다.');textarea.value=currentRule().formula=source;updateFormulaFeedback();textarea.focus();signatureHelp?.update(true);}
@@ -598,4 +604,8 @@ const clockFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2
 function updateClock(){const now=new Date(),stamp=clockFormat.format(now);for(const id of ['local-clock','rail-clock']){const node=$('#'+id);if(node.textContent!==stamp)node.textContent=stamp;if(node.tagName==='TIME')node.dateTime=now.toISOString();}}
 updateClock();setInterval(updateClock,1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateClock();});
 
+refreshFavorites();
+setInterval(()=>{if(!document.hidden&&$('#symbol-dialog').open)refreshFavorites();},5000);
+window.addEventListener('focus',()=>{if($('#symbol-dialog').open)refreshFavorites();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&$('#symbol-dialog').open)refreshFavorites();});
 setInterval(()=>loadMarkets().catch(()=>{}),60000);
