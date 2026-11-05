@@ -231,3 +231,7 @@ test('multi-symbol deadline pass settles accepted legs once without starting a n
 test('multi-symbol stop rules retain priority over a due entry remainder',async()=>{
  const h=await pendingMultiDeadline();h.p.actionRules.unshift({id:'deadline-stop',enabled:true,action:'STOP_BOT',formula:'(A.종가 > 100)@1m'});h.x.prices.BTCUSDT=101;h.x.now+=5000;await h.engine.tick({deadlinesOnly:true});assert.equal(h.p.runtime.runEnabled,false);assert.equal(h.x.calls.filter(o=>o.type==='MARKET').length,0);assert.ok([...h.x.orders.values()].every(o=>o.status==='CANCELED'));
 });
+
+test('deleting a flat multi bot keeps its group identity and worker ownership for individual statistics',async()=>{
+ const h=await harness(),p=await h.engine.multi.save(config({exit:{takeProfitEnabled:false,stopLossEnabled:false}}));await h.engine.multi.start(p.id);await h.engine.tick();await h.engine.multi.close(p.id);const ids=h.engine.multi.workers(p).map(b=>b.id),fills=JSON.stringify(h.engine.state.fills);await h.engine.multi.remove(p.id);assert.equal(h.engine.multi.groups.length,0);const profile=h.engine.state.deletedBots.find(b=>b.id===p.id&&b.scope===h.engine.state.scope);assert.equal(profile.name,p.name);assert.equal(profile.kind,'multi');assert.ok(ids.every(id=>profile.memberIds.includes(id)));assert.equal(JSON.stringify(h.engine.state.fills),fills);const r=await h.engine.tradeHistory.get(p.id);assert.equal(r.bot.deleted,true);assert.equal(r.trades.length,2);
+});

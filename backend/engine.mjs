@@ -15,6 +15,7 @@ import {PositionReconciliation} from './position-reconciliation.mjs';
 import {SharedPositions} from './shared-positions.mjs';
 import {OrderCancellation} from './order-cancellation.mjs';
 import {OrderDeadlines} from './order-deadlines.mjs';
+import {rememberDeletedBot} from './history-bots.mjs';
 import {reconcileConfirmedSharedFees,sharedQuantityPending} from './confirmed-shared-fees.mjs';
 import {ClosePositionFlow,knownOrderSettlement} from './close-position-flow.mjs';
 import {CloseOrderRecovery,pendingMarketRemainder} from './close-order-recovery.mjs';
@@ -193,7 +194,7 @@ export class TradingEngine {
     this.positionInsights.cache=null;this.note('봇 기록·통계 초기화',root.name+' · 이 시점부터 새 집계 · 체결 원장과 실제 운용한도 유지',root.id);await this.checkpoint();
     return multi?this.multi.view(root):this.decorate(root);
   });}
-  async removeBot(id){return this.serial(async()=>{this.storage.healthy();if(this.multi.has(id))return this.multi.remove(id);const b=this.bot(id);if(b.multiBotId)throw Error('다중종목 봇에서 삭제하세요.');if(b.runtime.quantity>0||this.ownOrders(b).some(active))throw new Error('포지션 또는 미해결 주문이 있는 봇은 삭제할 수 없습니다.');this.state.bots=this.state.bots.filter(item=>item!==b);this.note('봇 삭제',b.name+'의 설정을 삭제했습니다.',b.id);await this.checkpoint();});}
+  async removeBot(id){return this.serial(async()=>{this.storage.healthy();if(this.multi.has(id))return this.multi.remove(id);const b=this.bot(id);if(b.multiBotId)throw Error('다중종목 봇에서 삭제하세요.');if(b.runtime.quantity>0||this.ownOrders(b).some(active))throw new Error('포지션 또는 미해결 주문이 있는 봇은 삭제할 수 없습니다.');rememberDeletedBot(this.state,b,[b],{now:this.now(),walletBalance:this.accountSnapshot?.walletBalance});this.state.bots=this.state.bots.filter(item=>item!==b);this.note('봇 삭제',b.name+'의 설정을 삭제했습니다.',b.id);await this.checkpoint();});}
   bot(id){const b=this.state.bots.find(item=>item.id===id);if(!b)throw new Error('봇을 찾을 수 없습니다.');return b;}
   requireCancellation(){this.storage.healthy();if(!this.connected)throw Error('계좌를 연결한 뒤 주문을 취소하세요.');if(this.writeError)throw Error(this.writeError);}
   requireTrading(){this.storage.healthy();if(!this.connected)throw new Error('설정에서 API 키를 먼저 연결해 주세요.');if(!this.tradingEnabled)throw new Error('연결 설정에서 주문 실행을 허용해 주세요.');if(this.writeError)throw new Error(this.writeError);}

@@ -1,3 +1,5 @@
+import {rememberDeletedBot,historyBotCatalog} from '../backend/history-bots.mjs';
+import {historyBotOptions,historyBudgetCaption} from '../public/history-picker.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyState} from '../backend/store.mjs';
@@ -107,3 +109,36 @@ test('funding displayed after a statistics reset excludes earlier ownership inco
 });
 
 test('wallet percentage reports use the current wallet target rather than an unused amount setting',()=>{const s=state();Object.assign(s.bots[0],{budget:500,budgetType:'walletPercent',budgetPercent:25});fill(s,{id:'e',at:1000,fee:0});fill(s,{id:'x',at:3000,role:'exit',price:110,fee:0});const r=report(s,{account:{walletBalance:200,positions:[]}});assert.equal(r.bot.budget,50);assert.equal(r.summary.returnPercent,20);assert.equal(r.curve.at(-1).equity,60);});
+
+test('legacy deleted bots remain individually selectable with honest unknown-budget returns',()=>{
+ const s=state();fill(s,{id:'e',at:1000});fill(s,{id:'x',at:3000,role:'exit',price:110});s.bots=[];
+ const r=report(s);assert.equal(r.bot.deleted,true);assert.equal(r.bot.budgetKnown,false);assert.equal(r.bot.budget,null);assert.equal(r.summary.confirmed,1);assert.ok(Math.abs(r.summary.net-9.8)<1e-9);assert.ok(Math.abs(r.trades[0].returnPercent-196)<1e-9);assert.equal(r.summary.returnPercent,null);assert.equal(r.curve.at(-1).returnPercent,null);assert.ok(Math.abs(r.curve.at(-1).net-9.8)<1e-9);assert.equal(r.availableBots.length,1);assert.equal(r.availableBots[0].id,'b');
+});
+test('deleted profiles preserve name, snapshot budget and statistics reset without changing ledger rows',()=>{
+ const s=state();s.bots[0].statsReset={scope,at:4000};fill(s,{id:'e1',at:1000});fill(s,{id:'x1',at:3000,role:'exit',price:110});fill(s,{id:'e2',at:5000});fill(s,{id:'x2',at:7000,role:'exit',price:120});const before=report(s),fills=JSON.stringify(s.fills),bot=s.bots[0];rememberDeletedBot(s,bot,[bot],{now:8000,walletBalance:1000});s.bots=[];const r=report(s);
+ assert.equal(r.bot.name,'봇');assert.equal(r.bot.deletedAt,8000);assert.equal(r.bot.budget,100);assert.equal(r.bot.statsResetAt,4000);assert.equal(r.summary.closed,1);assert.equal(r.summary.net,before.summary.net);assert.equal(r.summary.returnPercent,before.summary.returnPercent);assert.equal(report(s,{botId:null}).summary.closed,1);assert.equal(JSON.stringify(s.fills),fills);
+});
+test('wallet percentage budgets freeze their deletion-time target instead of drifting with later wallets',()=>{
+ const s=state();s.bots[0].budgetType='walletPercent';s.bots[0].budgetPercent=25;const b=s.bots[0];rememberDeletedBot(s,b,[b],{now:8000,walletBalance:400});s.bots=[];assert.equal(report(s,{account:{walletBalance:1000}}).bot.budget,100);
+});
+test('deleted multi groups retain current and removed workers without duplicate child options',()=>{
+ const s=state();s.bots=[];const parent={id:'parent',kind:'multi',name:'여러 종목',budget:300,legs:[]},workers=[{id:'parent_A',multiBotId:'parent',symbol:'BTCUSDT'}];s.multiBots=[parent];s.bots=workers;fill(s,{id:'a1',at:1000,botId:'parent_A'});fill(s,{id:'a2',at:3000,role:'exit',price:110,botId:'parent_A'});fill(s,{id:'b1',at:1500,botId:'parent_B',symbol:'ETHUSDT'});fill(s,{id:'b2',at:3500,role:'exit',price:120,botId:'parent_B',symbol:'ETHUSDT'});rememberDeletedBot(s,parent,workers,{now:5000,walletBalance:1000});s.bots=[];s.multiBots=[];
+ const r=report(s,{botId:'parent'});assert.equal(r.summary.closed,2);assert.equal(r.bot.budget,300);assert.equal(r.availableBots.length,1);assert.equal(r.availableBots[0].id,'parent');assert.deepEqual(new Set(r.trades.map(t=>t.botId)),new Set(['parent_A','parent_B']));
+});
+test('old UUID multi workers can be recovered as a deleted group without its original configuration',()=>{
+ const s=state(),id='12345678-1234-1234-1234-123456789abc';s.bots=[];for(const [alias,symbol]of [['A','BTCUSDT'],['B','ETHUSDT']]){fill(s,{id:alias+'e',at:1000,botId:id+'_'+alias,symbol});fill(s,{id:alias+'x',at:3000,role:'exit',price:110,botId:id+'_'+alias,symbol});}
+ const r=report(s,{botId:id});assert.equal(r.bot.kind,'multi');assert.equal(r.bot.deleted,true);assert.equal(r.summary.closed,2);assert.equal(r.availableBots.length,1);
+});
+test('history profiles and recovered symbols remain isolated by account scope',()=>{
+ const s=state();fill(s,{id:'e',at:1000});fill(s,{id:'x',at:3000,role:'exit',price:110});s.fills.push({id:'other-fill',scope:'foreign',botId:'b',symbol:'ETHUSDT',at:1000,quantity:1,price:100,role:'entry'});const b=s.bots[0];rememberDeletedBot(s,b,[b],{now:8000,walletBalance:1000});s.bots=[];assert.deepEqual(report(s).availableBots[0].symbols,['BTCUSDT']);s.scope='foreign';const foreign=report(s);assert.equal(foreign.bot.budgetKnown,false);assert.deepEqual(foreign.availableBots[0].symbols,['ETHUSDT']);s.scope='unrelated';assert.equal(historyBotCatalog(s).length,0);assert.throws(()=>report(s),/봇을 찾을 수/);
+});
+test('an active restored ID wins over its deleted snapshot and legacy deletion names are recovered safely',()=>{
+ const s=state(),bot=s.bots[0];rememberDeletedBot(s,bot,[bot],{now:4000});assert.equal(historyBotCatalog(s).length,1);assert.equal(historyBotCatalog(s)[0].deleted,false);s.deletedBots=[];fill(s,{id:'e',at:1000});fill(s,{id:'x',at:3000,role:'exit'});s.bots=[];s.logs=[{botId:'b',title:'봇 삭제',at:4000,message:'이전 전략의 설정을 삭제했습니다.'}];assert.equal(report(s).bot.name,'이전 전략');
+});
+test('history picker separates deleted profiles and escapes recovered names and IDs',()=>{
+ const html=historyBotOptions([{id:'a',name:'운용',deleted:false},{id:'<id>',name:'<img src=x onerror=alert(1)>',deleted:true}]);assert.match(html,/운용·보관 중인 봇/);assert.match(html,/삭제된 봇/);assert.match(html,/삭제됨/);assert.doesNotMatch(html,/<img|value="<id>"/);assert.match(html,/&lt;img/);assert.equal(historyBudgetCaption({deleted:true,budgetKnown:false}),'삭제 전 기준예산 미확인');
+});
+test('deleted-bot HTTP history remains authenticated and supports offline individual queries',async()=>{
+ const s=state();fill(s,{id:'e',at:1000});fill(s,{id:'x',at:3000,role:'exit',price:110});s.bots=[];const app=await createServer({store:{state:s,async load(){return s;},async save(){}},clientFactory:()=>({clearCredentials(){},redact:s=>s}),marketData:{}});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ try{const base='http://127.0.0.1:'+app.server.address().port;assert.equal((await fetch(base+'/api/bots/b/history')).status,403);const {token}=await(await fetch(base+'/api/session')).json(),headers={'X-Workroom-Token':token},r=await fetch(base+'/api/bots/b/history',{headers});assert.equal(r.status,200);const result=await r.json();assert.equal(result.bot.deleted,true);assert.equal(result.summary.closed,1);assert.equal((await fetch(base+'/api/trade-history?botId=missing',{headers})).status,400);}finally{await new Promise(resolve=>app.server.close(resolve));}
+});

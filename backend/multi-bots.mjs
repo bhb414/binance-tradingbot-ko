@@ -1,4 +1,5 @@
 import {knownOrderSettlement} from './close-position-flow.mjs';
+import {rememberDeletedBot} from './history-bots.mjs';
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
 import {budgetIncluded} from '../public/budget.js';
 import {managementWasEnabled} from './management-state.mjs';
@@ -56,7 +57,7 @@ export class MultiBots{
  }
  async cancelEntries(p){if(!this.e.tradingEnabled)return;for(const b of this.workers(p))for(const o of this.e.ownOrders(b).filter(o=>active(o)&&o.role==='entry'))await this.e.cancelStandard(b,o,true);p.runtime.cancelEntries=false;}
  async pause(id){const p=this.get(id);p.runtime.runEnabled=false;p.runtime.cancelEntries=true;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.cancelEntries(p);this.e.note('다중종목 신규 진입 중지',p.name+' · 보유 포지션 관리는 계속합니다.',p.id);await this.e.checkpoint();return this.view(p);}
- async remove(id){const p=this.get(id),workers=this.workers(p);if(workers.some(b=>b.runtime.quantity>0||this.e.ownOrders(b).some(active)))throw Error('보유·미해결 주문이 있으면 삭제할 수 없습니다.');const ids=new Set(workers.map(b=>b.id));this.e.state.bots=this.e.state.bots.filter(b=>!ids.has(b.id));this.e.state.multiBots=this.groups.filter(b=>b.id!==id);await this.e.checkpoint();return {ok:true};}
+ async remove(id){const p=this.get(id),workers=this.workers(p);if(workers.some(b=>b.runtime.quantity>0||this.e.ownOrders(b).some(active)))throw Error('보유·미해결 주문이 있으면 삭제할 수 없습니다.');rememberDeletedBot(this.e.state,p,workers,{now:this.e.now(),walletBalance:this.e.accountSnapshot?.walletBalance});const ids=new Set(workers.map(b=>b.id));this.e.state.bots=this.e.state.bots.filter(b=>!ids.has(b.id));this.e.state.multiBots=this.groups.filter(b=>b.id!==id);await this.e.checkpoint();return {ok:true};}
  async close(id){const p=this.get(id);this.e.requireTrading();p.runtime.closeAll=true;p.runtime.runEnabled=false;for(const b of this.workers(p))b.runtime.runEnabled=false;await this.e.checkpoint();await this.closePending(p);return this.view(p);}
  async closePending(p){for(const b of this.workers(p)){if(b.runtime.syncHold)throw Error(b.name+' · 포지션 원장을 확인하세요.');if(b.runtime.quantity>0||this.e.ownOrders(b).some(active))await this.e.closePosition(b,'다중종목 전체 정리');}if(this.workers(p).every(b=>!b.runtime.quantity&&!this.e.ownOrders(b).some(active)))p.runtime.closeAll=false;}
  position(p,rule=null){return rule?portfolioActionFormulaPosition(this.view(p),rule,{account:this.e.liveAccount(),positionMode:this.e.hedge?'HEDGE':'ONE_WAY'}):portfolioFormulaPosition(this.view(p));}

@@ -854,3 +854,11 @@ test('historical non-shared fee queries use the original symbol and never replac
 test('unexpected historical quantity changes cannot be applied to a bot new symbol',async()=>{
  const h=await actionHarness([marketRule('ENTER_LONG')]);h.engine.bot(h.id).exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();const b=h.engine.bot(h.id),o=h.engine.ownOrders(b).find(o=>o.kind==='standard'&&o.role==='entry');b.symbol='TMFUSDT';b.runtime.quantity=2;b.runtime.entryPrice=50;await assert.rejects(()=>h.engine.applyOrder(b,o,{status:'FILLED',executedQty:String(o.appliedQty+1),cumQuote:'1000'}),/이전 종목/);assert.equal(b.runtime.quantity,2);assert.equal(b.runtime.entryPrice,50);
 });
+
+test('deleting a flat single bot keeps a named individual statistics profile across reload',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG'),marketRule('EXIT_LONG','종가 > 100')]),b=h.engine.bot(h.id);b.exit={takeProfitEnabled:false,stopLossEnabled:false};await h.engine.startBot(h.id);await h.engine.tick();h.exchange.signalClose=101;await h.engine.tick();await h.engine.tick();const fills=JSON.stringify(h.engine.state.fills);await h.engine.removeBot(h.id);assert.equal(h.engine.state.bots.some(x=>x.id===h.id),false);assert.equal(h.engine.state.deletedBots[0].name,b.name);assert.equal(h.engine.state.deletedBots[0].historyBudget,b.budget);assert.equal(JSON.stringify(h.engine.state.fills),fills);
+ const recovered=await new TradingEngine(new MemoryStore(h.engine.state),{now:()=>h.exchange.now,clientFactory:()=>new FakeClient(h.exchange)}).init(),r=await recovered.tradeHistory.get(h.id);assert.equal(r.bot.deleted,true);assert.equal(r.trades.length,1);
+});
+test('a blocked single-bot deletion does not create a deleted statistics profile',async()=>{
+ const h=await actionHarness([marketRule('ENTER_LONG')]);await h.engine.startBot(h.id);await h.engine.tick();await assert.rejects(()=>h.engine.removeBot(h.id),/포지션/);assert.equal(h.engine.state.deletedBots?.length||0,0);assert.ok(h.engine.bot(h.id));
+});

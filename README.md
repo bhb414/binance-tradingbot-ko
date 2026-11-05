@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.39](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.39/binance-tradingbot-ko-v0.4.39-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.40](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.40/binance-tradingbot-ko-v0.4.40-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,12 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 삭제한 봇의 개별 통계
+
+매매 기록·통계 창의 봇 선택에서 **삭제된 봇**을 따로 선택할 수 있습니다. 앞으로 삭제하는 봇은 이름·삭제 시점 기준예산·통계 초기화 정보·다중 종목 구성원 식별자를 로컬 원장에 보존하며 운용예산에는 포함하지 않습니다. 체결·수수료·펀딩·최대 손익 관측 기록을 삭제하지 않습니다.
+
+이미 삭제된 봇도 남은 체결 기록으로 개별 통계와 거래별 수익률·누적 순손익 그래프를 조회합니다. 예전 이름을 복원할 수 없으면 종목명과 식별자로 표시합니다. 삭제 전 기준예산이 남지 않은 경우 누적 예산 대비 수익률·기준예산 환산 잔액은 미확인으로 표시하며, 거래별 증거금 대비 수익률은 확인 가능한 기록으로 계산합니다.
 
 ## 과거 체결의 수수료 확인
 
