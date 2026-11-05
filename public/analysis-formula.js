@@ -243,6 +243,7 @@
     'min': 'min', '최소': 'min', 'max': 'max', '최대': 'max',
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
     'ema': 'ema', '지수이평': 'ema', 'rsi': 'rsi',
+    'nw':'nw', '나다라야왓슨':'nw', 'nadarayawatson':'nw',
     '봉': 'frame', 'frame': 'frame',
     'stdev': 'stdev', '표준편차': 'stdev',
     'change': 'change', '증감': 'change',
@@ -282,11 +283,17 @@
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], nw: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(name==='nw'){
+        const period=node.args[1],bandwidth=node.args[2];
+        if(period.type!=='number'||!Number.isInteger(period.value)||period.value<2||period.value>MAX_WINDOW)throw new FormulaError('NW 계산 봉 수는 2~500 정수로 입력하세요',period.position);
+        if(bandwidth.type!=='number'||!finite(bandwidth.value)||bandwidth.value<.1||bandwidth.value>300)throw new FormulaError('NW Bandwidth는 0.1~300 숫자로 입력하세요',bandwidth.position);
+        if(!historicalCondition(node.args[0]))throw new FormulaError('NW에는 봉 데이터를 사용하세요. 현재 시간·현재 포지션 값의 과거 이력은 없습니다',node.args[0].position);
       }
       if(occurrenceNames.includes(name)){
         const period=node.args[1];if(period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW)throw new FormulaError('발생 조회 봉 수는 1~500 정수로 입력하세요',period.position);
@@ -347,6 +354,26 @@
     }
     const window=cache.windows.get(index);return window.missing?null:window.count;
   }
+  // Gaussian endpoint NW, matching the built-in chart center. Cache source values
+  // and only requested windows; every weighted observation shares the step budget.
+  function kernelMean(node,context,index,period,bandwidth){
+    if(index<period-1)return null;
+    const key='nw:'+JSON.stringify(node)+':'+period+':'+bandwidth;
+    if(!context.indicatorCache.has(key)){
+      const weights=Array.from({length:period},(_,lag)=>Math.exp(-.5*(lag/bandwidth)**2));
+      context.indicatorCache.set(key,{weights,total:weights.reduce((sum,w)=>sum+w,0),sources:new Map(),values:new Map()});
+    }
+    const cache=context.indicatorCache.get(key);if(cache.values.has(index))return cache.values.get(index);
+    let sum=0;
+    for(let lag=0;lag<period;lag++){
+      context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');
+      const i=index-lag;if(!cache.sources.has(i))cache.sources.set(i,evaluateNode(node,context,i));
+      const value=cache.sources.get(i);if(!finite(value)){cache.values.set(index,null);return null;}
+      sum+=value*cache.weights[lag];
+    }
+    const value=sum/cache.total,result=finite(value)?value:null;cache.values.set(index,result);return result;
+  }
+
   function wilderAtr(context, index, period) {
     const high = context.series.high, low = context.series.low, close = context.series.close;
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
@@ -431,6 +458,7 @@
       const count=occurrenceCount(node.args[0],context,index,node.args[1].value,name==='countStarts'||name==='occursStarts');if(count===null)return null;
       return name==='countTrue'||name==='countStarts'?count:count>=node.args[2].value&&count<=(node.args[3]?.value??node.args[1].value)?1:0;
     }
+    if(name==='nw')return kernelMean(node.args[0],context,index,node.args[1].value,node.args[2].value);
     if (name === 'abs') { const value = evaluateNode(node.args[0], context, index); return finite(value) ? Math.abs(Number(value)) : null; }
     if (name === 'min' || name === 'max') {
       const values = node.args.map(arg => evaluateNode(arg, context, index));
