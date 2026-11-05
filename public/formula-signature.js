@@ -1,4 +1,4 @@
-import {installFormulaCompletion} from './formula-snippets.js';
+import {installFormulaCompletion,editorViewport} from './formula-snippets.js';
 import './analysis-formula.js';
 const occurrenceHelp=['봉마다 확인할 조건. 참인 봉을 각각 1회로 셉니다. 주문 횟수가 아닙니다.','최근 N봉 · 1~500. 현재 봉 포함이며 전체 뒤 [1]을 붙이면 완성봉만 셉니다.','최소 횟수 포함 · 0~N.','최대 횟수 포함 · 생략하면 N.'];
 const startHelp=['거짓 → 참으로 바뀐 봉만 1회로 셉니다. 3봉 연속 참이면 신규 발생은 1회입니다.',...occurrenceHelp.slice(1)];
@@ -34,6 +34,7 @@ const signature={
 };
 export function signatureAt(source,caret){
   const text=String(source).slice(0,caret),stack=[];
+  if(/[A-Za-z_\u3131-\uD79D][A-Za-z0-9_\u3131-\uD79D]*$/.test(text)&&/^[A-Za-z0-9_\u3131-\uD79D]*\s*\(/.test(String(source).slice(caret)))return null;
   for(let i=0;i<text.length;i++){
     const c=text[i];
     if(c==='('){const name=text.slice(0,i).match(/([A-Za-z_\u3131-\uD79D][A-Za-z0-9_\u3131-\uD79D]*)\s*$/)?.[1];stack.push({type:'(',name,arg:0});}
@@ -41,38 +42,42 @@ export function signatureAt(source,caret){
     else if(c===')'||c===']'){const type=c===')'?'(':'[';if(stack.at(-1)?.type===type)stack.pop();}
     else if(c===','&&stack.at(-1)?.type==='(')stack.at(-1).arg++;
   }
-  const call=[...stack].reverse().find(item=>item.name&&signature[globalThis.AnalysisFormula.functionAliases[item.name.toLowerCase()]]);
-  if(!call)return null;
+  if(stack.at(-1)?.type==='[')return null;
+  const call=[...stack].reverse().find(item=>item.name);
+  if(!call||!signature[globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]])return null;
   const definition=signature[globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]];
   return {...definition,name:call.name,argument:call.arg};
 }
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function installSignatureHelp(textarea,popup,options={}){
-  let dismissed=false;const controller=new AbortController(),originalDescription=textarea.getAttribute('aria-describedby');
+  let dismissed=false,composing=false,completion=null;const controller=new AbortController(),originalDescription=textarea.getAttribute('aria-describedby');
   const listen=(element,event,handler,options={})=>element?.addEventListener(event,handler,{...options,signal:controller.signal});
   function hide(){popup.hidden=true;if(originalDescription)textarea.setAttribute('aria-describedby',originalDescription);else textarea.removeAttribute('aria-describedby');}
   function update(reset=false){
     if(reset)dismissed=false;
     const help=signatureAt(textarea.value,textarea.selectionStart);
-    if(document.activeElement!==textarea||dismissed||!help){hide();return;}
-    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p>'+esc(help.help[help.argument]||'함수의 인수 개수를 확인하세요.')+'</p><small>'+(help.position?'현재 보유분 기준 · @봉주기·[1]로 과거 손익이 되지 않습니다.':help.calendar?'현재 감시 시각 · @봉주기·[1]로 이동하지 않습니다.':options.chart?'현재 차트 봉 주기 · 직전 봉: [1]':'주기 예: @5m · 직전 봉: [1]')+' <span>Esc 닫기</span></small>';
+    if(document.activeElement!==textarea||dismissed||composing||completion?.visible||!help){hide();return;}
+    const description=help.help[help.argument]||(help.params.length?'인수 '+(help.argument+1)+' · 함수 인수 개수를 확인하세요.':help.help[0]||'');
+    popup.innerHTML='<div class="signature-line"><b>'+esc(help.name)+'</b>( '+help.params.map((param,index)=>'<span class="'+(index===help.argument?'active':'')+'">'+esc(param)+'</span>').join(', ')+' )</div><p title="'+esc(description)+'">'+esc(description)+'</p>';
+
     popup.hidden=false;textarea.setAttribute('aria-describedby',popup.id);
     const mirror=document.createElement('div'),style=getComputedStyle(textarea);
     for(const key of ['font','lineHeight','letterSpacing','padding','border','boxSizing','wordBreak','overflowWrap','tabSize'])mirror.style[key]=style[key];
     Object.assign(mirror.style,{position:'fixed',visibility:'hidden',whiteSpace:'pre-wrap',width:textarea.clientWidth+'px',height:'auto'});
     mirror.textContent=textarea.value.slice(0,textarea.selectionStart);const marker=document.createElement('span');marker.textContent='\u200b';mirror.append(marker);document.body.append(mirror);
     const rect=textarea.getBoundingClientRect(),lineHeight=parseFloat(style.lineHeight),caretTop=rect.top+marker.offsetTop-textarea.scrollTop;
-    const boundary=(textarea.closest('dialog')||textarea.parentElement).getBoundingClientRect(),viewportWidth=document.documentElement.clientWidth;
+    const boundary=(textarea.closest('dialog')||textarea.parentElement).getBoundingClientRect(),viewport=editorViewport(),viewportWidth=viewport.width;
     const width=Math.min(430,rect.width-12,boundary.width-24,viewportWidth-24);popup.style.width=width+'px';
-    const left=Math.max(12,boundary.left+12,Math.min(rect.left+marker.offsetLeft-textarea.scrollLeft,Math.min(viewportWidth,boundary.right)-width-12));
+    const left=Math.max(viewport.left+12,boundary.left+12,Math.min(rect.left+marker.offsetLeft-textarea.scrollLeft,Math.min(viewport.right,boundary.right)-width-12));
     let top=caretTop+lineHeight+6;
-    if(top+popup.offsetHeight>Math.min(boundary.bottom-12,innerHeight-12))top=caretTop-popup.offsetHeight-6;
-    popup.style.left=left+'px';popup.style.top=Math.max(boundary.top+12,top)+'px';mirror.remove();
+    if(top+popup.offsetHeight>Math.min(boundary.bottom-12,viewport.bottom-12))top=caretTop-popup.offsetHeight-6;
+    popup.style.left=left+'px';popup.style.top=Math.max(viewport.top+12,boundary.top+12,top)+'px';mirror.remove();
     if(caretTop<rect.top||caretTop>rect.bottom)hide();
   }
-  listen(textarea,'input',()=>update(true));listen(textarea,'click',()=>update(true));listen(textarea,'keyup',event=>{if(event.key!=='Escape')update();});listen(textarea,'focus',()=>update(true));listen(textarea,'blur',hide);listen(textarea,'scroll',()=>update());
-  listen(textarea,'keydown',event=>{if(event.key==='Escape'&&!popup.hidden){event.preventDefault();event.stopPropagation();dismissed=true;hide();}if(event.ctrlKey&&event.shiftKey&&event.code==='Space'){event.preventDefault();update(true);}});
-  listen(textarea.closest('.editor-body'),'scroll',hide,{passive:true});listen(window,'resize',hide);
-  const completion=installFormulaCompletion(textarea,{...options,onShow(){hide();}});
+  const refresh=()=>queueMicrotask(()=>update(true));
+  listen(textarea,'input',refresh);listen(textarea,'click',refresh);listen(textarea,'select',refresh);listen(textarea,'compositionstart',()=>{composing=true;hide();});listen(textarea,'compositionend',()=>{composing=false;refresh();});listen(document,'selectionchange',()=>{if(document.activeElement===textarea)refresh();});listen(textarea,'keyup',event=>{if(event.key!=='Escape')update();});listen(textarea,'focus',()=>update(true));listen(textarea,'blur',hide);listen(textarea,'scroll',()=>update());
+  listen(textarea,'keydown',event=>{if(event.key==='Escape'&&!popup.hidden){event.preventDefault();event.stopPropagation();dismissed=true;hide();}if(event.ctrlKey&&event.shiftKey&&event.code==='Space'){event.preventDefault();completion?.hide();update(true);}});
+  listen(textarea.closest('.editor-body'),'scroll',hide,{passive:true});listen(window,'resize',()=>update());listen(window.visualViewport,'resize',()=>update());listen(window.visualViewport,'scroll',()=>update());
+  completion=installFormulaCompletion(textarea,{...options,onShow(){hide();}});
   return {update,hide(){hide();completion.hide();},dispose(){hide();completion.dispose();controller.abort();}};
 }

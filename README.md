@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.51](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.51/binance-tradingbot-ko-v0.4.51-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.52](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.52/binance-tradingbot-ko-v0.4.52-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -23,6 +23,12 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 기존 기기는 업데이트 후 한 번씩 새로고침하면 그 브라우저에 저장했던 즐겨찾기를 공통 목록에 합칩니다. 원래 브라우저 목록은 별도 백업 키에 보존합니다. 이전 목록은 한 번만 가져오며, 서버에서 명시적으로 삭제한 별은 다른 기기의 오래된 목록에서 되살리지 않습니다. 사용자가 별을 직접 다시 누르면 추가할 수 있습니다.
 
 종목별 추가·삭제만 반영하므로 동시에 다른 별을 바꿔도 전체 목록을 덮어쓰지 않습니다. 현물·선물 등 시장별 식별자를 구분하고, 빈 목록도 그대로 유지합니다. 저장 실패 시 성공으로 표시하거나 기존 목록을 덮어쓰지 않습니다. 서버 재시작·업데이트에도 파일을 보존합니다.
+
+## 수식 편집과 함수 도움말
+
+자동완성은 커서 앞에 입력한 부분만 완성합니다. 커서 뒤의 함수 인수·조건·@주기·[봉 번호]는 보존하며, 이미 있는 함수명 뒷부분과 괄호를 재사용합니다. 입력·커서가 바뀐 오래된 후보는 적용하지 않습니다. 자동완성 선택은 ↑↓ 뒤 Enter, Tab 또는 목록 터치로 하며, 선택하지 않은 상태의 Enter는 줄바꿈합니다. 함수 삽입은 기본 실행 취소(Ctrl+Z)를 지원합니다.
+
+괄호·대괄호 짝을 자동 입력하고, 이미 있는 닫는 괄호를 누르면 그 뒤로 이동합니다. 빈 괄호에서 Backspace는 괄호 한 쌍만 지웁니다. 도움말은 커서가 있는 가장 안쪽 함수의 현재 인수를 작은 툴팁으로 보여줍니다. 알 수 없는 안쪽 함수를 입력 중이면 바깥 함수 도움말을 대신 띄우지 않습니다. 한글 조합과 모바일 키보드의 표시 영역을 고려합니다.
 
 ## 가정한 다음 봉의 지표·조건
 
