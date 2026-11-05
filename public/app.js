@@ -306,7 +306,7 @@ function renderHomeTable(){
 }
 
 function pixelScene(bot,mini=false){return `<svg class="${mini?'pixel-mini':'pixel-scene'}" viewBox="0 0 260 165" role="img" aria-label="${esc(bot.name)} 사람 캐릭터"><rect x="25" y="130" width="210" height="3" fill="#dbe4d2"/>${roomAvatar(bot,130,84)}</svg>`;}
-function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(!b.runtime?.runEnabled&&!b.runtime?.managementEnabled&&b.runtime?.pendingOrderCount)return '봇 정지 · 거래소 주문 남음 · 정지 버튼으로 취소';if(b.runtime?.orderRetry)return b.runtime.orderRetry.label;if(b.runtime?.runEnabled&&b.runtime.entryBlocked)return b.quantity>0?"조건 감시·보유 포지션 관리 중":"조건 감시 중";if(b.entryPaused&&b.quantity>0)return '신규 진입 중지 · 포지션 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
+function taskLabel(b){if(b.runtime?.importPending)return '포지션 가져옴 · 관리 시작 대기';if(b.error)return '확인 필요: '+b.error;if(b.runtime?.waiting)return b.runtime.waiting.message;if(!b.runtime?.runEnabled&&!b.runtime?.managementEnabled&&b.runtime?.pendingOrderCount)return '봇 정지 · 거래소 주문 남음 · 정지 버튼으로 취소';if(b.runtime?.orderRetry)return b.runtime.orderRetry.label;if(b.runtime?.runEnabled&&b.runtime.entryBlocked)return b.quantity>0?"조건 감시·보유 포지션 관리 중":"조건 감시 중";if(!b.runtime?.runEnabled&&!b.runtime?.managementEnabled&&b.quantity>0)return '봇 정지 · 보유 포지션 유지';if(b.entryPaused&&b.quantity>0)return '진입 중지 · 자동 관리 중';return b.status==='paused'?'시작 대기':({watching:'수식 조건 감시 중',position:'보유 포지션 관리 중',waiting:'주문 결과 확인 중'})[b.task]||'대기 중';}
 function renderBots(){
   const operating=bots.filter(budgetIncluded),assigned=operating.reduce((sum,b)=>sum+estimateBudget(b),0),balance=serverState?.account?.walletBalance,running=operating.filter(b=>b.status==='running').length;
   $('#nav-count').textContent=bots.length;$('#all-bot-count').textContent=operating.length;$('#running-count').textContent=running;$('#paused-count').textContent=operating.length-running;
@@ -480,7 +480,7 @@ document.addEventListener('click',event=>{
   if(b.dataset.prepareClose){preparePositionClose(b.dataset.prepareClose,b.dataset.closeOwner||'');return;}
   if(b.dataset.rosterTab){rosterTab=b.dataset.rosterTab;renderOffice();return;}
   if(b.dataset.officeFocus){selectedBotId=b.dataset.officeFocus;openBot(selectedBotId);return;}
-  if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)botControls.action(target.runtime?.runEnabled?'pause':'start',target.id);return;}
+  if(b.dataset.officeToggle){const target=bots.find(item=>item.id===b.dataset.officeToggle);if(target)botControls.action(botNeedsStop(target)?'pause':'start',target.id);return;}
   if(b.dataset.botTools){botTools.open(b.dataset.botTools);return;}
   if(b.id==='bot-editor-tools'){botTools.open(draft.id);return;}
   if(b.id==='editor-start-bot'||b.id==='editor-pause-bot'){botControls.action(b.id==='editor-start-bot'?'start':'pause',draft.id);return;}
