@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.40](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.40/binance-tradingbot-ko-v0.4.40-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.41](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.41/binance-tradingbot-ko-v0.4.41-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,14 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 잔액 비율로 운용예산 지정
+
+봇 기본 설정의 **예산 지정 방식**에서 고정 USDT 금액, 전체 선물 USDT 지갑 잔고의 비율, 현재 주문 가능 잔액의 비율을 선택합니다. 단일·다중종목 봇에 모두 적용됩니다.
+
+주문 가능 잔액 비율은 매 주문 준비 때 최신 계좌 잔액으로 계산합니다. 이 봇이 이미 사용·예약한 증거금을 기준 잔액에 되돌려 더해 자기 체결 때문에 한도가 이중 차감되지 않게 하며, 계산 기준은 전체 USDT 지갑 잔고를 넘지 않습니다. 다른 봇·수동 거래의 사용 증거금은 되돌려 더하지 않습니다. 포지션이 없을 때 주문 가능 100 USDT에서 50%는 50 USDT, 다음 매매 때 80 USDT면 40 USDT입니다.
+
+보유 포지션을 자동 리밸런싱하지 않고 새 진입 한도에 적용합니다. 비율 예산은 봇 실현손익을 중복 가산하지 않으며 금액 기준 손익 운용·이익 재투자 비율은 사용하지 않습니다. 주문 가능 잔액이 0이거나 최소 주문금액보다 작으면 감시를 유지하며 진입을 기다립니다. 다른 봇의 배정 예산과 겹치면 기존 전체 배정 검사·자동 축소 정책을 따릅니다.
 
 ## 삭제한 봇의 개별 통계
 

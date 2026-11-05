@@ -13,7 +13,7 @@ export function makeMultiBot(extra={}){
  const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'B',symbol:'ETHUSDT',weight:50}];
  return {id:randomId(),kind:'multi',name:'새 다중종목 봇',budget:500,budgetMode:'fixed',profitReinvestPercent:100,maxEntries:0,margin:'ISOLATED',color:'mint',legs,exit:{takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',basis:'price',takeProfitEnabled:false,stopLossEnabled:false},actionRules:[multiRule(legs)],...extra};
 }
-export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,previous=null}={}){
+export function validateMulti(bot,{symbols,balance=Infinity,availableBalance=null,otherAllocated=0,previous=null}={}){
  if(!bot||typeof bot!=='object')return ['봇 설정 형식을 확인하세요.'];
  const errors=[];if(bot.budgetIncluded!==undefined&&typeof bot.budgetIncluded!=='boolean')errors.push('운용예산 포함 여부를 확인하세요.');const known=new Set(symbols||[]),aliases=new Set(),assets=new Set();
  if(typeof bot.id!=='string'||!/^[A-Za-z0-9_-]{1,48}$/.test(bot.id))errors.push('봇 식별자를 확인하세요.');
@@ -31,7 +31,7 @@ export function validateMulti(bot,{symbols,balance=Infinity,otherAllocated=0,pre
   if(!Number.isFinite(leg.weight)||leg.weight<=0||leg.weight>100)errors.push('종목 비중은 0 초과~100%로 입력하세요.');
  }
  if(bot.legs.reduce((s,l)=>s+l.weight,0)>100+1e-9)errors.push('종목 비중 합계는 100% 이하여야 합니다.');
- if(budgetIncluded(bot)&&bot.budgetShortfall!=='available'&&(!previous||!budgetIncluded(previous)||requestedBudget({...bot,runtime:previous.runtime},balance)>requestedBudget(previous,balance))&&requestedBudget({...bot,runtime:previous?.runtime},balance)+otherAllocated>balance+1e-8)errors.push('다른 봇 예산을 포함한 배정액이 지갑 잔고를 초과합니다.');
+ if(budgetIncluded(bot)&&bot.budgetShortfall!=='available'&&(!previous||!budgetIncluded(previous)||requestedBudget({...bot,runtime:previous.runtime,used:previous.used,reserved:previous.reserved},balance,availableBalance)>requestedBudget(previous,balance,availableBalance))&&requestedBudget({...bot,runtime:previous?.runtime,used:previous?.used,reserved:previous?.reserved},balance,availableBalance)+otherAllocated>balance+1e-8)errors.push('다른 봇 예산을 포함한 배정액이 지갑 잔고를 초과합니다.');
  if(!Array.isArray(bot.actionRules)||!bot.actionRules.length||bot.actionRules.length>20)return [...errors,'조건은 1~20개로 지정하세요.'];
  if(!bot.actionRules.some(r=>r?.enabled))errors.push('실행할 조건을 하나 이상 켜세요.');
  const ids=new Set();

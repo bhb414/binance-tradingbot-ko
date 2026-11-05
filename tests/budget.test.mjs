@@ -42,3 +42,21 @@ test('edited budget settings cannot reuse an old resolved limit',()=>{const b={i
 
 test('minimum budget preserves losses until cumulative recovery exceeds the floor and respects the profit rate',()=>{const b=makeBot({budget:100,budgetMode:'floor',budgetFloor:30,profitReinvestPercent:50,runtime:{realized:0,budgetWithheld:0}});assert.deepEqual(budgetSettingsErrors(b),[]);b.runtime.realized=-40;assert.equal(effectiveBudget(b),60);b.runtime.realized=-100;assert.equal(effectiveBudget(b),30);b.runtime.realized=-80;assert.equal(effectiveBudget(b),30);b.runtime.realized=-60;assert.equal(effectiveBudget(b),40);b.runtime.budgetWithheld=20;assert.equal(effectiveBudget(b),30);b.runtime.realized=-40;assert.equal(effectiveBudget(b),40);b.runtime.budgetBaseline={realized:-40,withheld:20};assert.equal(effectiveBudget(b),100);b.runtime.realized=-50;assert.equal(effectiveBudget(b),90);assert.equal(b.runtime.realized,-50);assert.equal(effectiveBudget({...b,budgetType:'walletPercent',budgetPercent:25,budgetAllocation:{wallet:200}}),50);});
 test('minimum amount validates, participates in allocation and invalidates stale cached limits',()=>{const b=makeBot({id:'f',budget:100,budgetMode:'floor',budgetFloor:30,budgetShortfall:'available',runtime:{realized:-100}});for(const v of [-1,101,NaN,undefined])assert.ok(budgetSettingsErrors({...b,budgetFloor:v}).length);const view=withBudgetAllocation(b,[b],20);assert.equal(effectiveBudget(view),20);assert.equal(effectiveBudget({...view,budgetFloor:40}),40);});
+
+import {isPercentBudget,percentBudgetBasis} from '../public/budget.js';
+import {budgetFieldsMarkup} from '../public/budget-editor.js';
+test('available percentage distinguishes spendable margin from the wallet and does not double count own fills',()=>{
+ const b={id:'free',budget:500,budgetType:'availablePercent',budgetPercent:50,budgetMode:'pnl',runtime:{realized:999}};
+ assert.equal(isPercentBudget(b),true);assert.equal(requestedBudget(b,1000,100),50);assert.equal(requestedBudget({...b,used:20},1000,80),50);assert.equal(requestedBudget({...b,used:20,reserved:10},1000,70),50);
+ assert.equal(requestedBudget({...b,used:20},1000,50),35);assert.equal(requestedBudget(b,1000,80),40);assert.equal(percentBudgetBasis({...b,used:50},1000,0),50);assert.equal(requestedBudget(b,1000),0);
+ assert.equal(requestedBudget(b,1000,-10),0);assert.equal(requestedBudget(b,80,100),40);assert.deepEqual(budgetSettingsErrors(b),[]);for(const n of [0,-1,101,NaN])assert.ok(budgetSettingsErrors({...b,budgetPercent:n}).length);
+});
+test('resolved available percentages retain their basis, respect other budgets and do not invent missing balances',()=>{
+ const b={id:'free',budget:500,budgetType:'availablePercent',budgetPercent:50,budgetShortfall:'available',used:20,reserved:10},other={id:'other',budget:80};
+ const view=withBudgetAllocation(b,[b,other],100,70);assert.equal(view.budgetAllocation.basis,100);assert.equal(view.budgetAllocation.target,50);assert.equal(effectiveBudget(view),20);assert.equal(effectiveBudget({...view,budgetPercent:25}),25);assert.equal(withBudgetAllocation(b,[b],100).budgetAllocation.target,0);
+ for(const available of [0,10,50,200]){const limits=resolveBudgets([b,{...b,id:'second',used:0,reserved:0}],100,available);assert.ok([...limits.values()].reduce((n,a)=>n+a.limit,0)<=100+1e-8);}
+});
+test('available percentage fields explain the changing balance and disable amount-only PNL controls',()=>{
+ const html=budgetFieldsMarkup({budgetType:'availablePercent',budgetPercent:50,budgetMode:'floor',budgetFloor:30,budget:100});
+ assert.match(html,/현재 주문 가능 잔액의 비율/);assert.match(html,/현재 주문 가능 잔액 기준 운용 비율/);assert.match(html,/자기 체결·예약/);assert.match(html,/data-bind="budgetMode" disabled/);assert.match(html,/data-bind="profitReinvestPercent"[^>]*disabled/);assert.equal(html.includes('목표 운용예산 · 증거금 한도'),false);
+});

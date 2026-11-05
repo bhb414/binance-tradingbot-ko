@@ -1,13 +1,13 @@
-import {budgetReference} from '../public/budget.js';
+import {budgetReference,isPercentBudget,percentBudgetBasis} from '../public/budget.js';
 const sources=state=>[...(state.orders||[]),...(state.fills||[]),...(state.positionImports||[])];
 const symbolsFor=(state,ids,initial=[],scope=state.scope)=>[...new Set([...initial,...sources(state).filter(row=>row.scope===scope&&ids.has(row.botId)).map(row=>row.symbol||row.parameters?.symbol)].filter(s=>typeof s==='string'&&/^[A-Z0-9_]{2,80}$/.test(s)))];
 const workerOf=(id,parent)=>id.startsWith(parent+'_')&&/^[A-Z]$/.test(id.slice(parent.length+1));
 export function historyMemberIds(root,state,recordIds=sources(state).filter(row=>row.scope===state.scope).map(row=>row.botId).filter(Boolean)){
  return root.kind==='multi'?[...new Set([root.id,...(root.memberIds||[]),...(state.bots||[]).filter(b=>b.multiBotId===root.id).map(b=>b.id),...recordIds.filter(id=>workerOf(id,root.id))])]:[root.id];
 }
-export function rememberDeletedBot(state,root,members,{now=Date.now(),walletBalance=null}={}){
+export function rememberDeletedBot(state,root,members,{now=Date.now(),walletBalance=null,availableBalance=null}={}){
  const ids=new Set(historyMemberIds({...root,memberIds:members.map(b=>b.id)},state,sources(state).map(row=>row.botId).filter(Boolean))),rows=sources(state).filter(row=>ids.has(row.botId)),scopes=new Set([state.scope,...rows.map(row=>row.scope)]);
- const budget=root.budgetType==='walletPercent'&&!Number.isFinite(walletBalance)?null:budgetReference(root,walletBalance),records=[];
+ const budget=isPercentBudget(root)&&percentBudgetBasis(root,walletBalance,availableBalance)===null?null:budgetReference(root,walletBalance,availableBalance),records=[];
  for(const scope of scopes)records.push({id:root.id,scope,name:root.name||'봇',kind:root.kind==='multi'?'multi':'single',deletedAt:now,historyBudget:scope===state.scope&&Number.isFinite(budget)&&budget>0?budget:null,statsReset:root.statsReset?.scope===scope?structuredClone(root.statsReset):null,memberIds:[...ids],symbols:symbolsFor(state,ids,scope===state.scope?[root.symbol,...(root.legs||[]).map(leg=>leg.symbol)]:[],scope)});
  state.deletedBots=[...(state.deletedBots||[]).filter(old=>old.id!==root.id||!scopes.has(old.scope)),...records];
  return records;
