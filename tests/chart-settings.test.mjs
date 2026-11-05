@@ -59,3 +59,7 @@ test('indicator HTTP persistence requires a session and rejects cross-origin and
   assert.equal((await fetch(base+'/api/chart-settings',{method:'POST',headers,body})).status,200);const saved=await(await fetch(base+'/api/chart-settings',{headers})).json();assert.equal(saved.document.studies[0].params.period,55);assert.equal((await fetch(base+'/api/chart-settings',{method:'POST',headers,body})).status,409);
  }finally{await new Promise(resolve=>app.server.close(resolve));}
 });
+
+test('extended indicator settings survive a server reload and restore in a second browser without replacing existing bands',()=>fixture(async directory=>{
+ const original=bb(),studies=[original,...['DMI','ADX','CCI','MFI','BBW','BBP'].map(type=>createStudy(type,{candle:'heikin'}))],first=new ChartSettingsStore(directory);const saved=await first.save({revision:0,document:documentFor(studies)});const storage=memory(),second=new StudyPersistence({storage,request:requestFor(new ChartSettingsStore(directory))});await second.load();assert.deepEqual(second.document,saved.document);assert.deepEqual(second.document.studies[0],original);assert.equal(second.document.studies.find(s=>s.type==='DMI').styles.minus.color,'#d36579');assert.equal(second.document.studies.length,7);
+}));

@@ -26,3 +26,6 @@
 .study-legend-toggle{position:absolute;left:12px;height:22px;display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid #dfe7d9;border-radius:4px;background:#ffffffb3;color:#788b6e;font-family:inherit;font-size:9px;line-height:1.2;pointer-events:auto;cursor:pointer;white-space:nowrap}.study-legend-toggle .icon{width:12px;height:12px}.study-legend-toggle:hover{background:#f1f6eb;color:#56774b}.study-legend-toggle:focus-visible{outline:2px solid #7c9c6c;outline-offset:2px}.modal-chart-stage .study-legend-toggle{left:9px}@media(max-width:540px){.study-legend-toggle{left:8px;height:26px;font-size:9px}}
 
 .study-browser-footer{flex-wrap:wrap;align-items:center;gap:8px 12px}.study-browser-footer #study-save-status{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}.study-browser-footer .button{min-height:28px;padding:5px 8px;font-size:10px}.study-browser-footer [hidden]{display:none}
+
+.study-chart-legend[data-study-type="DMI"] .study-legend-value{max-width:245px}
+@media(max-width:540px){.study-chart-legend[data-study-type="DMI"]{height:auto;flex-wrap:wrap;row-gap:1px}.study-chart-legend[data-study-type="DMI"] .study-legend-value{order:3;flex:0 0 100%;max-width:none;font-size:9px;line-height:18px}.study-chart-legend[data-study-type="DMI"] .study-legend-actions{margin-left:auto}}

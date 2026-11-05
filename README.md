@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.41](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.41/binance-tradingbot-ko-v0.4.41-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.42](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.42/binance-tradingbot-ko-v0.4.42-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -15,6 +15,16 @@
 Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://127.0.0.1:8896 입니다.
 
 실행 창이 바로 닫혔던 이전 버전 사용자는 v0.4.35 ZIP을 새 폴더에 전부 풀어서 실행하세요. Windows 명령 파일의 줄바꿈을 수정했습니다. 실행 실패 시 창을 유지하고 `startup-error.log`에 오류를 남깁니다. 기존 폴더를 업데이트하려는데 update.cmd도 닫힌다면, 프로그램 종료 후 그 폴더에서 터미널을 열고 `node tools/update.mjs`를 실행하세요.
+
+## 보조지표
+
+홈 차트의 **지표**에서 DMI(+DI·-DI·ADX), ADX 단독, CCI, MFI, 볼린저 밴드폭(BBW), 볼린저 %B를 추가합니다. 기존 SMA·EMA·볼린저밴드·RSI·MACD·스토캐스틱·ATR·VWAP·거래량·수식 지표도 함께 사용할 수 있습니다.
+
+각 지표는 기간·캔들 계산 기준(차트와 같게/일반/하이킨아시)·색상·선 굵기·표시 봉주기를 설정합니다. 표시 설정은 서버에 저장해 PC·같은 Wi-Fi·휴대폰에서 공유하며, 지표 선을 클릭하면 해당 봉의 값을 툴팁에서 확인합니다. 자동매매 조건 설정과는 별도입니다.
+
+DMI의 DI 기간과 ADX 평활 기간은 별도로 지정하며 와일더 RMA를 사용합니다. %B는 하단=0·중심=0.5·상단=1이며 밴드 밖의 값도 유지합니다. BBW는 (상단−하단)/중심선×100입니다. 비교할 볼린저밴드와 기간·배수·가격 소스·캔들 기준을 맞춰 주세요. MFI는 구간 내 양·음의 자금 흐름이 모두 없으면 값을 비워 두며, 준비 봉이 부족한 지표도 임의의 값을 만들지 않습니다.
+
+계산 정의: [DMI](https://www.tradingview.com/support/solutions/43000502250-directional-movement-dmi/), [CCI](https://www.tradingview.com/support/solutions/43000502001-commodity-channel-index-cci/), [MFI](https://www.tradingview.com/support/solutions/43000502348-money-flow-mfi/), [BBW](https://www.tradingview.com/support/solutions/43000501972-bollinger-bandwidth-bbw/), [%B](https://www.tradingview.com/support/solutions/43000501971-bollinger-bands-b-b/).
 
 ## 잔액 비율로 운용예산 지정
 
