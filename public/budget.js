@@ -2,7 +2,7 @@ export const BUDGET_MODES=Object.freeze({fixed:'고정 한도',pnl:'손익 반�
 export const BUDGET_OPTIONS=Object.freeze([['fixed','고정 한도 (손실이 나도 설정한 한도 유지)'],['pnl','손익 반영 (손실 차감 · 수익도 재투자)'],['capped','원금 한도 유지 (손실 차감 · 수익은 원금까지만 복구)'],['floor','최소 한도 유지 + 손익 반영 (과거 손실 복구 후 증가)']]);
 export const LOSS_CARRY_OPTIONS=Object.freeze([['carry','음수 손실 계속 누적 · 기존 방식'],['zero','계산 예산은 0에서 멈춤 · 초과 손실 이월 안 함']]);
 export const RECOVERY_OPTIONS=Object.freeze([['ratio','손실 복구에도 설정한 이익 비율 적용 · 기존 방식'],['full','손실 복구분은 100% · 남은 이익에만 설정 비율 적용']]);
-export const BUDGET_TYPES=Object.freeze([['amount','금액 · USDT'],['walletPercent','선물 USDT 지갑 잔고의 비율 · %'],['availablePercent','현재 주문 가능 잔액의 비율 · %']]);
+export const BUDGET_TYPES=Object.freeze([['amount','금액 · USDT'],['walletPercent','전체 선물 USDT 지갑 금액의 비율 · %'],['availablePercent','현재 주문 가능 금액의 비율 · %']]);
 export const SHORTFALL_OPTIONS=Object.freeze([['strict','설정 한도 확보 후 운용 · 기존 방식'],['available','부족하면 가용 한도까지 자동 축소']]);
 export const isPercentBudget=bot=>['walletPercent','availablePercent'].includes(bot?.budgetType);
 export function percentBudgetBasis(bot,wallet=bot.budgetAllocation?.wallet,available=bot.budgetAllocation?.available){

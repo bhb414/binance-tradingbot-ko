@@ -58,5 +58,5 @@ test('resolved available percentages retain their basis, respect other budgets a
 });
 test('available percentage fields explain the changing balance and disable amount-only PNL controls',()=>{
  const html=budgetFieldsMarkup({budgetType:'availablePercent',budgetPercent:50,budgetMode:'floor',budgetFloor:30,budget:100});
- assert.match(html,/현재 주문 가능 잔액의 비율/);assert.match(html,/현재 주문 가능 잔액 기준 운용 비율/);assert.match(html,/자기 체결·예약/);assert.match(html,/data-bind="budgetMode" disabled/);assert.match(html,/data-bind="profitReinvestPercent"[^>]*disabled/);assert.equal(html.includes('목표 운용예산 · 증거금 한도'),false);
+ assert.match(html,/현재 주문 가능 금액의 비율/);assert.match(html,/현재 주문 가능 금액 기준 운용 비율/);assert.match(html,/자기 체결·예약/);assert.match(html,/data-bind="budgetMode" disabled/);assert.match(html,/data-bind="profitReinvestPercent"[^>]*disabled/);assert.equal(html.includes('목표 운용예산 · 증거금 한도'),false);
 });
