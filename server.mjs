@@ -49,6 +49,7 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(pathname==='/api/data-transport'&&req.method==='GET'){json(200,engine.snapshot().dataTransport);return;}
         if(pathname==='/api/data-transport'&&req.method==='POST'){const state=await engine.setDataTransport(body);marketData.configureDataTransport?.(state.dataTransport.settings);json(200,state.dataTransport);return;}
         if(req.method==='GET'&&pathname==='/api/account-equity'){accountEquity.capture();const before=url.searchParams.get('before'),limit=url.searchParams.get('limit');json(200,accountEquity.view({before:before===null?null:Number(before),limit:limit===null?1500:Number(limit)}));return;}
+        if(req.method==='POST'&&pathname==='/api/account-equity/history'){json(200,await accountEquity.importHistory(body));return;}
         if(req.method==='POST'&&pathname==='/api/account-equity/settings'){json(200,accountEquity.configure(body));return;}
         if(req.method==='GET'&&pathname==='/api/status'){const state=engine.snapshot();if(!local)state.credentials={saved:state.credentials.saved,error:state.credentials.error,storagePath:null};json(200,state);return;}
         if(req.method==='GET'&&pathname==='/api/chart-executions'){json(200,{...chartExecutions(engine.state,{symbol:url.searchParams.get('symbol'),startTime:Number(url.searchParams.get('startTime')||0),endTime:Number(url.searchParams.get('endTime')||engine.now()),now:engine.now()}),connectionId:engine.connectionId});return;}

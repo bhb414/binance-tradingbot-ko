@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import {fetchAccountSnapshots} from './account-snapshots.mjs';
 import {sharedBudget,requestWeight,publicTTL,publicKey} from './binance-rate.mjs';
 import {candleHistory} from './candle-history.mjs';
 import {sharedStreams,transportSettings} from './streams.mjs';
@@ -56,6 +57,7 @@ export class BinanceClient {
   account(){return this.request('GET','/fapi/v3/account',{},true);}
   positionMode(){return this.request('GET','/fapi/v1/positionSide/dual',{},true);}
   positions(){return this.request('GET','/fapi/v3/positionRisk',{},true);}
+  accountSnapshots(){return fetchAccountSnapshots(this);}
   income(parameters){return this.request('GET','/fapi/v1/income',parameters,true);}
   openOrders(symbol){return this.request('GET','/fapi/v1/openOrders',{symbol},true);}
   openAlgoOrders(symbol){return this.request('GET','/fapi/v1/openAlgoOrders',{symbol},true);}

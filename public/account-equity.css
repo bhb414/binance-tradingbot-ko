@@ -4,3 +4,5 @@
 .equity-legend{flex-wrap:wrap;row-gap:6px}.equity-legend>span{white-space:nowrap}.equity-legend b{font-size:11px;font-weight:500;font-variant-numeric:tabular-nums}.equity-legend>span:first-child b{color:#ac8c3c}.equity-legend>span:last-child b{color:#4d8fa4}.equity-legend-wallet{background:#4d8fa4}.equity-chart-toolbar>#equity-chart-fit{flex:none}
 
 @media(min-width:651px) and (max-height:800px){.equity-chart-stage{height:clamp(180px,calc(100dvh - 510px),280px);min-height:180px}}
+
+.equity-history-toolbar{flex-wrap:wrap}.equity-history-toolbar p{flex:1;min-width:210px}.equity-history-toolbar button{flex:none;font-size:11px;min-height:32px;padding:6px 10px}.equity-import-status{font-size:10px;line-height:1.7;color:#8c9a8b;margin:-3px 0 12px}@media(max-width:650px){.equity-history-toolbar p{flex-basis:100%}.equity-history-toolbar button{font-size:10px}.equity-import-status{font-size:9px}}
