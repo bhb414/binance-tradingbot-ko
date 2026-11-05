@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.48](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.48/binance-tradingbot-ko-v0.4.48-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.49](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.49/binance-tradingbot-ko-v0.4.49-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -23,6 +23,12 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 기존 기기는 업데이트 후 한 번씩 새로고침하면 그 브라우저에 저장했던 즐겨찾기를 공통 목록에 합칩니다. 원래 브라우저 목록은 별도 백업 키에 보존합니다. 이전 목록은 한 번만 가져오며, 서버에서 명시적으로 삭제한 별은 다른 기기의 오래된 목록에서 되살리지 않습니다. 사용자가 별을 직접 다시 누르면 추가할 수 있습니다.
 
 종목별 추가·삭제만 반영하므로 동시에 다른 별을 바꿔도 전체 목록을 덮어쓰지 않습니다. 현물·선물 등 시장별 식별자를 구분하고, 빈 목록도 그대로 유지합니다. 저장 실패 시 성공으로 표시하거나 기존 목록을 덮어쓰지 않습니다. 서버 재시작·업데이트에도 파일을 보존합니다.
+
+## 중첩 수식 계산
+
+SMA·표준편차·볼린저밴드는 같은 봉의 계산 결과를 재사용하고 창이 이동할 때 바뀐 부분만 갱신합니다. NW를 넣은 볼린저밴드나 이평과의 차이를 다시 표준편차로 계산하는 수식도 지원합니다. 계산 한도를 높이거나 수식을 단순화하지 않고 반복 계산을 줄였습니다. 진행봉 갱신 시에는 새 데이터로 다시 계산하며 미래 봉으로 과거 값을 고치지 않습니다.
+
+차트는 최대 5,000봉이며 계산량 제한은 유지합니다. 한도를 초과한 지표는 계산을 중단하고 지표 계산량 오류를 표시합니다. 수식의 의미·기간·저장된 차트와 봇 설정은 자동으로 변경하지 않습니다.
 
 ## 조건 발생 횟수
 

@@ -331,17 +331,52 @@
     return period;
   }
 
+  function expressionKey(node,context){
+    if(!context.nodeKeys.has(node))context.nodeKeys.set(node,JSON.stringify(node,(key,value)=>key==='position'?undefined:value));
+    return context.nodeKeys.get(node);
+  }
+
+  // Keep a bounded tree of the requested window and memoize source/results.
+  // Updating one candle costs O(log N), including for nested SMA/BB/stdev.
+  // Pairwise central moments avoid subtracting two large squared prices; each
+  // mean is stored relative to an observed price to preserve small deviations.
   function rolling(node, context, index, period, mode) {
-    if (index - period + 1 < 0) return null;
-    const values = [];
-    for (let offset = period - 1; offset >= 0; offset -= 1) {
-      const value = evaluateNode(node, context, index - offset);
-      if (!finite(value)) return null;
-      values.push(Number(value));
+    if(index<period-1)return null;
+    const key='rolling:'+expressionKey(node,context)+':'+period;
+    if(!context.indicatorCache.has(key)){
+      const size=2**Math.ceil(Math.log2(period));
+      context.indicatorCache.set(key,{size,counts:new Uint16Array(size*2),anchors:new Float64Array(size*2),means:new Float64Array(size*2),moments:new Float64Array(size*2),sources:new Map(),values:new Map(),lastIndex:null});
     }
-    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    if (mode === 'mean') return mean;
-    return Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length);
+    const cache=context.indicatorCache.get(key);
+    if(cache.values.has(index))return cache.values.get(index)[mode];
+    const tick=()=>{context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');};
+    const leaf=i=>{
+      tick();if(!cache.sources.has(i))cache.sources.set(i,evaluateNode(node,context,i));
+      const value=cache.sources.get(i),at=cache.size+i%period;
+      cache.counts[at]=finite(value)?1:0;cache.anchors[at]=finite(value)?value:0;cache.means[at]=0;cache.moments[at]=0;return at;
+    };
+    const merge=at=>{
+      tick();const left=at*2,right=left+1,a=cache.counts[left],b=cache.counts[right],count=a+b;
+      cache.counts[at]=count;
+      if(!a||!b){const child=a?left:right;cache.anchors[at]=cache.anchors[child];cache.means[at]=cache.means[child];cache.moments[at]=cache.moments[child];return;}
+      const delta=(cache.anchors[right]-cache.anchors[left])+(cache.means[right]-cache.means[left]);
+      cache.anchors[at]=cache.anchors[left];cache.means[at]=cache.means[left]+delta*(b/count);
+      cache.moments[at]=cache.moments[left]+cache.moments[right]+delta*delta*(a/count)*b;
+    };
+    if(cache.lastIndex===index-1){
+      let at=leaf(index);while(at>1){at=Math.floor(at/2);merge(at);}
+    }else{
+      cache.counts.fill(0);cache.anchors.fill(0);cache.means.fill(0);cache.moments.fill(0);
+      for(let i=index-period+1;i<=index;i++)leaf(i);
+      for(let at=cache.size-1;at>0;at--)merge(at);
+    }
+    cache.lastIndex=index;
+    let mean=null,stdev=null;
+    if(cache.counts[1]===period){
+      const value=cache.anchors[1]+cache.means[1],deviation=Math.sqrt(Math.max(0,cache.moments[1]/period));
+      if(finite(value))mean=value;if(finite(deviation))stdev=deviation;
+    }
+    cache.values.set(index,{mean,stdev});return cache.values.get(index)[mode];
   }
 
   // Cache only values actually requested. Sliding windows advance in O(1) after
@@ -601,7 +636,7 @@
   }
 
   function makeContext(series,options={},budget={steps:0}){
-    const context={series,length:Number(options.length??Object.values(series)[0]?.length??(finite(options.now)?1:0)),now:options.now,maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),frames:options.frames,symbols:options.symbols||series.symbols,frameContexts:new Map(),budget};
+    const context={series,length:Number(options.length??Object.values(series)[0]?.length??(finite(options.now)?1:0)),now:options.now,maxSteps:Number(options.maxSteps||20000),indicatorCache:new Map(),nodeKeys:new WeakMap(),frames:options.frames,symbols:options.symbols||series.symbols,frameContexts:new Map(),budget};
     Object.defineProperty(context,'steps',{get:()=>budget.steps,set:value=>{budget.steps=value;}});
     return context;
   }
