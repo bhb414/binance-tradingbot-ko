@@ -11,7 +11,7 @@ export function multiTarget(alias,extra={}){return {alias,enabled:true,action:'E
 export function multiRule(legs,extra={}){return {...makeActionRule({action:'MULTI',formula:'FALSE@1h',reentry:{mode:'rearm',cooldown:0,afterExitCooldown:0}}),targets:legs.map(leg=>multiTarget(leg.alias)),...extra};}
 export function makeMultiBot(extra={}){
  const legs=[{alias:'A',symbol:'BTCUSDT',weight:50},{alias:'B',symbol:'ETHUSDT',weight:50}];
- return {id:randomId(),kind:'multi',name:'새 다중종목 봇',budget:500,budgetMode:'fixed',profitReinvestPercent:100,maxEntries:0,margin:'ISOLATED',color:'mint',legs,exit:{takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',basis:'price',takeProfitEnabled:false,stopLossEnabled:false},actionRules:[multiRule(legs)],...extra};
+ return {id:randomId(),kind:'multi',name:'새 다중종목 봇',budget:500,budgetMode:'fixed',budgetLossCarry:'carry',budgetRecovery:'ratio',profitReinvestPercent:100,maxEntries:0,margin:'ISOLATED',color:'mint',legs,exit:{takeProfit:3,stopLoss:1.5,price:'MARK_PRICE',basis:'price',takeProfitEnabled:false,stopLossEnabled:false},actionRules:[multiRule(legs)],...extra};
 }
 export function validateMulti(bot,{symbols,balance=Infinity,availableBalance=null,otherAllocated=0,previous=null}={}){
  if(!bot||typeof bot!=='object')return ['봇 설정 형식을 확인하세요.'];

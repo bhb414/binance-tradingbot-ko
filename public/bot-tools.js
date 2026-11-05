@@ -1,10 +1,11 @@
+import {budgetPolicyDescription} from './budget-policy.js';
 import {makeBot} from './core.js';
 import {makeMultiBot,multiRule} from './multi-bot.js';
 import {makeActionRule,upgradeActions} from './actions.js';
 import {randomId} from './id.js';
 import {BUDGET_MODES} from './budget.js';
-export const SINGLE_CONFIG_FIELDS=['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
-const multiFields=['id','kind','name','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'];
+export const SINGLE_CONFIG_FIELDS=['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
+const multiFields=['id','kind','name','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'];
 const pick=b=>Object.fromEntries((b.kind==='multi'?multiFields:SINGLE_CONFIG_FIELDS).filter(k=>b[k]!==undefined).map(k=>[k,structuredClone(b[k])]));
 export function copyBotSettings(source){
  const b=pick(source);b.id=randomId();b.budgetIncluded=false;b.name=source.name.slice(0,source.kind==='multi'?25:27)+' 복사본';
@@ -13,14 +14,14 @@ export function copyBotSettings(source){
  const renew=node=>{if(!node||typeof node!=='object')return;if(node.id)node.id=randomId();node.children?.forEach(renew);};renew(b.rules);return b;
 }
 export function resetBotSettings(source){
- const keep=Object.fromEntries(['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','profitReinvestPercent','budgetIncluded','color','legs'].filter(k=>source[k]!==undefined).map(k=>[k,structuredClone(source[k])]));
+ const keep=Object.fromEntries(['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','color','legs'].filter(k=>source[k]!==undefined).map(k=>[k,structuredClone(source[k])]));
  if(source.kind==='multi')return makeMultiBot({...keep,actionRules:[multiRule(keep.legs)]});
  const b=makeBot({...keep,actionRules:[makeActionRule({formula:'FALSE@15m'})]});b.exit={...b.exit,takeProfitEnabled:false,stopLossEnabled:false};return pick(b);
 }
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function budgetBaselineReview(p){
  const amount=n=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2});
- return '<h3>예산 손익 기준 재설정</h3><p>저장된 예산 <b>'+amount(p.base)+' USDT</b> · '+esc(BUDGET_MODES[p.mode])+(p.mode==='floor'?' · 최소 '+amount(p.budgetFloor)+' USDT':'')+'<br>이후 매매이익 '+esc(p.profitReinvestPercent??100)+'% 반영 · 손실·USDT 수수료 전액 차감</p><div class="budget-baseline-amount"><span>현재 한도<br><b>'+amount(p.before)+'</b></span><span>→</span><span>재설정 후<br><b>'+amount(p.after)+' USDT</b></span></div><p>예산에 반영할 손익 <b>'+amount(p.budgetPnl)+' → 0 USDT</b></p><p>매매 기록·통계·보유 수량과 운용 방식은 유지합니다. 지금까지 확정된 손익을 예산 계산에서 제외하고 이후 확정손익부터 반영합니다. 미실현손익·펀딩은 예산 계산에 포함하지 않습니다.</p><p>보유 포지션은 정리 시 확정되는 매매이익·손실부터 위 반영 비율을 적용합니다.</p>'+(p.warnings||[]).map(w=>'<p class="budget-overflow-note">'+esc(w)+'</p>').join('')+(!p.allowed?'<p class="form-errors">'+esc(p.reason)+'</p>':'<p>미리보기는 60초 동안 유효합니다. 적용할 기준을 확인해 주세요.</p>');
+ return '<h3>예산 손익 기준 재설정</h3><p>저장된 예산 <b>'+amount(p.base)+' USDT</b> · '+esc(BUDGET_MODES[p.mode])+(p.mode==='floor'?' · 최소 '+amount(p.budgetFloor)+' USDT':'')+'<br>'+esc(budgetPolicyDescription(p))+'</p><div class="budget-baseline-amount"><span>현재 한도<br><b>'+amount(p.before)+'</b></span><span>→</span><span>재설정 후<br><b>'+amount(p.after)+' USDT</b></span></div><p>예산에 반영할 손익 <b>'+amount(p.budgetPnl)+' → 0 USDT</b></p><p>매매 기록·통계·보유 수량과 운용 방식은 유지합니다. 지금까지 확정된 손익을 예산 계산에서 제외하고 이후 확정손익부터 반영합니다. 미실현손익·펀딩은 예산 계산에 포함하지 않습니다.</p><p>보유 포지션은 정리 시 확정되는 매매이익·손실부터 위 반영 비율을 적용합니다.</p>'+(p.warnings||[]).map(w=>'<p class="budget-overflow-note">'+esc(w)+'</p>').join('')+(!p.allowed?'<p class="form-errors">'+esc(p.reason)+'</p>':'<p>미리보기는 60초 동안 유효합니다. 적용할 기준을 확인해 주세요.</p>');
 }
 export function installBotTools({api,getState,refresh,toast,onCopy,onSettingsReset,onBudgetMoved,onBudgetBaselineReset}){
  const dialog=document.createElement('dialog');dialog.id='bot-tools-dialog';dialog.className='small-dialog bot-tools-dialog';dialog.setAttribute('aria-labelledby','bot-tools-title');document.body.append(dialog);let id=null,busy=false,confirmAction=null,plan=null;

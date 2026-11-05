@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.57](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.57/binance-tradingbot-ko-v0.4.57-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.58](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.58/binance-tradingbot-ko-v0.4.58-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -36,7 +36,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.57](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.57/binance-tradingbot-ko-v0.4.57-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.58](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.58/binance-tradingbot-ko-v0.4.58-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -225,6 +225,15 @@ DMI의 DI 기간과 ADX 평활 기간은 별도로 지정하며 와일더 RMA를
 
 손익 반영은 늘어난 한도로 계속 운용하고, 원금 한도 유지는 설정한 원금을 상한으로 둡니다. 고정 한도는 손익에 따라 한도가 바뀌지 않습니다. 이 설정은 주문 한도 계산이며 실제 자금을 이체하거나 별도 지갑에 분리하지 않습니다. 단일·다중종목 봇 모두 지원하며 계좌가 바뀌면 예산 손익 기준도 새로 시작합니다.
 
+### 손실 이월과 이익 복구 설정
+
+봇 설정 → 기본 설정 → 운용 예산에서 **계산 예산의 음수 처리**와 **손실 복구 중 이익 반영**을 각각 선택합니다. 단일·다중종목 봇 모두 지원하며 기존 봇의 기본값은 음수 손실 계속 누적·복구에도 설정 비율 적용입니다.
+
+- **음수 손실 계속 누적**: 계산 예산이 0 아래여도 손실을 유지하고 이후 반영 이익과 상계합니다. **0에서 멈춤**: 계산 예산을 0 아래로 내리지 않고 초과 손실은 예산 계산에서 이월하지 않습니다. 실제 매매 손실·기록·통계는 유지합니다. 최소 운용한도 설정은 실제 운용한도의 하한이며 계산 예산의 0 하한과 별개입니다.
+- **손실 복구에도 설정 비율 적용**: 각 매매이익의 설정 비율만 예산에 더합니다. **복구분 100%**: 손실로 줄어든 계산 예산을 먼저 전액 복구하고, 복구를 넘는 이익에만 설정 비율을 적용합니다. 예: 기준 200·이익 반영 50%에서 이익 100 → 예산 250, 손실 40 → 210, 이후 이익 60 → 손실 복구 40 + 남은 이익 20의 50%인 10을 반영해 260입니다(수수료 생략). 손실과 USDT 수수료는 전액 차감하며 펀딩·미실현손익은 봇 예산 계산에 포함하지 않습니다.
+
+설정 변경은 새로 확정되는 손익부터 적용하고 과거 이익 반영분을 재계산하지 않습니다. 0에서 멈춤을 선택하면 기존 음수 계산 예산도 저장 시 0으로 맞춥니다. 복구 대상은 처음 적용 시 현재 기준예산 대비 부족분에서 시작하며 이후 늘어난 계산 예산에서 발생한 손실도 추적합니다. 잔액 비율 예산은 최신 계좌 잔액으로 직접 계산하므로 이 두 선택을 따로 적용하지 않습니다. 예산 손익 기준 재설정 시 복구 대상 손실도 초기화하고 매매 기록·통계는 유지합니다.
+
 ## 다중종목 봇
 
 봇 탭의 **+ 다중종목 봇**에서 2~8종목과 증거금 예산 비중(합계 100% 이하, 남은 비중은 미사용)을 정합니다. 조건마다 종목별 롱·숏 진입, 부분·전량 정리와 레버리지를 지정합니다. 예: `(A.종가 > SMA(B.종가, 20))@1h[1]`. A·B는 설정한 종목 별칭이며, `BTCUSDT.종가`처럼 심볼로 직접 참조할 수도 있습니다.
@@ -291,7 +300,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.57 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.58 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 

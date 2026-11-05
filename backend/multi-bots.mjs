@@ -1,6 +1,7 @@
 import {knownOrderSettlement} from './close-position-flow.mjs';
 import {rememberDeletedBot} from './history-bots.mjs';
 import {portfolioActionFormulaPosition,portfolioFormulaPosition} from '../public/formula-position.js';
+import {prepareBudgetPolicy} from '../public/budget-policy.js';
 import {budgetIncluded} from '../public/budget.js';
 import {managementWasEnabled} from './management-state.mjs';
 import {isStorageError} from './storage-recovery.mjs';
@@ -28,7 +29,7 @@ export class MultiBots{
  }
  snapshot(){return this.groups.map(p=>this.view(p));}
  async save(input){
-  const e=this.e,old=this.groups.find(p=>p.id===input.id),base=makeMultiBot(),p={...base,...Object.fromEntries(['id','name','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'].filter(k=>input[k]!==undefined).map(k=>[k,structuredClone(input[k])]))};p.kind='multi';for(const key of ['budgetType','budgetPercent','budgetShortfall','budgetFloor'])if(input[key]===undefined)p[key]=old?.[key];p.budgetIncluded=input.budgetIncluded===undefined?old?.budgetIncluded:input.budgetIncluded;p.profitReinvestPercent=input.profitReinvestPercent===undefined?old?.profitReinvestPercent??100:input.profitReinvestPercent;
+  const e=this.e,old=this.groups.find(p=>p.id===input.id),base=makeMultiBot(),p={...base,...Object.fromEntries(['id','name','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','maxEntries','margin','color','legs','exit','actionRules'].filter(k=>input[k]!==undefined).map(k=>[k,structuredClone(input[k])]))};p.kind='multi';for(const key of ['budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery'])if(input[key]===undefined)p[key]=old?.[key];p.budgetIncluded=input.budgetIncluded===undefined?old?.budgetIncluded:input.budgetIncluded;p.profitReinvestPercent=input.profitReinvestPercent===undefined?old?.profitReinvestPercent??100:input.profitReinvestPercent;
   if(e.state.bots.some(b=>b.id===p.id)||p.legs?.some?.(leg=>e.state.bots.some(b=>b.id===memberId(p,leg)&&b.multiBotId!==p.id)))throw Error('다른 봇과 식별자가 중복됩니다.');
   const before=structuredClone(e.state),symbols=(await e.catalog()).map(s=>s.symbol),oldIds=new Set(old?this.workers(old).map(b=>b.id):[]),others=e.allocatedBudget(p.id);
   const errors=validateMulti(p,{symbols,balance:Infinity,otherAllocated:others,previous:old});if(errors.length)throw Error(errors.join('\n'));await e.budgetSelection.assertSave(p,old);
@@ -41,7 +42,7 @@ export class MultiBots{
    Object.assign(b,{name:p.name.slice(0,24)+' · '+leg.alias,symbol:leg.symbol,margin:p.margin,exit:structuredClone(p.exit),multiBotId:p.id,multiAlias:leg.alias,actionRules:[]});b.runtime.runEnabled=false;b.runtime.orderRetries={};if(!budgetIncluded(p))b.runtime.managementEnabled=false;
    for(const rule of p.actionRules)if(JSON.stringify(old?.actionRules.find(r=>r.id===rule.id))!==JSON.stringify(rule))delete b.runtime.ruleSignals[rule.id];
   }
-  if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}this.syncBudgets(p);
+  if(old)e.state.multiBots[e.state.multiBots.indexOf(old)]=p;else{e.state.multiBots||=[];e.state.multiBots.push(p);}prepareBudgetPolicy(p,this.realized(p));this.syncBudgets(p);
   e.note(old?'다중종목 봇 저장':'다중종목 봇 생성',p.name+' · '+p.legs.map(l=>l.symbol+' '+l.weight+'%').join(' / '),p.id);
   try{await e.checkpoint();}catch(error){e.store.state=before;throw error;}e.positionInsights.cache=null;return this.view(p);
  }
