@@ -13,13 +13,14 @@ import { CredentialStore } from './backend/credentials.mjs';
 import {acquireServerLock} from './backend/app-lifecycle.mjs';
 import {checkReleaseUpdate} from './backend/release-update.mjs';
 import {ChartSettingsStore} from './backend/chart-settings.mjs';
+import {CustomStudyStore} from './backend/custom-studies.mjs';
 import {FavoritesStore} from './backend/favorites-store.mjs';
 const appDirectory=fileURLToPath(new URL('./',import.meta.url));
 
 const root=path.resolve(fileURLToPath(new URL('./public/',import.meta.url)));
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8'};
 async function readJSON(req){if(!String(req.headers['content-type']||'').startsWith('application/json'))throw Object.assign(Error('JSON 요청이 필요합니다.'),{httpStatus:415});let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>65536)throw Object.assign(Error('요청이 너무 큽니다.'),{httpStatus:413});}return text?JSON.parse(text):{};}
-export async function createServer({networkAccess,dataDirectory=process.env.WORKROOM_DATA_DIR||fileURLToPath(new URL('./.runtime/',import.meta.url)),clientFactory,store,chartSettingsStore=new ChartSettingsStore(store?null:dataDirectory),favoritesStore=new FavoritesStore(store?null:dataDirectory),credentialStore=store?null:new CredentialStore(dataDirectory),marketData=new MarketData()}={}){
+export async function createServer({networkAccess,dataDirectory=process.env.WORKROOM_DATA_DIR||fileURLToPath(new URL('./.runtime/',import.meta.url)),clientFactory,store,chartSettingsStore=new ChartSettingsStore(store?null:dataDirectory),customStudyStore=new CustomStudyStore(store?null:dataDirectory,{readLegacy:async()=>(await chartSettingsStore.get()).document?.studies||[]}),favoritesStore=new FavoritesStore(store?null:dataDirectory),credentialStore=store?null:new CredentialStore(dataDirectory),marketData=new MarketData()}={}){
   const engine=await new TradingEngine(store||new StateStore(dataDirectory),{clientFactory,credentialStore}).init(),token=randomBytes(32).toString('hex'),network=networkAccess||await new NetworkAccess(store?null:dataDirectory).init();let networkReady=Promise.resolve();marketData.configureDataTransport?.(engine.state.dataTransport);
   const server=http.createServer(async(req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cache-Control','no-store');
@@ -50,6 +51,8 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='GET'&&pathname==='/api/chart-executions'){json(200,{...chartExecutions(engine.state,{symbol:url.searchParams.get('symbol'),startTime:Number(url.searchParams.get('startTime')||0),endTime:Number(url.searchParams.get('endTime')||engine.now()),now:engine.now()}),connectionId:engine.connectionId});return;}
         if(pathname==='/api/favorites'&&req.method==='GET'){json(200,await favoritesStore.get());return;}
         if(pathname==='/api/favorites'&&req.method==='POST'){json(200,await favoritesStore.update(body));return;}
+        if(pathname==='/api/custom-studies'&&req.method==='GET'){json(200,await customStudyStore.get());return;}
+        if(pathname==='/api/custom-studies'&&req.method==='POST'){json(200,await customStudyStore.update(body));return;}
         if(pathname==='/api/chart-settings'&&req.method==='GET'){json(200,await chartSettingsStore.get());return;}
         if(pathname==='/api/chart-settings'&&req.method==='POST'){json(200,await chartSettingsStore.save(body));return;}
         if(req.method==='GET'&&pathname==='/api/app/update'){json(200,await checkReleaseUpdate(appDirectory));return;}
