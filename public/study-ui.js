@@ -10,7 +10,7 @@ const persistence=new StudyPersistence({storage:studyStorage,request:api,onChang
 let studies=structuredClone(persistence.document.studies);
 const listeners=new Set();let category='all',editing=null,toast=()=>{};
 let adding=false,context='home',previewTimer;const previewCandles={home:[],modal:[]};
-const formulaExamples=[{name:'3봉 평균 · 직접 계산',value:'(종가[0]+종가[1]+종가[2])/3',placement:'overlay'},{name:'지수이동평균 20',value:'EMA(종가, 20)',placement:'overlay'},{name:'이평선 차이',value:'EMA(종가, 12)-EMA(종가, 26)',placement:'pane'},{name:'직전 봉 대비 등락률 (%)',value:'(종가/종가[1]-1)*100',placement:'pane'},{name:'거래량 비율',value:'거래량/SMA(거래량, 20)',placement:'pane'},{name:'3봉 평균 · 구간 합계',value:'종가[0:3]/3',placement:'overlay'}];
+const formulaExamples=[{name:'조건 발생 횟수 · 최근 10봉',value:'발생횟수(하이킨종가 > 하이킨시가, 10)',placement:'pane'},{name:'3봉 평균 · 직접 계산',value:'(종가[0]+종가[1]+종가[2])/3',placement:'overlay'},{name:'지수이동평균 20',value:'EMA(종가, 20)',placement:'overlay'},{name:'이평선 차이',value:'EMA(종가, 12)-EMA(종가, 26)',placement:'pane'},{name:'직전 봉 대비 등락률 (%)',value:'(종가/종가[1]-1)*100',placement:'pane'},{name:'거래량 비율',value:'거래량/SMA(거래량, 20)',placement:'pane'},{name:'3봉 평균 · 구간 합계',value:'종가[0:3]/3',placement:'overlay'}];
 export function setStudyPreviewData(kind,candles){previewCandles[kind]=candles;if(editing?.type==='FORMULA'&&context===kind)scheduleFormulaPreview();}
 export const getStudies=()=>structuredClone(studies);
 export function subscribeStudies(listener){listeners.add(listener);return()=>listeners.delete(listener);}

@@ -237,6 +237,8 @@
     '요일':'weekday','현재요일':'weekday','weekday':'weekday',
     '시각':'clockTime','현재시각':'clockTime','clocktime':'clockTime',
     '시간범위':'timeWindow','timewindow':'timeWindow',
+    '발생':'occurs','occurs':'occurs','발생횟수':'countTrue','counttrue':'countTrue',
+    '신규발생':'occursStarts','occursstarts':'occursStarts','신규발생횟수':'countStarts','countstarts':'countStarts',
     'abs': 'abs', '절대값': 'abs',
     'min': 'min', '최소': 'min', 'max': 'max', '최대': 'max',
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
@@ -269,15 +271,30 @@
   const finite = value => typeof value === 'number' && Number.isFinite(value);
   const truthy = value => finite(value) && Number(value) !== 0;
 
+  const occurrenceNames=['occurs','countTrue','occursStarts','countStarts'];
+  function historicalCondition(node){
+    if(node.type==='variable'&&['currentReturn','priceChange','currentPnl','hasPosition','averagePrice','profit'].includes(variableAliases[normalizeName(node.name)]))return false;
+    if(node.type==='call'&&['currentReturn','priceChange','currentPnl','hasPosition','weekday','clockTime','timeWindow'].includes(functionAliases[normalizeName(node.name)]))return false;
+    const children=node.type==='binary'?[node.left,node.right]:node.type==='call'?node.args:node.value&&typeof node.value==='object'?[node.value]:[];
+    return children.every(historicalCondition);
+  }
   function validateAst(node) {
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(occurrenceNames.includes(name)){
+        const period=node.args[1];if(period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW)throw new FormulaError('발생 조회 봉 수는 1~500 정수로 입력하세요',period.position);
+        if(!historicalCondition(node.args[0]))throw new FormulaError('발생 횟수에는 봉 데이터 조건을 사용하세요. 현재 시간·현재 포지션 값의 과거 이력은 없습니다',node.args[0].position);
+        if(name==='occurs'||name==='occursStarts'){
+          for(const bound of node.args.slice(2))if(bound.type!=='number'||!Number.isInteger(bound.value)||bound.value<0||bound.value>period.value)throw new FormulaError('발생 횟수 범위는 0~조회 봉 수의 정수로 입력하세요',bound.position);
+          if(node.args[3]&&node.args[2].value>node.args[3].value)throw new FormulaError('최소 발생 횟수는 최대 횟수 이하여야 합니다',node.args[2].position);
+        }
       }
       if (name==='atr' && (node.args[0].type!=='number'||!Number.isInteger(node.args[0].value)||node.args[0].value<1||node.args[0].value>MAX_WINDOW)) throw new FormulaError('ATR 기간을 1~500 정수로 입력하세요',node.position);
       if (name==='frame' && (node.args[1].type!=='number'||![1,3,5,15,30,60,240,1440].includes(node.args[1].value)||node.args[2].type!=='number'||![0,1].includes(node.args[2].value))) throw new FormulaError('봉(수식, 주기 분, 봉상태 0 또는 1) 형식을 확인하세요',node.position);
@@ -313,6 +330,23 @@
     return Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length);
   }
 
+  // Cache only values actually requested. Sliding windows advance in O(1) after
+  // their first full window; missing observations never become false events.
+  function occurrenceCount(condition,context,index,period,starts){
+    if(index<period-1)return null;
+    const key='occurrence:'+JSON.stringify(condition)+':'+period+':'+starts;
+    if(!context.indicatorCache.has(key))context.indicatorCache.set(key,{conditions:new Map(),windows:new Map()});
+    const cache=context.indicatorCache.get(key);
+    const read=i=>{context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');if(!cache.conditions.has(i)){const value=evaluateNode(condition,context,i);cache.conditions.set(i,finite(value)?truthy(value)?1:0:null);}return cache.conditions.get(i);};
+    const event=i=>{const value=read(i);if(!starts||value===null||value===0)return value;const previous=read(i-1);return previous===null?null:previous===0?1:0;};
+    if(!cache.windows.has(index)){
+      const previous=cache.windows.get(index-1);let count=previous?.count??0,missing=previous?.missing??0;
+      if(previous){const old=event(index-period),next=event(index);count+=(next??0)-(old??0);missing+=(next===null?1:0)-(old===null?1:0);}
+      else for(let i=index-period+1;i<=index;i++){const value=event(i);count+=value??0;if(value===null)missing++;}
+      cache.windows.set(index,{count,missing});
+    }
+    const window=cache.windows.get(index);return window.missing?null:window.count;
+  }
   function wilderAtr(context, index, period) {
     const high = context.series.high, low = context.series.low, close = context.series.close;
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
@@ -392,6 +426,10 @@
         context.indicatorCache.set(cacheKey,values);
       }
       return context.indicatorCache.get(cacheKey)[index] ?? null;
+    }
+    if(occurrenceNames.includes(name)){
+      const count=occurrenceCount(node.args[0],context,index,node.args[1].value,name==='countStarts'||name==='occursStarts');if(count===null)return null;
+      return name==='countTrue'||name==='countStarts'?count:count>=node.args[2].value&&count<=(node.args[3]?.value??node.args[1].value)?1:0;
     }
     if (name === 'abs') { const value = evaluateNode(node.args[0], context, index); return finite(value) ? Math.abs(Number(value)) : null; }
     if (name === 'min' || name === 'max') {

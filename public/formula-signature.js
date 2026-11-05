@@ -1,5 +1,11 @@
 import './analysis-formula.js';
+const occurrenceHelp=['봉마다 확인할 조건. 참인 봉을 각각 1회로 셉니다. 주문 횟수가 아닙니다.','최근 N봉 · 1~500. 현재 봉 포함이며 전체 뒤 [1]을 붙이면 완성봉만 셉니다.','최소 횟수 포함 · 0~N.','최대 횟수 포함 · 생략하면 N.'];
+const startHelp=['거짓 → 참으로 바뀐 봉만 1회로 셉니다. 3봉 연속 참이면 신규 발생은 1회입니다.',...occurrenceHelp.slice(1)];
 const signature={
+ occurs:{params:['조건','최근 봉 수','최소 횟수','최대 횟수 (선택)'],help:occurrenceHelp},
+ countTrue:{params:['조건','최근 봉 수'],help:occurrenceHelp},
+ occursStarts:{params:['조건','최근 봉 수','최소 횟수','최대 횟수 (선택)'],help:startHelp},
+ countStarts:{params:['조건','최근 봉 수'],help:startHelp},
  currentReturn:{position:true,params:[],help:["현재 마크가격 기준 · 진입 증거금 대비 수익률(%) · 보유 배수 반영. 예: 20배에서 유리하게 0.5% 움직이면 +10%. 수수료·펀딩 제외."]},
  priceChange:{position:true,params:[],help:["평균 진입가 대비 현재 마크가격 변화(%). 보유 배수는 반영하지 않습니다. 롱은 상승, 숏은 하락할 때 양수입니다."]},
  currentPnl:{position:true,params:[],help:["현재 보유분의 미실현손익(USDT). 수수료·펀딩과 이전 정리의 실현손익은 제외합니다."]},
