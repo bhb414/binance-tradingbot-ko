@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.63](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.63/binance-tradingbot-ko-v0.4.63-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.64](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.64/binance-tradingbot-ko-v0.4.64-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -38,7 +38,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.63](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.63/binance-tradingbot-ko-v0.4.63-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.64](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.64/binance-tradingbot-ko-v0.4.64-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -319,7 +319,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.63 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.64 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
@@ -355,3 +355,13 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 같은 종목의 레버리지·증거금 모드는 계좌 공통 설정을 따릅니다. 보유 중에는 실제 계좌 배수를 사용하며, 단방향 계좌에서 반대 매매는 기존 포지션과 상계됩니다. 봇별 손익은 귀속 체결·진입가 기준으로 계산한 전략별 손익입니다. 일부 보유분만 정리할 때 바이낸스 계좌에 표시되는 실현손익과 시점별 배분이 다를 수 있으며, 홈 포지션 표는 거래소 계좌 값을 표시합니다.
 
 계좌 웹소켓 이벤트와 저장된 체결 번호를 사용하고, 새 체결의 가격·수수료는 REST로 대조합니다. 재시작·일시적인 호출 제한·저장 복구 후에도 이미 반영한 체결을 재주문하거나 중복 집계하지 않습니다. 새 체결이 아직 도착하지 않았으면 대조가 끝날 때까지 해당 종목의 신규 주문을 보류합니다.
+
+## 다른 봇 배정 후 남은 예산의 비율
+
+단일봇과 다중종목 봇의 기본 설정 → 예산 지정 방식에서 선택합니다. 금액·전체 지갑 비율·현재 주문 가능 금액 비율은 그대로 유지됩니다.
+
+전체 선물 USDT 지갑 금액에서 기존 방식으로 운용에 포함된 봇들의 현재 배정액을 먼저 뺍니다. 새 방식을 선택한 봇들은 그 공통 잔여 예산에 각자의 비율을 곱합니다. 지갑 1,000 USDT, 기존 방식 배정 400 USDT라면 공통 잔여는 600 USDT입니다. A·B 각각 5%는 각각 30 USDT이며 서로의 30을 다시 빼지 않습니다.
+
+이 방식으로 운용에 포함한 봇의 비율 합계는 100% 이하여야 합니다. 정지한 운용 봇도 배정에 포함하고 보관한 봇은 제외합니다. 다중종목 봇은 부모의 비율을 한 번만 계산하고 종목별 비중으로 나눕니다. 지갑·다른 방식 배정액이 변하면 새 진입 한도를 다시 계산하며 기존 보유 수량을 자동 조정하지 않습니다.
+
+현재 주문 가능 금액 비율은 실제 증거금 사용 후 남은 금액을 기준으로 하고 미사용 배정예산은 비율 기준에서 빼지 않습니다. 새 방식은 봇 예산 배정 기준이므로 수동 거래 증거금은 따로 차감하지 않습니다. 실제 주문은 거래소 주문 가능 증거금과 수수료·최소 주문 조건을 다시 확인합니다. 이 설정은 자금을 이체하거나 교차 포지션의 손실을 격리하는 기능이 아닙니다.

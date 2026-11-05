@@ -1,4 +1,4 @@
-import {budgetReference} from '../public/budget.js';
+import {budgetReference,resolveBudgets} from '../public/budget.js';
 import {historyRoots,historyMemberIds,historyBotCatalog} from './history-bots.mjs';
 import {excursionKey,excursionView,excursionStats} from './trade-excursions.mjs';
 import {createHash} from 'node:crypto';
@@ -101,7 +101,7 @@ function statsAndCurve(trades,budget,start,now){
 export function buildTradeHistory({state,botId,now=Date.now(),range='all',page=1,pageSize=20,funding=null,account=null,budgetRoots=null}){
  if(!['all','7d','30d','90d'].includes(range))throw Error('조회 기간을 확인하세요.');
  if(!Number.isInteger(page)||page<1||page>100000)throw Error('기록 페이지를 확인하세요.');
- const roots=historyRoots(state).map(root=>root.deleted?root:{...root,...(budgetRoots||[]).find(b=>b.id===root.id)}),bot=botId==null?{id:null,name:'봇 전체',kind:'all',budget:roots.filter(b=>!b.deleted).reduce((sum,b)=>sum+budgetReference(b,account?.walletBalance,account?.availableBalance),0)}:roots.find(b=>b.id===botId);if(!bot)throw Error('봇을 찾을 수 없습니다.');
+ const sourceRoots=historyRoots(state).map(root=>root.deleted?root:{...root,...(budgetRoots||[]).find(b=>b.id===root.id)}),budgetAllocations=resolveBudgets(sourceRoots.filter(root=>!root.deleted),account?.walletBalance??Infinity,account?.availableBalance),roots=sourceRoots.map(root=>root.budgetType==='unallocatedPercent'&&!root.deleted?{...root,budgetAllocation:budgetAllocations.get(root.id)}:root),bot=botId==null?{id:null,name:'봇 전체',kind:'all',budget:roots.filter(b=>!b.deleted).reduce((sum,b)=>sum+budgetReference(b,account?.walletBalance,account?.availableBalance),0)}:roots.find(b=>b.id===botId);if(!bot)throw Error('봇을 찾을 수 없습니다.');
  const scope=state.scope,savedRows=(state.fundingLedger||[]).filter(f=>f.scope===scope),extra=funding?.scope===scope?funding:null,coverage=mergeCoverage([...(state.fundingCoverage||[]).filter(r=>r.scope===scope),...(extra?.complete?[{start:extra.startTime,end:extra.endTime}]:[])]),records=new Map([...savedRows,...(extra?.rows||[])].map(r=>[r.id,r]));
  const data=ledger(state,now),all=reconstruct(data,now);applyCosts(all,data,{rows:[...records.values()],coverage,asOf:extra?.endTime||Math.max(0,...coverage.map(r=>r.end))},now,(state.sharedEvents||[]).filter(e=>e.scope===scope));
  const excursionRecords=new Map((state.tradeExcursions||[]).filter(r=>r.scope===scope).map(r=>[excursionKey(scope,r.botId,r.positionEpoch),r]));

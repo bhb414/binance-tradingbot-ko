@@ -1,4 +1,4 @@
-import {budgetIncluded,allocatedAmount,budgetSettingsErrors,resolveBudgets,requestedBudget} from '../public/budget.js';
+import {budgetIncluded,allocatedAmount,budgetSettingsErrors,resolveBudgets,requestedBudget,unallocatedPercentError} from '../public/budget.js';
 const terminal=new Set(['FILLED','CANCELED','REJECTED','EXPIRED','EXPIRED_IN_MATCH','FINISHED']);
 export class BudgetSelection{
  constructor(engine){this.e=engine;}
@@ -11,11 +11,12 @@ export class BudgetSelection{
   const e=this.e,root=e.multi.has(input.id)?e.multi.get(input.id):e.state.bots.find(b=>b.id===input.id);if(root?.multiBotId)throw Error('다중종목 봇 전체에서 선택하세요.');
   if(fresh&&e.connected){await e.refreshAccount(true);if(root&&!input.budgetIncluded)for(const b of this.members(root))await e.syncBotPosition(b,true);}
   const wallet=e.accountSnapshot?.walletBalance??Infinity,roots=e.budgetRoots({...root,...input}),all=resolveBudgets(roots,wallet,e.accountSnapshot?.availableBalance),allocation=all.get(input.id),otherAllocated=roots.filter(b=>b.id!==input.id&&budgetIncluded(b)).reduce((s,b)=>s+all.get(b.id).limit,0),requested=allocation.target,available=Math.max(0,wallet-otherAllocated),blocked=root?this.blocked(root):null;
-  const message=!input.budgetIncluded?blocked:input.budgetShortfall!=='available'&&allocation.limit+otherAllocated>wallet+1e-8?'운용예산 '+requested.toFixed(2)+' USDT를 포함할 수 없습니다. 지갑 잔고에서 다른 운용 봇 배정 후 남은 한도는 '+available.toFixed(2)+' USDT입니다.':'';
-  return {allowed:!message,message:message||'',requested,effectiveBudget:allocation.limit,budgetAllocation:allocation,otherAllocated,available:Number.isFinite(available)?available:null,canExclude:!blocked};
+  const poolError=input.budgetIncluded?unallocatedPercentError(roots):'';
+  const message=!input.budgetIncluded?blocked:poolError||(input.budgetShortfall!=='available'&&allocation.limit+otherAllocated>wallet+1e-8?'운용예산 '+requested.toFixed(2)+' USDT를 포함할 수 없습니다. 지갑 잔고에서 다른 운용 봇 배정 후 남은 한도는 '+available.toFixed(2)+' USDT입니다.':'');
+  return {allowed:!message,message:message||'',requested,effectiveBudget:allocation.limit,budgetAllocation:allocation,otherAllocated,available:Number.isFinite(available)?available:null,canExclude:!blocked,...(poolError?{code:'unallocatedPercentTotal'}:{})};
  }
  async preview(input){if(input?.budgetIncluded&&!this.e.connected)return {allowed:false,message:'계좌를 연결한 뒤 운용예산에 포함해 주세요.',canExclude:true};return this.inspect(input);}
- async assertSave(candidate,old){const prior=old?this.view(old):null,increase=budgetIncluded(candidate)&&(!prior||!budgetIncluded(prior)||requestedBudget({...candidate,runtime:prior.runtime,used:prior.used,reserved:prior.reserved},this.e.accountSnapshot?.walletBalance,this.e.accountSnapshot?.availableBalance)>requestedBudget(prior,this.e.accountSnapshot?.walletBalance,this.e.accountSnapshot?.availableBalance)+1e-8||['budgetType','budgetPercent','budgetShortfall','budgetFloor'].some(k=>candidate[k]!==old?.[k])),exclude=old&&budgetIncluded(old)&&!budgetIncluded(candidate);if(increase||exclude){const result=await this.inspect({...candidate,budgetIncluded:budgetIncluded(candidate)});if(!result.allowed)throw Error(result.message);}}
+ async assertSave(candidate,old){const prior=old?this.view(old):null,increase=budgetIncluded(candidate)&&(!prior||!budgetIncluded(prior)||requestedBudget({...candidate,runtime:prior.runtime,used:prior.used,reserved:prior.reserved},this.e.accountSnapshot?.walletBalance,this.e.accountSnapshot?.availableBalance)>requestedBudget(prior,this.e.accountSnapshot?.walletBalance,this.e.accountSnapshot?.availableBalance)+1e-8||['budgetType','budgetPercent','budgetShortfall','budgetFloor'].some(k=>candidate[k]!==old?.[k])),exclude=old&&budgetIncluded(old)&&!budgetIncluded(candidate);if(increase||exclude||budgetIncluded(candidate)&&candidate.budgetType==='unallocatedPercent'){const result=await this.inspect({...candidate,budgetIncluded:budgetIncluded(candidate)});if(!result.allowed)throw Error(result.message);}}
  async set(id,included){
   const e=this.e;e.storage.healthy();if(typeof included!=='boolean')throw Error('운용·보관 선택을 확인하세요.');const root=this.root(id);if(budgetIncluded(root)===included)return this.view(root);
   if(included&&!e.connected)throw Error('계좌를 연결한 뒤 운용으로 이동해 주세요.');const result=await this.inspect({...root,budgetIncluded:included});if(!result.allowed)throw Error(result.message);

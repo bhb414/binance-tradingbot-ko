@@ -1,7 +1,7 @@
 import {randomId} from './id.js';
 import { compileFormula, DEFAULT_FORMULA, formulaTimeframes, FORMULA_TIMEFRAMES } from './formula.js';
 import { ACTIONS, isEntry, isStop } from './actions.js';
-import { BUDGET_MODES,effectiveBudget,budgetIncluded,allocatedAmount,budgetSettingsErrors,resolveBudgets } from './budget.js';
+import { BUDGET_MODES,effectiveBudget,budgetIncluded,allocatedAmount,budgetSettingsErrors,resolveBudgets,unallocatedPercentError } from './budget.js';
 import {MAX_LEVERAGE} from './leverage.js';
 import {protectionEnabled,hasProtection,protectionBasis,protectionPricePercent} from './protection.js';
 export { BUDGET_MODES,effectiveBudget } from './budget.js';
@@ -40,7 +40,8 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,availableBalan
   if (bot.budgetIncluded!==undefined&&typeof bot.budgetIncluded!=='boolean') errors.push('운용예산 포함 여부를 확인해 주세요.');
   if (bot.profitReinvestPercent!==undefined&&(!finite(bot.profitReinvestPercent)||bot.profitReinvestPercent<0||bot.profitReinvestPercent>100)) errors.push('이익 예산 반영 비율은 0~100%로 입력해 주세요.');
   if (!Object.hasOwn(BUDGET_MODES,bot.budgetMode||'fixed')) errors.push('예산의 손익 반영 방식을 확인해 주세요.');
-  if (enforceAllocationLimit && budgetIncluded(bot) && bot.budgetShortfall!=='available' && [...resolveBudgets([...bots.filter(b=>b.id!==bot.id&&!b.multiBotId),bot],balance,availableBalance).values()].reduce((sum,a)=>sum+a.limit,0) > balance+1e-8) errors.push('봇들의 배정 예산 합계가 계좌 잔고 한도를 초과합니다.');
+  if(enforceAllocationLimit&&budgetIncluded(bot)){const message=unallocatedPercentError([...bots.filter(b=>b.id!==bot.id),bot]);if(message)errors.push(message);}
+  if (enforceAllocationLimit && budgetIncluded(bot) && bot.budgetShortfall!=='available' && [...resolveBudgets([...bots.filter(b=>b.id!==bot.id&&!b.multiBotId),bot],balance,availableBalance)].reduce((sum,[id,a])=>sum+(budgetIncluded(id===bot.id?bot:bots.find(b=>b.id===id))?a.limit:0),0) > balance+1e-8) errors.push('봇들의 배정 예산 합계가 계좌 잔고 한도를 초과합니다.');
   if (!finite(bot.entryPercent) || bot.entryPercent <= 0 || bot.entryPercent > 100) errors.push('1회 진입 비율은 0보다 크고 100% 이하여야 합니다.');
   if (!Number.isInteger(bot.maxEntries) || bot.maxEntries < 0 || bot.maxEntries > 20) errors.push('포지션당 진입 횟수는 제한 없음 또는 1~20회로 설정해 주세요.');
   if(maxLeverage<1)errors.push('배정 예산이 종목의 명목 한도를 초과합니다. 예산을 줄여 주세요.');
