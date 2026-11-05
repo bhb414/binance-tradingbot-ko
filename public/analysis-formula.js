@@ -246,6 +246,7 @@
     'nw':'nw', '나다라야왓슨':'nw', 'nadarayawatson':'nw',
     '봉': 'frame', 'frame': 'frame',
     'stdev': 'stdev', '표준편차': 'stdev',
+    'percentile':'percentile','백분위수':'percentile','백분위':'percentile',
     'change': 'change', '증감': 'change',
     'changepct': 'changePct', '변화율': 'changePct',
     'crossup': 'crossUp', '상향돌파': 'crossUp',
@@ -283,11 +284,17 @@
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], nw: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
       if (['sma','ema','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(name==='percentile'){
+        const period=node.args[1],rank=node.args[2];
+        if(period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW)throw new FormulaError('백분위수 조회 봉 수는 1~500 정수로 입력하세요',period.position);
+        if(rank.type!=='number'||!finite(rank.value)||rank.value<0||rank.value>100)throw new FormulaError('백분위는 0~100 숫자로 입력하세요. 예: 95',rank.position);
+        if(!historicalCondition(node.args[0]))throw new FormulaError('백분위수에는 봉 데이터를 사용하세요. 현재 시간·현재 포지션 값의 과거 이력은 없습니다',node.args[0].position);
       }
       if(name==='nw'){
         const period=node.args[1],bandwidth=node.args[2];
@@ -374,6 +381,28 @@
     const value=sum/cache.total,result=finite(value)?value:null;cache.values.set(index,result);return result;
   }
 
+  // Type-7 (linear) empirical percentile. Keep only one sorted rolling window
+  // and memoize requested results; gaps remain unknown, never removed from N.
+  function rollingPercentile(node,context,index,period,rank){
+    if(index<period-1)return null;
+    const key='percentile:'+JSON.stringify(node)+':'+period+':'+rank;
+    if(!context.indicatorCache.has(key))context.indicatorCache.set(key,{sources:new Map(),values:new Map(),sorted:[],missing:0,lastIndex:null});
+    const cache=context.indicatorCache.get(key);if(cache.values.has(index))return cache.values.get(index);
+    const tick=()=>{context.steps++;if(context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');};
+    const read=i=>{tick();if(!cache.sources.has(i))cache.sources.set(i,evaluateNode(node,context,i));return cache.sources.get(i);};
+    const position=value=>{let low=0,high=cache.sorted.length;while(low<high){tick();const mid=(low+high)>>>1;if(cache.sorted[mid]<value)low=mid+1;else high=mid;}return low;};
+    if(cache.lastIndex===index-1){
+      const old=read(index-period),next=read(index);if(finite(old))cache.sorted.splice(position(old),1);else cache.missing--;
+      if(finite(next))cache.sorted.splice(position(next),0,next);else cache.missing++;
+    }else{
+      cache.sorted=[];cache.missing=0;for(let i=index-period+1;i<=index;i++){const value=read(i);if(finite(value))cache.sorted.push(value);else cache.missing++;}
+      cache.sorted.sort((a,b)=>{tick();return a-b;});
+    }
+    cache.lastIndex=index;
+    let value=null;if(!cache.missing){const at=rank/100*(period-1),low=Math.floor(at),high=Math.ceil(at),weight=at-low;value=cache.sorted[low]*(1-weight)+cache.sorted[high]*weight;if(!finite(value))value=null;}
+    cache.values.set(index,value);return value;
+  }
+
   function wilderAtr(context, index, period) {
     const high = context.series.high, low = context.series.low, close = context.series.close;
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
@@ -458,6 +487,7 @@
       const count=occurrenceCount(node.args[0],context,index,node.args[1].value,name==='countStarts'||name==='occursStarts');if(count===null)return null;
       return name==='countTrue'||name==='countStarts'?count:count>=node.args[2].value&&count<=(node.args[3]?.value??node.args[1].value)?1:0;
     }
+    if(name==='percentile')return rollingPercentile(node.args[0],context,index,node.args[1].value,node.args[2].value);
     if(name==='nw')return kernelMean(node.args[0],context,index,node.args[1].value,node.args[2].value);
     if (name === 'abs') { const value = evaluateNode(node.args[0], context, index); return finite(value) ? Math.abs(Number(value)) : null; }
     if (name === 'min' || name === 'max') {
