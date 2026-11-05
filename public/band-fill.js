@@ -1,4 +1,4 @@
-// Draw only the region between the computed upper/lower Bollinger values.
+// Draw only the region between the computed upper/lower band values.
 export function bandRows(plots){
  const upper=plots.find(p=>p.key==='upper')?.data||[],lower=new Map((plots.find(p=>p.key==='lower')?.data||[]).map(p=>[p.time,p.value]));
  return upper.map(p=>({time:p.time,upper:p.value,lower:lower.get(p.time)}));

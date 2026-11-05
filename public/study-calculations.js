@@ -26,3 +26,17 @@ export function bollingerArrays(values,middle,period,multiplier){
  for(let i=period-1;i<values.length;i++){const sample=values.slice(i-period+1,i+1);if(!sample.every(Number.isFinite)||!Number.isFinite(middle[i]))continue;const mean=sample.reduce((n,v)=>n+v,0)/period,deviation=Math.sqrt(sample.reduce((n,v)=>n+(v-mean)**2,0)/period);upper[i]=middle[i]+deviation*multiplier;lower[i]=middle[i]-deviation*multiplier;}
  return {middle,upper,lower};
 }
+
+// Causal endpoint kernel regression. Each point uses its own full past window.
+export function nadarayaWatson(values,{lookback=100,bandwidth=8,kernel='gaussian',alpha=1}={}){
+ const weights=Array.from({length:lookback},(_,lag)=>kernel==='rationalQuadratic'?Math.exp(-alpha*Math.log1p((lag/bandwidth)**2/(2*alpha))):Math.exp(-.5*(lag/bandwidth)**2)),total=weights.reduce((sum,w)=>sum+w,0);let valid=0;
+ return values.map((value,i)=>{valid=Number.isFinite(value)?valid+1:0;if(valid<lookback)return null;let weighted=0;for(let lag=0;lag<lookback;lag++)weighted+=values[i-lag]*weights[lag];const estimate=weighted/total;return Number.isFinite(estimate)?estimate:null;});
+}
+// Residuals are recorded against the estimate known at that bar, never refitted.
+export function nadarayaEnvelope(values,middle,errorPeriod=20,multiplier=3){
+ const upper=values.map(()=>null),lower=values.map(()=>null);let errors=[],sum=0;
+ values.forEach((value,i)=>{if(!Number.isFinite(value)||!Number.isFinite(middle[i])){errors=[];sum=0;return;}const error=Math.abs(value-middle[i]);errors.push(error);sum+=error;if(errors.length>errorPeriod)sum-=errors.shift();if(errors.length===errorPeriod){const width=Math.max(0,sum/errorPeriod)*multiplier;upper[i]=middle[i]+width;lower[i]=middle[i]-width;}});return {middle,upper,lower};
+}
+export function kernelSlope(middle,bars=3){
+ return middle.map((value,i)=>{if(i<bars||!Number.isFinite(value))return null;const previous=middle[i-bars];if(!Number.isFinite(previous)||previous===0||!middle.slice(i-bars,i+1).every(Number.isFinite))return null;const slope=(value-previous)/Math.abs(previous)*100/bars;return Number.isFinite(slope)?slope:null;});
+}

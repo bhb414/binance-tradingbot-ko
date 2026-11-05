@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.43](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.43/binance-tradingbot-ko-v0.4.43-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.44](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.44/binance-tradingbot-ko-v0.4.44-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -23,6 +23,18 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 기존 기기는 업데이트 후 한 번씩 새로고침하면 그 브라우저에 저장했던 즐겨찾기를 공통 목록에 합칩니다. 원래 브라우저 목록은 별도 백업 키에 보존합니다. 이전 목록은 한 번만 가져오며, 서버에서 명시적으로 삭제한 별은 다른 기기의 오래된 목록에서 되살리지 않습니다. 사용자가 별을 직접 다시 누르면 추가할 수 있습니다.
 
 종목별 추가·삭제만 반영하므로 동시에 다른 별을 바꿔도 전체 목록을 덮어쓰지 않습니다. 현물·선물 등 시장별 식별자를 구분하고, 빈 목록도 그대로 유지합니다. 저장 실패 시 성공으로 표시하거나 기존 목록을 덮어쓰지 않습니다. 서버 재시작·업데이트에도 파일을 보존합니다.
+
+## NW 인벨로프와 기울기
+
+홈 → **지표**에서 **NW 지표 추가**와 **NW_SLOPE 지표 추가**를 선택합니다. 기존 지표를 그대로 두고 가격 위에는 NW 중심선·상단·하단, 별도 패널에는 기울기를 표시합니다. 중심선만 보려면 스타일에서 상단·하단과 배경 채우기를 끕니다.
+
+Gaussian 또는 Rational Quadratic 커널, 계산 봉 수(현재 포함, 기본 100), Bandwidth(기본 8), RQ 상대 가중치(기본 1), 가격 소스와 일반/하이킨아시 기준을 설정합니다. 가중치는 Gaussian에서 exp(−(봉 거리/Bandwidth)²/2), RQ에서 (1+(봉 거리/Bandwidth)²/(2α))^(−α)입니다. 계산 창 전체가 있을 때부터 커널 가중평균을 표시합니다. 상·하단은 중심선 ± 관측된 절대오차의 이동평균(기본 20봉) × 배수(기본 3)입니다. 오차는 각 봉 당시에 계산한 추정값을 사용하며 과거 구간 전체를 다시 맞추지 않습니다. 따라서 다른 제작자의 조회 길이·오차 기간·초기화·재도색 설정과 값이 다를 수 있습니다.
+
+기울기는 (현재 NW − N봉 전 NW) ÷ |N봉 전 NW| × 100 ÷ N으로, 기본 N=3의 **봉당 변화율(%/봉)**입니다. 화면상의 각도나 수익률이 아닙니다. ±0.01 %/봉 안은 중립색, 그 위는 상승색, 아래는 하락색입니다. 기준과 색상은 수정할 수 있으며 중심선 색상에도 같은 판정을 적용합니다. 두 지표의 커널·계산 봉 수·Bandwidth·RQ 가중치·소스·캔들 기준을 맞추면 같은 중심선을 기준으로 비교합니다. 밴드 폭 배수는 기울기에 영향을 주지 않습니다.
+
+미래 봉을 사용하지 않는 비재도색 방식만 제공합니다. 진행 중인 봉의 값은 변하고, 원본 가격 데이터·설정이 바뀌면 결과도 달라질 수 있습니다. 준비 봉 부족·누락 데이터·0 나눗셈은 비워 두고 연결하지 않습니다. 기존 차트 설정과 같이 서버에 저장되며 추가 바이낸스 요청을 만들지 않습니다. 이번 추가는 조회용 차트 지표이며 봇 조건식·주문 설정을 변경하지 않습니다. 이 지표만으로 반등과 전환을 확정하거나 수익성을 보장하지 않습니다.
+
+계산 참고: [NW 커널 회귀](https://www.tradingview.com/script/AWNvbPRM-Nadaraya-Watson-Rational-Quadratic-Kernel-Non-Repainting/), [NW 인벨로프 구조](https://www.luxalgo.com/library/indicator/nadaraya-watson-envelope/). 설명된 수학 구조를 자체 구현했으며 외부 Pine 스크립트 코드를 포함하지 않습니다.
 
 ## 보조지표
 
