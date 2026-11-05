@@ -53,5 +53,5 @@ export async function updateApplication(root,options={}){
   return options.method==='source'?updateSourceApplication(root,options):updateReleaseApplication(root,options);
 }
 if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){
-  const root=fileURLToPath(new URL('../',import.meta.url));try{await updateApplication(root,{checkOnly:process.argv.includes('--check'),method:process.argv.includes('--source')?'source':'release'});}catch(error){console.error('업데이트 중단: '+(error.message||'실패'));process.exitCode=1;}
+  const rootArgument=process.argv.indexOf('--root'),root=rootArgument>=0?process.argv[rootArgument+1]:fileURLToPath(new URL('../',import.meta.url));try{if(!root||root.startsWith('--'))throw Error('프로그램 폴더 경로를 확인해 주세요.');if(process.argv.includes('--source')&&process.argv.includes('--repair'))throw Error('파일 복구는 정식 릴리즈 방식으로 실행해 주세요.');await updateApplication(root,{checkOnly:process.argv.includes('--check'),repair:process.argv.includes('--repair'),method:process.argv.includes('--source')?'source':'release'});}catch(error){console.error('업데이트 중단: '+(error.message||'실패'));process.exitCode=1;}
 }

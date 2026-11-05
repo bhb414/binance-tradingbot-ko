@@ -15,8 +15,9 @@ export async function packageRelease(root,{outDirectory=path.join(root,'dist')}=
  const pkg=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));await mkdir(outDirectory,{recursive:true});
  const name='binance-tradingbot-ko-v'+pkg.version+'-windows.zip',filename=path.resolve(outDirectory,name);
  await git(root,['archive','--format=zip','--prefix=binance-tradingbot-ko/','--output='+filename,repo.revision]);
- const digest=createHash('sha256').update(await readFile(filename)).digest('hex');await writeFile(path.join(outDirectory,'SHA256SUMS.txt'),digest+'  '+name+'\n');
- return {version:pkg.version,revision:repo.revision,filename,sha256:digest,files:files.length};
+ const digest=createHash('sha256').update(await readFile(filename)).digest('hex');let checks=digest+'  '+name+'\n',repairFilename=null;
+ const repairFiles=['repair.cmd','repair.ps1'];if(repairFiles.some(file=>files.includes(file))){if(!repairFiles.every(file=>files.includes(file)))throw Error('복구 도구 파일이 누락되었습니다.');const repairName='binance-tradingbot-ko-v'+pkg.version+'-repair.zip';repairFilename=path.resolve(outDirectory,repairName);await git(root,['archive','--format=zip','--output='+repairFilename,repo.revision,...repairFiles]);checks+=createHash('sha256').update(await readFile(repairFilename)).digest('hex')+'  '+repairName+'\n';}await writeFile(path.join(outDirectory,'SHA256SUMS.txt'),checks);
+ return {version:pkg.version,revision:repo.revision,filename,sha256:digest,files:files.length,repairFilename};
 }
 if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url){
  try{console.log(JSON.stringify(await packageRelease(fileURLToPath(new URL('../',import.meta.url))),null,2));}catch(error){console.error(error.message);process.exitCode=1;}

@@ -52,27 +52,27 @@ export async function recoverSourceUpdate(root,dataDirectory,{onProgress=console
  if(!transaction.committed){onProgress('중단된 업데이트를 복구합니다…');for(const item of plan.reverse()){if(item.data===null)await fs.unlink(item.filename).catch(error=>{if(error.code!=='ENOENT')throw error;});else await atomicWrite(item.filename,item.data);}}
  await fs.unlink(path.join(root,'.runtime','source-update.json'));return true;
 }
-export async function updateReleaseApplication(installation,{checkRelease=checkReleaseUpdate,fetchImpl=globalThis.fetch,dataDirectory=process.env.WORKROOM_DATA_DIR||path.join(installation,'.runtime'),port=process.env.PORT||8896,onProgress=console.log,validateCandidate=validateReleaseCandidate,afterFile=null}={}){
+export async function updateReleaseApplication(installation,{checkRelease=checkReleaseUpdate,fetchImpl=globalThis.fetch,dataDirectory=process.env.WORKROOM_DATA_DIR||path.join(installation,'.runtime'),port=process.env.PORT||8896,onProgress=console.log,validateCandidate=validateReleaseCandidate,afterFile=null,repair=false}={}){
  const root=await fs.realpath(installation);dataDirectory=path.resolve(dataDirectory);
  const unlock=await acquireLock(path.join(root,'.runtime','update.lock'));let stage=null;
  try{
   await stopped(root,dataDirectory,port);await recoverSourceUpdate(root,dataDirectory,{onProgress});
   const localPackage=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));if(localPackage.name!=='binance-tradingbot-ko')throw Error('앱 설치 폴더를 확인해 주세요.');
   onProgress('공식 릴리즈를 확인합니다… (Git 불필요)');const status=await checkRelease(root);
-  if(!status.available){onProgress(status.ahead?'설치 버전이 정식 릴리즈보다 앞서 있습니다. 기존 버전을 유지합니다.':'이미 최신 정식 릴리즈입니다.');return {updated:false,version:localPackage.version,ahead:status.ahead||false,method:'release'};}
-  if(!status.downloadUrl)throw Error('정식 Windows ZIP이 아직 준비되지 않았습니다. 잠시 후 다시 확인해 주세요.');
-  onProgress('새 버전 ZIP과 체크섬을 내려받습니다…');const target=await downloadReleasePackage(status.latest,{fetchImpl});
-  onProgress('현재 설치 파일을 원본 배포본과 대조합니다…');const baseline=await downloadReleasePackage(localPackage.version,{fetchImpl});
+  if(!status.available&&!repair){onProgress(status.ahead?'설치 버전이 정식 릴리즈보다 앞서 있습니다. 기존 버전을 유지합니다.':'이미 최신 정식 릴리즈입니다.');return {updated:false,version:localPackage.version,ahead:status.ahead||false,method:'release'};}
+  if(status.available&&!status.downloadUrl)throw Error('정식 Windows ZIP이 아직 준비되지 않았습니다. 잠시 후 다시 확인해 주세요.');
+  onProgress('새 버전 ZIP과 체크섬을 내려받습니다…');const target=await downloadReleasePackage(status.available?status.latest:localPackage.version,{fetchImpl});
+  onProgress('현재 설치 파일을 원본 배포본과 대조합니다…');const baseline=target.version===localPackage.version?target:await downloadReleasePackage(localPackage.version,{fetchImpl});
   const paths=new Map();for(const file of [...baseline.files.keys(),...target.files.keys()]){const key=file.toLowerCase();if(paths.has(key)&&paths.get(key)!==file)throw Error('대소문자만 다른 배포 경로를 확인해 주세요: '+file);paths.set(key,file);}
-  const originals=new Map();for(const [file,data]of baseline.files){const current=await sourceFile(root,file);if(!current.data||!contentSame(current.data,data))throw Error('로컬 소스가 변경되었거나 누락되었습니다: '+file+'. 자동으로 덮어쓰지 않습니다.');originals.set(file,current.data);}
-  for(const file of target.files.keys())if(!baseline.files.has(file)){const current=await sourceFile(root,file);if(current.data!==null)throw Error('추가된 배포 파일이 기존 로컬 파일과 충돌합니다: '+file);}
+  const originals=new Map();for(const [file,data]of baseline.files){const current=await sourceFile(root,file);if(!repair&&(!current.data||!contentSame(current.data,data)))throw Error('로컬 소스가 변경되었거나 누락되었습니다: '+file+'. 자동으로 덮어쓰지 않습니다.');originals.set(file,current.data);}
+  for(const file of target.files.keys())if(!baseline.files.has(file)){const current=await sourceFile(root,file);if(current.data!==null){if(!repair||!contentSame(current.data,target.files.get(file)))throw Error('추가된 배포 파일이 기존 로컬 파일과 충돌합니다: '+file);originals.set(file,current.data);}}
   stage=await fs.mkdtemp(path.join(os.tmpdir(),'binance-workroom-release-'));const candidate=path.join(stage,'candidate');
   for(const [file,data]of target.files){const filename=path.resolve(candidate,...file.split('/'));if(!filename.startsWith(candidate+path.sep))throw Error('검증 파일 경로 확인 실패');await fs.mkdir(path.dirname(filename),{recursive:true});await fs.writeFile(filename,data,{flag:'wx'});}
   onProgress('별도 임시 폴더에서 새 버전을 검증합니다…');await validateCandidate(candidate,target.files);
   await stopped(root,dataDirectory,port);
   const names=[...new Set([...baseline.files.keys(),...target.files.keys()])],changes=[];
-  for(const file of names){const current=await sourceFile(root,file),old=originals.get(file)||null;if((current.data?hash(current.data):null)!==(old?hash(old):null))throw Error('검증 중 파일이 변경되었습니다: '+file);const next=target.files.get(file)||null;if(!old||!next||!old.equals(next))changes.push({file,before:old?hash(old):null,after:next?hash(next):null});}
-  if(!changes.length)return {updated:false,version:localPackage.version,method:'release'};
+  for(const file of names){const current=await sourceFile(root,file),old=originals.get(file)||null;if((current.data?hash(current.data):null)!==(old?hash(old):null))throw Error('검증 중 파일이 변경되었습니다: '+file);const next=target.files.get(file)||null;if(old===null?next!==null:next===null||!old.equals(next))changes.push({file,before:old?hash(old):null,after:next?hash(next):null});}
+  if(!changes.length){onProgress('전체 프로그램 파일 검증 완료 · 누락·변경 없음.');return {updated:false,repaired:false,version:localPackage.version,method:'release'};}
   const id=Date.now()+'-'+randomUUID(),backup=path.join(dataDirectory,'backups','source-update-'+id),marker=path.join(root,'.runtime','source-update.json');
   await fs.mkdir(backup,{recursive:true});
   for(const item of changes)if(item.before!==null){const filename=path.resolve(backup,'source',...item.file.split('/'));if(!filename.startsWith(backup+path.sep+'source'+path.sep))throw Error('백업 경로 확인 실패');await fs.mkdir(path.dirname(filename),{recursive:true});await fs.writeFile(filename,originals.get(item.file),{flag:'wx'});}
@@ -85,7 +85,7 @@ export async function updateReleaseApplication(installation,{checkRelease=checkR
    for(const item of changes){const current=await sourceFile(root,item.file);if((current.data?hash(current.data):null)!==item.after)throw Error('교체 결과 검증 실패: '+item.file);}
    transaction.committed=true;await atomicWrite(marker,JSON.stringify(transaction));await fs.unlink(marker);
   }catch(error){try{await recoverSourceUpdate(root,dataDirectory,{onProgress});}catch(recovery){throw Error(error.message+' 자동 복구를 마치지 못했습니다: '+recovery.message+' · update.cmd를 다시 실행해 주세요.');}throw Error(error.message+' · 기존 버전으로 복구했습니다.');}
-  onProgress('업데이트 완료: v'+target.version+'. run.cmd로 실행해 주세요. 저장 키·봇 설정·매매 기록은 유지됩니다.');return {updated:true,version:target.version,previous:localPackage.version,method:'release',backup};
+  onProgress((repair?'프로그램 파일 복구 완료: v':'업데이트 완료: v')+target.version+'. run.cmd로 실행해 주세요. 저장 키·봇 설정·매매 기록은 유지됩니다.');return {updated:true,repaired:repair,version:target.version,previous:localPackage.version,method:'release',backup};
  }finally{
   try{if(stage){const safe=path.resolve(stage),base=path.resolve(os.tmpdir())+path.sep;if(!safe.startsWith(base)||!path.basename(safe).startsWith('binance-workroom-release-'))throw Error('임시 폴더 경로 확인 실패');await fs.rm(safe,{recursive:true,force:true,maxRetries:3});}}
   finally{await unlock();}

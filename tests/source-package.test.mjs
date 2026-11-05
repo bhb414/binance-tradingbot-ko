@@ -63,3 +63,8 @@ test('untagged ZIP verification still rejects changed source and preserves priva
  await git(producer,['tag','-d','v1.0.0']);await git(producer,['push','-q','origin',':refs/tags/v1.0.0']);await writeFile(path.join(app,'server.mjs'),'my source changes');
  await assert.rejects(()=>bootstrapRepository(app,{gitImpl,onProgress(){}}),/로컬 소스 변경/);assert.equal(await exists(path.join(app,'.git')),false);assert.equal(await readFile(path.join(app,'.runtime','credentials.dpapi'),'utf8'),'fabricated-ciphertext');
 }));
+
+test('releases publish a standalone two-file repair ZIP with its own checksum',()=>harness(async({producer})=>{
+ await git(producer,['remote','set-url','origin',REPOSITORY]);await writeFile(path.join(producer,'repair.cmd'),'@echo off\r\n');await writeFile(path.join(producer,'repair.ps1'),'# repair\n');await git(producer,['add','repair.cmd','repair.ps1']);await git(producer,['commit','-qm','repair fixture']);const result=await packageRelease(producer);assert.ok(result.repairFilename?.endsWith('-repair.zip'));
+ const zip=await readFile(result.repairFilename),end=zip.lastIndexOf(Buffer.from([80,75,5,6]));let offset=zip.readUInt32LE(end+16);const names=[];for(let i=0;i<zip.readUInt16LE(end+10);i++){const length=zip.readUInt16LE(offset+28);names.push(zip.subarray(offset+46,offset+46+length).toString());offset+=46+length+zip.readUInt16LE(offset+30)+zip.readUInt16LE(offset+32);}assert.deepEqual(names,['repair.cmd','repair.ps1']);const checks=await readFile(path.join(producer,'dist/SHA256SUMS.txt'),'utf8');assert.ok(checks.includes(createHash('sha256').update(zip).digest('hex')+'  '+path.basename(result.repairFilename)));
+}));
