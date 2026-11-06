@@ -1,11 +1,11 @@
-import {budgetRealized,withheldProfit,isPercentBudget} from './budget.js';
+import {budgetRealized,withheldProfit,isDynamicBudget} from './budget.js';
 const n=v=>Number(v)||0,lossMode=b=>b.budgetLossCarry??'carry',recoveryMode=b=>b.budgetRecovery??'ratio';
 export function budgetRecoveryDebt(bot,realized=n(bot.runtime?.realized)){
  const r=bot.runtime||{};return Number.isFinite(r.budgetRecoveryDebt)?Math.max(0,r.budgetRecoveryDebt):Math.max(0,-budgetRealized({...bot,runtime:{...r,realized}}));
 }
 export function prepareBudgetPolicy(bot,realized=n(bot.runtime?.realized)){
  const r=bot.runtime||={};r.budgetRecoveryDebt=budgetRecoveryDebt(bot,realized);
- if(!isPercentBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'&&lossMode(bot)==='zero'){
+ if(!isDynamicBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'&&lossMode(bot)==='zero'){
   const excess=Math.max(0,-(n(bot.budget)+budgetRealized({...bot,runtime:{...r,realized}})));
   r.budgetLossCredit=n(r.budgetLossCredit)+excess;r.budgetRecoveryDebt=Math.max(0,r.budgetRecoveryDebt-excess);
  }
@@ -15,9 +15,9 @@ export function prepareBudgetPolicy(bot,realized=n(bot.runtime?.realized)){
 export function recordBudgetResult(bot,amount,{realizedBefore=n(bot.runtime?.realized),profit=true}={}){
  if(!Number.isFinite(amount)||!Number.isFinite(realizedBefore))throw Error('예산 손익 반영 값을 확인하세요.');
  prepareBudgetPolicy(bot,realizedBefore);const r=bot.runtime,before=n(bot.budget)+budgetRealized({...bot,runtime:{...r,realized:realizedBefore}}),debt=r.budgetRecoveryDebt;
- const recover=profit&&recoveryMode(bot)==='full'&&!isPercentBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'?Math.min(Math.max(0,amount),debt):0;
+ const recover=profit&&recoveryMode(bot)==='full'&&!isDynamicBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'?Math.min(Math.max(0,amount),debt):0;
  const withheld=profit?withheldProfit(bot,Math.max(0,amount)-recover):0,credited=amount-withheld;
- const forgiven=!isPercentBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'&&lossMode(bot)==='zero'?Math.max(0,-(before+credited)):0;
+ const forgiven=!isDynamicBudget(bot)&&(bot.budgetMode||'fixed')!=='fixed'&&lossMode(bot)==='zero'?Math.max(0,-(before+credited)):0;
  r.budgetWithheld=n(r.budgetWithheld)+withheld;r.budgetLossCredit=n(r.budgetLossCredit)+forgiven;
  r.budgetRecoveryDebt=Math.max(0,debt-credited-forgiven);
  return {credited:credited+forgiven,withheld,forgiven,recovery:recover,debt:r.budgetRecoveryDebt};

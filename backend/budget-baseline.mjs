@@ -16,7 +16,7 @@ export class BudgetBaselines{
  }
  async inspect(id){
   const e=this.e;e.storage.healthy();if(!e.connected)throw Error('계좌를 연결한 뒤 예산 기준을 재설정하세요.');
-  const root=e.budgetSelection.root(id),members=e.budgetSelection.members(root);
+  const root=e.budgetSelection.root(id),members=e.budgetSelection.members(root);if(root.budgetType==='walletStep')throw Error('지갑 구간 방식은 봇의 확정손익을 따로 더하지 않습니다. 기본 설정에서 시작 예산이나 구간 설정을 저장하면 현재 지갑을 새 기준으로 잡습니다.');
   if(root.kind==='multi'&&members.length!==root.legs.length)throw Error('종목별 운용 기록이 누락되어 재설정할 수 없습니다.');
   this.checkOrders(members);await e.refreshAccount(true);
   for(const b of members){

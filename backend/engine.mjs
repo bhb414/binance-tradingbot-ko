@@ -1,3 +1,4 @@
+import {WalletStepBudgets} from './wallet-step-budgets.mjs';
 import {BotStop,automationEnabled} from './bot-stop.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { BinanceClient } from './binance.mjs';
@@ -25,7 +26,7 @@ import {PostOnlyRetries,isPostOnlyRejection} from './post-only-retries.mjs';
 import {BudgetSelection} from './budget-selection.mjs';
 import {BudgetBaselines} from './budget-baseline.mjs';
 import {recordBudgetResult,prepareBudgetPolicy} from '../public/budget-policy.js';
-import {budgetIncluded,allocatedAmount,resolveBudgets,budgetSignature,isPercentBudget} from '../public/budget.js';
+import {budgetIncluded,allocatedAmount,resolveBudgets,budgetSignature,isDynamicBudget} from '../public/budget.js';
 import { makeBot, validateBot, positionMargin, effectiveBudget } from '../public/core.js';
 import { upgradeBot } from '../public/formula.js';
 import {ruleIntervals,evaluateRuleFormula} from '../public/formula-runtime.js';
@@ -46,7 +47,7 @@ export class TradingEngine {
     this.credentialStore=credentialStore;this.credentialError=null;this.reconnectAt=0;
     this.botStop=new BotStop(this);this.manual=new ManualTrading(this);this.multi=new MultiBots(this);this.storage=new StorageRecovery(this);
     this.orderChecks=new WeakMap();this.positionChecks=new WeakMap();this.accountRevisionAt=0;this.lastCycleAt=0;
-    this.orderCancellation=new OrderCancellation(this);this.deadlines=new OrderDeadlines(this);this.positionMismatchError=POSITION_MISMATCH_ERROR;this.shared=new SharedPositions(this);this.closeRecovery=new CloseOrderRecovery(this);this.closeFlow=new ClosePositionFlow(this);this.positionReconciliation=new PositionReconciliation(this);this.positionImports=new PositionImports(this);this.budgetSelection=new BudgetSelection(this);this.budgetBaselines=new BudgetBaselines(this);this.postOnly=new PostOnlyRetries(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.excursions=new TradeExcursions(this);this.positionCostEstimates=new PositionCostEstimates(this);this.connectionId=null;
+    this.orderCancellation=new OrderCancellation(this);this.deadlines=new OrderDeadlines(this);this.positionMismatchError=POSITION_MISMATCH_ERROR;this.shared=new SharedPositions(this);this.closeRecovery=new CloseOrderRecovery(this);this.closeFlow=new ClosePositionFlow(this);this.positionReconciliation=new PositionReconciliation(this);this.positionImports=new PositionImports(this);this.walletSteps=new WalletStepBudgets(this);this.budgetSelection=new BudgetSelection(this);this.budgetBaselines=new BudgetBaselines(this);this.postOnly=new PostOnlyRetries(this);this.positionInsights=new PositionInsights(this);this.tradeHistory=new TradeHistory(this);this.excursions=new TradeExcursions(this);this.positionCostEstimates=new PositionCostEstimates(this);this.connectionId=null;
   }
   get state(){return this.store.state;}
   serial(callback){const result=this.queue.then(callback,callback);this.queue=result.catch(()=>{});return result;}
@@ -168,9 +169,9 @@ export class TradingEngine {
     if(input.kind==='multi'||this.multi.has(input.id))return this.multi.save(input);
     if(this.state.bots.find(b=>b.id===input.id)?.multiBotId)throw Error('다중종목 봇 설정에서 수정하세요.');
     const existing=this.state.bots.find(b=>b.id===input.id),base=upgradeActions(upgradeBot({...makeBot(),...input}));
-    const allowed=['id','name','symbol','budget','budgetMode','budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
+    const allowed=['id','name','symbol','budget','budgetMode','budgetType','budgetStep','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery','profitReinvestPercent','budgetIncluded','entryPercent','maxEntries','leverage','margin','color','conditionMode','formula','formulaTimeframe','formulaCandle','rules','order','reentry','exit','actionRules'];
     const b=Object.fromEntries(allowed.map(k=>[k,base[k]]));if(!/^[a-zA-Z0-9_-]{1,64}$/.test(b.id))throw new Error('봇 식별자를 확인해 주세요.');
-    b.budgetIncluded=input.budgetIncluded===undefined?existing?.budgetIncluded:input.budgetIncluded;b.profitReinvestPercent=input.profitReinvestPercent===undefined?existing?.profitReinvestPercent??100:input.profitReinvestPercent;for(const key of ['budgetType','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery'])if(input[key]===undefined)b[key]=existing?.[key];
+    b.budgetIncluded=input.budgetIncluded===undefined?existing?.budgetIncluded:input.budgetIncluded;b.profitReinvestPercent=input.profitReinvestPercent===undefined?existing?.profitReinvestPercent??100:input.profitReinvestPercent;for(const key of ['budgetType','budgetStep','budgetPercent','budgetShortfall','budgetFloor','budgetLossCarry','budgetRecovery'])if(input[key]===undefined)b[key]=existing?.[key];
     if(!['mint','lavender','amber'].includes(b.color))throw new Error('캐릭터 색상을 확인해 주세요.');
     const limits=await this.leverageLimits(b.symbol),symbols=(await this.catalog()).map(s=>s.symbol);const errors=validateBot({...b,runtime:existing?.runtime,used:existing?.runtime.quantity*existing?.runtime.entryPrice/b.leverage||0,reserved:existing?this.decorate(existing).reserved:0},this.state.bots,{balance:this.accountSnapshot?.walletBalance??Infinity,symbols,enforceAllocationLimit:false,maxLeverage:existing&&(existing.runtime.quantity>0||this.ownOrders(existing).some(active))?(limits.maxLeverage||125):leverageCap(limits,this.budgetLimit({...b,runtime:existing?.runtime}))});
     await this.budgetSelection.assertSave(b,existing);
@@ -179,7 +180,7 @@ export class TradingEngine {
       const locked=['symbol','margin','leverage'];
       if(locked.some(key=>JSON.stringify(existing[key])!==JSON.stringify(b[key])))throw new Error('보유 포지션·미해결 주문이 있으면 담당 종목·증거금 모드·레버리지는 변경할 수 없습니다.');
     }
-    b.statsReset=existing?.statsReset||null;b.name=b.name.trim();b.runtime=existing?{...existing.runtime,runEnabled:false,managementEnabled:false,entryBlocked:null}:initialRuntime();prepareBudgetPolicy(b);b.runtime.orderRetries={};if(!existing||!existing.runtime.quantity&&!this.ownOrders(existing).some(active))b.runtime.ruleSignals={};if(!budgetIncluded(b))b.runtime.managementEnabled=false;
+    b.statsReset=existing?.statsReset||null;b.name=b.name.trim();b.runtime=existing?{...existing.runtime,runEnabled:false,managementEnabled:false,entryBlocked:null}:initialRuntime();this.walletSteps.commit(b,existing);prepareBudgetPolicy(b);b.runtime.orderRetries={};if(!existing||!existing.runtime.quantity&&!this.ownOrders(existing).some(active))b.runtime.ruleSignals={};if(!budgetIncluded(b))b.runtime.managementEnabled=false;
     if(existing)this.state.bots[this.state.bots.indexOf(existing)]=b;else this.state.bots.push(b);
     this.botStop.mark(b);this.note(existing?'봇 설정 저장':'봇 생성',`${b.name} · ${b.symbol} · 예산 ${b.budget} USDT · 봇 정지`,b.id);await this.checkpoint();await this.botStop.advance(b);this.positionInsights.cache=null;return this.decorate(b);
   });}
@@ -212,7 +213,7 @@ export class TradingEngine {
     this.requireTrading();const b=this.bot(id),r=b.runtime;if(r.stopPending)throw Error('정지 주문의 취소·체결 확인이 끝난 뒤 시작하세요.');if(!budgetIncluded(b))throw Error('보관 중인 봇입니다. 운용으로 이동한 뒤 시작하세요.');if(r.runEnabled)return this.decorate(b);
     if(this.manual.records.some(order=>order.botId!==b.id&&(this.shared.supported?order.status==='UNKNOWN':active(order))&&order.parameters.symbol===b.symbol))throw new Error('같은 종목의 별도 수동 주문이 남아 있습니다. 먼저 수동 주문 상태를 확인하고 정리해 주세요.');
     if(!this.shared.supported&&this.state.bots.some(other=>other!==b&&other.symbol===b.symbol&&(other.runtime.runEnabled||other.runtime.quantity>0||this.ownOrders(other).some(active))))throw new Error('같은 종목은 한 봇만 운용할 수 있습니다. 다른 봇의 진입·포지션·주문을 먼저 정리해 주세요.');
-    await this.refreshAccount(true);const total=this.allocatedBudget();if(!r.quantity&&b.budgetShortfall!=='available'&&total>this.accountSnapshot.walletBalance+1e-8)throw new Error('전체 봇 배정 예산이 계좌 USDT 잔고를 초과합니다.');
+    await this.refreshAccount(true);if(this.walletSteps.sync())await this.checkpoint();const total=this.allocatedBudget();if(!r.quantity&&b.budgetShortfall!=='available'&&total>this.accountSnapshot.walletBalance+1e-8)throw new Error('전체 봇 배정 예산이 계좌 USDT 잔고를 초과합니다.');
     if(this.shared.supported){await this.shared.ensure(b.symbol);if(!this.shared.active(b.symbol)&&!r.quantity)throw Error('공유 계좌의 미체결 체결을 대조한 뒤 다시 시작해 주세요.');}
     await this.syncBotPosition(b,true);if(r.syncHold)throw new Error(r.error||'거래소와 봇의 포지션 수량이 일치하지 않습니다.');
     if(this.shared.supported&&!await this.shared.ensure(b.symbol))throw Error('공유 계좌의 체결 대조가 먼저 필요합니다.');
@@ -224,7 +225,7 @@ export class TradingEngine {
     if(this.shared.active(b.symbol)&&this.shared.exposure(b.symbol)){const configs=await this.client.symbolConfig(b.symbol),config=Array.isArray(configs)?configs[0]:configs;this.shared.syncSettings(b.symbol,config);}
     for(const rule of b.actionRules.filter(rule=>rule.enabled)){
       const snapshots=await this.formulaMarkets(b.symbol,rule.formula),{market}=evaluateRuleFormula(rule.formula,snapshots,{...r,leverage:b.leverage},{now:this.now()+(this.client.offset||0)});
-      const view=this.orderView(b,rule,actionDirection(rule.action));if(isEntry(rule.action)&&!r.quantity&&this.budgetLimit(b)>0){try{const plan=entryOrder(view,info,await this.entryBook(b.symbol,market),this.accountSnapshot.availableBalance,this.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),this.hedge);}catch(error){if(!isEntryCapacityError(error)||b.budgetShortfall!=='available'&&!isPercentBudget(b))throw error;}}
+      const view=this.orderView(b,rule,actionDirection(rule.action));if(isEntry(rule.action)&&!r.quantity&&this.budgetLimit(b)>0){try{const plan=entryOrder(view,info,await this.entryBook(b.symbol,market),this.accountSnapshot.availableBalance,this.hedge);protectiveOrders(view,info,plan.parameters.quantity,Number(plan.parameters.price||market.ticker.lastPrice),this.hedge);}catch(error){if(!isEntryCapacityError(error)||b.budgetShortfall!=='available'&&!isDynamicBudget(b))throw error;}}
     }
     if(!r.quantity&&!this.ownOrders(b).some(active)&&(!this.shared.active(b.symbol)||!this.shared.exposure(b.symbol))){
       try{await this.client.changeMargin(b.symbol,b.margin);}catch(e){if(e.code!==-4046)throw e;}
@@ -237,7 +238,7 @@ export class TradingEngine {
   async pauseBot(id){return this.serial(()=>{if(this.storage.stop(id))return this.multi.has(id)?this.multi.view(this.multi.get(id)):this.decorate(this.bot(id));if(this.multi.has(id))return this.multi.pause(id);const b=this.bot(id);if(b.multiBotId)throw Error('다중종목 봇 전체를 정지하세요.');return this.pauseRuntime(b);});}
   async pauseRuntime(b){if(this.storage.stop(b.id))return this.decorate(this.bot(b.id));this.botStop.mark(b);this.note('봇 정지',b.name+' · 자동 진입·정리·보호 중지 · 보유 포지션 유지 · 미체결·TP/SL 취소',b.id);await this.checkpoint();await this.botStop.advance(b);return this.decorate(b);}
   async submit(b,parameters,{kind='standard',role='entry',margin=0,group=null,guardKey=null,parent=null,ruleId=null,direction=b.runtime.direction,orderPolicy=null,timeframe=null,closeScope='bot',closeIntentId=null,entryEstimate=null,onPostOnlyRejected=null,onEntryMarginRejected=null}={}){
-    this.requireTrading();const sequence=this.state.nextIntent++;const id='fw_'+createHash('sha256').update(b.id+this.state.scope).digest('hex').slice(0,9)+'_'+sequence;
+    this.requireTrading();if(role==='entry')this.walletSteps.sync();const sequence=this.state.nextIntent++;const id='fw_'+createHash('sha256').update(b.id+this.state.scope).digest('hex').slice(0,9)+'_'+sequence;
     const order={id,botId:b.id,scope:this.state.scope,kind,role,parameters:{...parameters},margin,group:group||id,guardKey,status:'UNKNOWN',createdAt:this.now(),appliedQty:0,appliedQuote:0,feesFetched:false,parent,ruleId,direction,orderPolicy,timeframe,closeScope,closeIntentId,entryEstimate,positionEpoch:role==='entry'?null:this.rulePosition(b,{closeScope,action:'EXIT_'+direction}).positionEpoch,leverage:b.leverage,marginType:b.margin};
     const parentOrder=parent?this.state.orders.find(o=>o.id===parent):null,parentFallback=parentOrder?.fallbackDone;if(parentOrder)parentOrder.fallbackDone=true;
     this.state.orders.push(order);await this.checkpoint();
@@ -357,7 +358,7 @@ export class TradingEngine {
       await service();if(deadlinesOnly){this.excursions.observe();await this.checkpoint();return;}
       await service();await this.availableRead(()=>this.manual.refreshPending({beforeEach:service}));
       for(const b of this.state.bots)for(const o of this.ownOrders(b).filter(o=>active(o)||!o.feesFetched&&o.orderId)){await service();if(active(o)||!o.feesFetched&&o.orderId)await this.availableRead(()=>this.pollTrackedOrder(o,()=>this.refreshOrder(b,o)));}
-      await service();const account=await this.availableRead(()=>this.refreshAccount());await service();await this.availableRead(()=>this.shared.syncAll({beforeEach:service}));if(account)this.connectionError=null;
+      await service();const account=await this.availableRead(()=>this.refreshAccount());await service();await this.availableRead(()=>this.shared.syncAll({beforeEach:service}));if(account)this.connectionError=null;if(this.walletSteps.sync())await this.checkpoint();
       for(const b of this.state.bots){
         await service();if(handled.has(b.multiBotId?'multi:'+b.multiBotId:b.id))continue;
         try{await this.tickBot(b);if(!b.runtime.stopPending&&!b.runtime.closeRecovery&&!b.runtime.closePending&&!b.runtime.guardWaiting)b.runtime.waiting=null;}

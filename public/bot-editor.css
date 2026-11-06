@@ -28,3 +28,5 @@
 .unallocated-summary{display:block;white-space:pre-line;padding:12px 14px;border:1px solid #dfe9dd;border-radius:8px;background:#f4f8f2;color:#526e56;font-size:12px;line-height:1.9;overflow-wrap:anywhere}.unallocated-summary::first-line{font-weight:600;color:#375d47}
 
 @media(max-width:540px){.budget-type-field{grid-column:1/-1}}
+
+.wallet-step-help summary{cursor:pointer;font-size:12px;line-height:1.8;color:#5f7962}.wallet-step-help .field-note{display:block;margin-top:10px;font-size:12px;line-height:1.9}
