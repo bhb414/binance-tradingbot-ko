@@ -1,3 +1,4 @@
+import {studyInputType} from './study-source.js';
 import {compileStudyFormula} from './study-expression.js';
 import {compileStudyScript,scriptStudyData,SCRIPT_EXAMPLES} from './study-script.js';
 import {shiftStudyPoints,projectStudyPoints} from './study-time.js';
@@ -44,6 +45,16 @@ export function createStudy(type,overrides={}){
   const definition=STUDIES[type];if(!definition)throw new Error('지원하지 않는 지표입니다.');
   return validateStudy({id:'study-'+randomId(),type,visible:true,source:definition.defaultSource||'close',candle:definition.defaultCandle||'chart',timeframes:TIMEFRAMES.map(([key])=>key),params:Object.fromEntries(definition.fields.map(field=>[field.key,field.value])),styles:Object.fromEntries(definition.plots.map(item=>[item.key,{color:item.color,negative:item.negative||'#d98e9a',...(item.directional?{neutral:'#9aa4ad'}:{}),width:1,lineStyle:item.lineStyle||0,visible:true}])),...overrides});
 }
+
+// Keep one editor draft while storing the existing, backwards-compatible shapes.
+export function withStudySource(study,source){
+ if(!['FORMULA','SCRIPT'].includes(study?.type)||typeof source!=='string')throw Error('사용자 지표 입력을 확인하세요.');
+ const type=studyInputType(source),definition=STUDIES[type],styles=structuredClone(study.styles||{}),previous=styles[study.type==='SCRIPT'?'line0':'main'];
+ for(const item of definition.plots)if(!styles[item.key])styles[item.key]={color:item.color,negative:item.negative||'#d98e9a',width:1,lineStyle:item.lineStyle||0,visible:true};
+ if(study.type!==type&&previous)styles[type==='SCRIPT'?'line0':'main']=structuredClone(previous);
+ return {...study,type,params:{name:study.params.name,placement:study.params.placement,[type==='SCRIPT'?'script':'formula']:source},styles};
+}
+
 export function validateStudy(value){
   const definition=STUDIES[value?.type];if(!definition||typeof value.id!=='string'||!/^[\w-]{1,80}$/.test(value.id))throw new Error('지표 설정 형식을 확인해 주세요.');
   if(!SOURCES.some(([key])=>key===value.source)||!['chart','standard','heikin'].includes(value.candle)||typeof value.visible!=='boolean')throw new Error('지표의 계산 기준을 확인해 주세요.');

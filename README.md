@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.66](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.66/binance-tradingbot-ko-v0.4.66-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.67](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.67/binance-tradingbot-ko-v0.4.67-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -38,7 +38,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.66](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.66/binance-tradingbot-ko-v0.4.66-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.67](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.67/binance-tradingbot-ko-v0.4.67-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -319,7 +319,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.66 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.67 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
@@ -377,3 +377,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 조건이나 이름만 저장하면 구간 기준을 유지합니다. 시작 예산이나 구간 설정을 변경하면 저장 시 현재 지갑에서 새로 시작합니다. 운용에 포함된 정지 봇도 지갑 구간을 반영합니다. 보관 중에는 구간을 누적하지 않고 운용으로 옮길 때 현재 지갑을 새 기준으로 잡되 기존 구간 예산은 유지합니다. 다중종목 봇은 부모에서 한 번 계산한 예산을 종목 비중으로 분배합니다. 기존 예산 방식은 자동 변경하지 않습니다.
 
 지갑 구간 예산은 기본 설정의 **지갑 변동 기준 재설정** 또는 봇 ⋯ 메뉴에서 기준만 별도로 바꿀 수 있습니다. **현재 지갑 금액**으로 재설정하면 현재 늘어난 구간 예산은 유지하고 다음 한 구간부터 계산합니다. **금액 직접 지정**을 선택하면 해당 기준과 현재 지갑 사이의 완성된 구간을 바로 반영하며, 적용 전 기준·예산 변화·다음 증액 금액을 미리 보여줍니다. 예를 들어 현재 지갑 1,500 / 구간 예산 120 / 구간 200 / 조정액 10에서 기준을 1,500으로 바꾸면 예산은 120, 다음 증액은 1,700입니다. 기준을 1,000으로 지정하면 2구간을 반영해 예산은 140, 다음 증액은 1,600입니다. 기록·통계·보유 수량·운용 상태와 시작 예산 설정은 유지됩니다. 보관한 봇은 운용 복귀 시 그때의 지갑으로 기준을 다시 잡는 기존 규칙을 따릅니다.
+
+## 사용자 지표 입력 통합
+
+지표 목록의 **＋ 지표 만들기** 한 곳에서 작성합니다. `SMA(하이킨종가, 6)` 같은 계산식을 입력하면 선 하나를 그리고, `단기 = ...`와 `선("이름", 단기)`를 여러 줄로 입력하면 자동으로 변수와 출력선을 처리합니다. 별도 유형 선택은 없습니다. 기존 수식·스크립트 지표 수정도 같은 입력창을 사용하며 이름·색상·표시 위치·봉 주기 설정을 유지합니다. 예제와 데이터·함수 추가도 같은 창에 모았습니다. 목록에 저장한 뒤 ＋를 눌러 차트에 추가합니다.
