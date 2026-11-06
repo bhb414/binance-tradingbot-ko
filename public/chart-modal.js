@@ -1,3 +1,4 @@
+import {installChartLabelMenu} from './chart-labels.js';
 import {api} from './api.js';
 import {ChartExecutions} from './chart-executions.js';
 import {fillTimeframeSelect} from './timeframe-picker.js';
@@ -12,6 +13,7 @@ import {productLabel,instrumentName} from './markets.js';
 let selected=null,selectedType='standard',request=0,chart,series,priceLayer,studies,positionLines,currentPriceLine,inspector,executions,snapshot=null,lastKey=null,accountState=null;
 const $=selector=>document.querySelector(selector);
 const typePicker=installChartTypePicker($('#modal-candle-type'),{onSelect:type=>{selectedType=type;draw();}});
+installChartLabelMenu($('#modal-chart-label-menu'),{onError:message=>{$('#modal-chart-status').textContent=message;}});
 function replacePrice(next){series=next;positionLines.setSeries(next);currentPriceLine.setSeries(next);studies.priceSeries=next;inspector.setSeries(next);executions.setSeries(next);}
 function initialize(){
   if(chart)return;const L=window.LightweightCharts;if(!L)throw new Error('차트 라이브러리를 불러오지 못했습니다.');

@@ -1,3 +1,4 @@
+import {chartLabelPreferences,applyStudyAxisLabels} from './chart-labels.js';
 import {overlayRows,hasPaneOverlays,StudyPaneOverlays} from './study-overlay-targets.js';
 import {StudyBackgrounds} from './study-backgrounds.js';
 import {StudySignals} from './study-signals.js';
@@ -16,7 +17,7 @@ export class StudyRenderer {
     this.toggle=document.createElement('button');this.toggle.type='button';this.toggle.className='study-legend-toggle';this.toggle.setAttribute('aria-controls',this.list.id);
     this.toggle.addEventListener('click',()=>{labelsCollapsed=!labelsCollapsed;try{localStorage.setItem(legendPreference,labelsCollapsed?'1':'0');}catch{}for(const renderer of renderers)renderer.syncLabels();});
     legend.append(this.list,this.toggle);renderers.add(this);this.syncLabels();
-    this.priceSeries=priceSeries;this.signals=new StudySignals(priceSeries);this.backgrounds=new StudyBackgrounds(priceSeries);this.unsubscribe=subscribeStudies(()=>this.update(this.candles,this.interval,this.candleType));
+    this.priceSeries=priceSeries;this.signals=new StudySignals(priceSeries);this.backgrounds=new StudyBackgrounds(priceSeries);this.unsubscribe=subscribeStudies(()=>this.update(this.candles,this.interval,this.candleType));this.unsubscribeAxisLabels=chartLabelPreferences.subscribe(value=>applyStudyAxisLabels(this.rows,value.studies));
     this.observer=new ResizeObserver(()=>this.layout());this.observer.observe(legend.parentElement);
     this.pointerHandler=()=>requestAnimationFrame(()=>this.layout());legend.parentElement.addEventListener('pointerup',this.pointerHandler);
     if(followCrosshair)chart.subscribeCrosshairMove(param=>this.valuesAt(param.time));
@@ -33,7 +34,7 @@ export class StudyRenderer {
       for(const study of studies){
         const active=studyActive(study,interval),definition={...STUDIES[study.type],plots:studyPlots(study)},index=active&&studyPane(study)&&(definition.plots.some(p=>!p.signal&&!p.background&&study.styles[p.key].visible)||hasPaneOverlays(study,definition.plots))?++pane:0;
         const row={study,pane:index,plots:[],values:new Map()};
-        if(active){for(const plot of definition.plots){if(plot.signal||plot.background||!study.styles[plot.key].visible)continue;const style=study.styles[plot.key],series=this.chart.addSeries(window.LightweightCharts[plot.histogram?'HistogramSeries':'LineSeries'],{color:style.color,lineWidth:style.width,lineStyle:plot.projection?2:style.lineStyle,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:!plot.histogram,title:studyLabel(study)+(definition.plots.length>1?' '+plot.label:''),...(studyPriceFormat(study,this.priceSeries?.options().priceFormat)?{priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)}:{})},index);row.plots.push({key:plot.key,series});this.series.push(series);}
+        if(active){for(const plot of definition.plots){if(plot.signal||plot.background||!study.styles[plot.key].visible)continue;const style=study.styles[plot.key],series=this.chart.addSeries(window.LightweightCharts[plot.histogram?'HistogramSeries':'LineSeries'],{color:style.color,lineWidth:style.width,lineStyle:plot.projection?2:style.lineStyle,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:!plot.histogram,title:chartLabelPreferences.value.studies?studyLabel(study)+(definition.plots.length>1?' '+plot.label:''):'',...(studyPriceFormat(study,this.priceSeries?.options().priceFormat)?{priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)}:{})},index);row.plots.push({key:plot.key,series,axisTitle:studyLabel(study)+(definition.plots.length>1?' '+plot.label:'')});this.series.push(series);}
           if((study.type==='BB'||definition.bandFill)&&study.fill?.visible&&study.fill.transparency<100){for(const key of ['upper','lower'])if(!row.plots.some(p=>p.key===key)){const series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:'transparent',lineVisible:false,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},index);row.plots.push({key,series,fillOnly:true});this.series.push(series);}row.fill=new BandFill();row.fillOwner=row.plots[0].series;row.fillOwner.attachPrimitive(row.fill);}
           if(index>0&&hasPaneOverlays(study,definition.plots)){
             const resolveSeries=anchor=>{const key=anchor?.key||'__overlay_zero',existing=row.plots.find(p=>p.key===key);if(existing)return existing.series;

@@ -1,3 +1,4 @@
+import {installChartLabelMenu} from './chart-labels.js';
 import {isWalletStep} from './wallet-step-budget.js';
 import {botNeedsStop,botStopPending} from './bot-controls.js';
 import {budgetPolicyDescription,budgetRecoveryDebt,previewBudgetPolicy} from './budget-policy.js';
@@ -105,6 +106,7 @@ let chartRenderedKey='',chartRestoring=false,chartSaveTimer;
 const botControls=installBotActions({getBots:()=>bots,getState:()=>serverState,openSettings:id=>openBot(id),connectionSettings:()=>goPage('settings'),refresh:syncWorkspace,api,notify:toast});
 const timeframePicker=installTimeframePicker({root:$('#chart-interval-more'),onSelect:setChartInterval});
 const homeTypePicker=installChartTypePicker($('#candle-type'),{value:candleType,onSelect:setChartType});
+installChartLabelMenu($('#chart-label-menu'),{onError:message=>toast(message,true)});
 const positionImportUI=installPositionImportUI({api,getState:()=>serverState,refresh:syncWorkspace,connectionSettings:()=>goPage('settings'),notify:toast,onImported:id=>{if($('#bot-dialog').open)$('#bot-dialog').close();selectedBotId=id;goPage('bots');openBot(id,'conditions');}});
 function toast(message, error=false) { const el=$('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,error ? 7500 : 4200); }
 async function syncWorkspace(refreshMarket=false){

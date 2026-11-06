@@ -1,3 +1,4 @@
+import {chartLabelPreferences} from './chart-labels.js';
 import {anchorPlots} from './study-overlay-targets.js';
 import {isCustomStudy,studySource} from './study-source.js';
 import {scriptStudyData,SCRIPT_EXAMPLES} from './study-script.js';
@@ -12,8 +13,8 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const paths={settings:'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',close:'M6 6l12 12M6 18L18 6',up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6'};
 export const studyIcon=name=>'<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
 let studyStorage;try{studyStorage=localStorage;}catch{}
-const persistence=new StudyPersistence({storage:studyStorage,request:api,onChange(next){studies=next;for(const listener of listeners)listener();if($('#indicator-dialog').open)renderLibrary();const restore=$('#study-restore-local');if(restore)restore.hidden=!persistence.backup();},onStatus(message){const output=$('#study-save-status');if(output)output.textContent=message;}});
-let studies=structuredClone(persistence.document.studies);
+const persistence=new StudyPersistence({storage:studyStorage,request:api,onChange(next,labels){studies=next;chartLabelPreferences.apply(labels);for(const listener of listeners)listener();if($('#indicator-dialog').open)renderLibrary();const restore=$('#study-restore-local');if(restore)restore.hidden=!persistence.backup();},onStatus(message){const output=$('#study-save-status');if(output)output.textContent=message;}});
+let studies=structuredClone(persistence.document.studies);chartLabelPreferences.apply(persistence.document.labels);
 const listeners=new Set();let category='all',editing=null,toast=()=>{};
 let studyHelp=null;
 let adding=false,editingTarget='chart',context='home',previewTimer,saving=false,removingCustom=null;
@@ -80,7 +81,7 @@ export function installStudyUI({notify}){
   toast=notify;$('#study-search').addEventListener('input',renderLibrary);
   $('#study-settings-dialog').addEventListener('close',()=>{studyHelp?.dispose();studyHelp=null;});
   $('#study-settings-form').addEventListener('change',event=>{if(event.target.id==='study-formula-insert'){const value=event.target.value;event.target.value='';if(value)insertFormulaSnippet($('#study-formula-source'),value);}});
-  const reload=async()=>{try{await persistence.load();await customPersistence.load();}catch(error){toast(error.message,true);}};reload();
+  const reload=async()=>{try{chartLabelPreferences.configure(null);await persistence.load();chartLabelPreferences.configure(labels=>persistence.save(studies,labels));await customPersistence.load();}catch(error){toast(error.message,true);}};reload();
   $('#study-load-server').addEventListener('click',reload);
   $('#study-restore-local').hidden=!persistence.backup();
   $('#study-restore-local').addEventListener('click',async()=>{try{const backup=persistence.backup();if(!backup)throw Error('이 기기에 복원할 지표 설정이 없습니다.');await commit(backup.studies);toast('이 기기의 이전 지표 설정을 서버에 저장했습니다.');}catch(error){toast(error.message,true);}});

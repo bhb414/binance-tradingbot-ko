@@ -1,3 +1,4 @@
+import {chartLabelPreferences} from './chart-labels.js';
 // Account entry prices are independent of chart candle style and bot ownership.
 export function chartEntryLines(state,market,symbol){
  if(market!=='usdm'||!state?.connected||!Array.isArray(state.account?.positions))return [];
@@ -11,14 +12,15 @@ export function chartEntryLines(state,market,symbol){
  return [...lines.values()];
 }
 export class PositionPriceLines{
- constructor(series,{lineStyle=2,summary=null}={}){this.series=series;this.lineStyle=lineStyle;this.summary=summary;this.lines=new Map();this.specs=[];}
+ constructor(series,{lineStyle=2,summary=null,labels=chartLabelPreferences}={}){this.series=series;this.lineStyle=lineStyle;this.summary=summary;this.lines=new Map();this.specs=[];this.axisLabelVisible=labels.value.positions;this.unsubscribeLabels=labels.subscribe(value=>{this.axisLabelVisible=value.positions;this.update(this.specs);});}
+ destroy(){this.unsubscribeLabels();this.clear();}
  setSeries(series){const specs=this.specs;this.clear();this.series=series;this.update(specs);}
  update(specs){
   this.specs=specs;
   const wanted=new Set(specs.map(s=>s.key));
   for(const [key,entry]of this.lines)if(!wanted.has(key)){this.series.removePriceLine(entry.line);this.lines.delete(key);}
   for(const spec of specs){
-   const options={id:spec.key,price:spec.price,color:spec.color,title:spec.title,lineWidth:1,lineStyle:this.lineStyle,lineVisible:true,axisLabelVisible:true},signature=JSON.stringify(options),entry=this.lines.get(spec.key);
+   const options={id:spec.key,price:spec.price,color:spec.color,title:spec.title,lineWidth:1,lineStyle:this.lineStyle,lineVisible:true,axisLabelVisible:this.axisLabelVisible},signature=JSON.stringify(options),entry=this.lines.get(spec.key);
    if(!entry)this.lines.set(spec.key,{line:this.series.createPriceLine(options),signature});
    else if(entry.signature!==signature){entry.line.applyOptions(options);entry.signature=signature;}
   }

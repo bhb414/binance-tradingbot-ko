@@ -1,3 +1,4 @@
+import {chartLabelPreferences} from './chart-labels.js';
 import {primaryChartHit,studyChartHit,nearestChartTime} from './chart-hit.js';
 import {installChartTooltip} from './chart-tooltip.js';
 import {chartTypeCaption} from './chart-types.js';
@@ -14,10 +15,11 @@ export function koreanChartTime(time){const d=kstDate(time);return d&&!Number.is
 export function koreanTickMark(time,type){const d=kstDate(time);if(!d||Number.isNaN(d.getTime()))return '';if(type===0)return String(d.getUTCFullYear());if(type===1)return (d.getUTCMonth()+1)+'월';if(type===2)return (d.getUTCMonth()+1)+'/'+d.getUTCDate();return pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+(type===4?':'+pad(d.getUTCSeconds()):'');}
 export const koreanTimeOptions=()=>({localization:{locale:'ko-KR',timeFormatter:koreanChartTime},timeScale:{tickMarkFormatter:koreanTickMark}});
 export class CurrentPriceLine{
- constructor(series){this.series=series;this.line=null;this.signature='';}
+ constructor(series,{labels=chartLabelPreferences}={}){this.series=series;this.line=null;this.signature='';this.axisLabelVisible=labels.value.current;this.unsubscribeLabels=labels.subscribe(value=>{this.axisLabelVisible=value.current;this.line?.applyOptions({axisLabelVisible:value.current});this.signature='';});}
+ destroy(){this.unsubscribeLabels();this.clear();}
  setSeries(series){this.clear();this.series=series;}
  update(value,open){const price=Number(value);if(value==null||value===''||!Number.isFinite(price)||price<=0){this.clear();return;}
-  const color=Number.isFinite(Number(open))&&price<Number(open)?'#df6879':'#249b78',options={price,title:'현재가',color,lineWidth:1,lineStyle:2,lineVisible:true,axisLabelVisible:true},signature=JSON.stringify(options);
+  const color=Number.isFinite(Number(open))&&price<Number(open)?'#df6879':'#249b78',options={price,title:'현재가',color,lineWidth:1,lineStyle:2,lineVisible:true,axisLabelVisible:this.axisLabelVisible},signature=JSON.stringify(options);
   if(!this.line)this.line=this.series.createPriceLine(options);else if(this.signature!==signature)this.line.applyOptions(options);this.signature=signature;
  }
  clear(){if(this.line)this.series.removePriceLine(this.line);this.line=null;this.signature='';}
