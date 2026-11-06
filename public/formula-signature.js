@@ -5,6 +5,7 @@ const startHelp=['거짓 → 참으로 바뀐 봉만 1회로 셉니다. 3봉 연
 const signature={
  choose:{params:['판단','참일 때 값','거짓일 때 값'],help:['조건이 참이면 두 번째 값, 거짓이면 세 번째 값을 사용합니다.']},
  highest:{params:['데이터','최근 봉 수'],help:['현재 포함 최근 N봉의 최고값입니다.']},lowest:{params:['데이터','최근 봉 수'],help:['현재 포함 최근 N봉의 최저값입니다.']},
+ histogram:{params:['"막대 이름"','수식','색 기준식 (선택)'],help:['수식을 0부터 원값까지 막대로 표시합니다. 스타일에서 기준 이상·미만 색상을 선택합니다.','표시할 값입니다.','생략은 0. 상수·수식·앞에서 정의한 변수 가능. 값이 기준과 같으면 기준 이상 색상이며, 기준식이 미수집이면 해당 봉은 비웁니다.']},
  plot:{params:['"선 이름"','수식','표시 이동 봉 수 (선택)'],help:['차트 스크립트 전용. 양수는 오른쪽, 음수는 왼쪽으로 표시합니다. 미래 가격 데이터가 아닙니다.']},forecast:{params:['"예상선 이름"','수식','예상 봉 수','기울기 비교 봉 수','기준봉 0 또는 1'],help:['최근 기울기를 미래로 연장하는 차트 스크립트 전용 점선입니다.','원본 지표 수식 또는 변수.','생략 3봉 · 최대 120봉.','생략 3봉. 변화량을 비교 봉 수로 나눕니다.','생략 1: 직전 완성봉. 0: 진행 중인 봉.']},
  occurs:{params:['조건','최근 봉 수','최소 횟수','최대 횟수 (선택)'],help:occurrenceHelp},
  countTrue:{params:['조건','최근 봉 수'],help:occurrenceHelp},
@@ -52,8 +53,8 @@ export function signatureAt(source,caret){
   }
   if(comment||stack.at(-1)?.type==='[')return null;
   const call=[...stack].reverse().find(item=>item.name);
-  if(!call||!signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal','배경':'bgcolor','bgcolor':'bgcolor','화살표':'arrow','화살표신호':'arrow','arrow':'arrow'}[call.name.toLowerCase()]))])return null;
-  const definition=signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal','배경':'bgcolor','bgcolor':'bgcolor','화살표':'arrow','화살표신호':'arrow','arrow':'arrow'}[call.name.toLowerCase()]))];
+  if(!call||!signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'막대':'histogram','histogram':'histogram','선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal','배경':'bgcolor','bgcolor':'bgcolor','화살표':'arrow','화살표신호':'arrow','arrow':'arrow'}[call.name.toLowerCase()]))])return null;
+  const definition=signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'막대':'histogram','histogram':'histogram','선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal','배경':'bgcolor','bgcolor':'bgcolor','화살표':'arrow','화살표신호':'arrow','arrow':'arrow'}[call.name.toLowerCase()]))];
   return {...definition,name:call.name,argument:call.arg};
 }
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

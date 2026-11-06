@@ -54,6 +54,7 @@ export function withStudySource(study,source){
  for(const item of definition.plots)if(!styles[item.key])styles[item.key]={color:item.color,negative:item.negative||'#d98e9a',width:1,lineStyle:item.lineStyle||0,visible:true};
  if(study.type!==type&&previous)styles[type==='SCRIPT'?'line0':'main']=structuredClone(previous);
  const result={...study,type,params:{name:study.params.name,placement:study.params.placement,[type==='SCRIPT'?'script':'formula']:source},styles};
+ if(type==='SCRIPT'&&studyPlots(result).some(p=>p.histogram))result.params.placement='pane';
  if(type==='SCRIPT')for(const p of studyPlots(result))if(p.background){if(!styles[p.key])styles[p.key]={color:p.color,transparency:85,visible:true};}else if(p.signal&&!styles[p.key].position){styles[p.key].position=p.side==='buy'?'belowBar':'aboveBar';styles[p.key].color=p.generic?'#6493b5':p.side==='buy'?'#149b73':'#d6516b';}
  return result;
 }
@@ -96,10 +97,10 @@ export function average(values,period,kind='SMA'){
 }
 function sourceValues(candles,source){return candles.map(c=>source==='hl2'?(c.high+c.low)/2:source==='hlc3'?(c.high+c.low+c.close)/3:source==='ohlc4'?(c.open+c.high+c.low+c.close)/4:c[source]);}
 const backgroundColor=key=>['#149b73','#d6516b','#c59a5a','#6493b5','#7b62bb','#d99a47'][Number(key.slice(2))%6];
-export function studyPlots(study){if(study.type!=='SCRIPT')return STUDIES[study.type].plots;try{const program=compileStudyScript(study.params.script);return [...program.plots.map(p=>({...STUDIES.SCRIPT.plots.find(x=>x.key===p.key),label:p.label,projection:p.projection,...(p.signal?{signal:true,side:p.side,...(p.generic?{generic:true,text:p.text}:{})}:{})})),...program.backgrounds.map(p=>({key:p.key,label:p.label,background:true,color:backgroundColor(p.key)}))];}catch{return STUDIES.SCRIPT.plots;}}
+export function studyPlots(study){if(study.type!=='SCRIPT')return STUDIES[study.type].plots;try{const program=compileStudyScript(study.params.script);return [...program.plots.map(p=>({...STUDIES.SCRIPT.plots.find(x=>x.key===p.key),label:p.label,projection:p.projection,...(p.histogram?{histogram:true}:{}),...(p.signal?{signal:true,side:p.side,...(p.generic?{generic:true,text:p.text}:{})}:{})})),...program.backgrounds.map(p=>({key:p.key,label:p.label,background:true,color:backgroundColor(p.key)}))];}catch{return STUDIES.SCRIPT.plots;}}
 
 export function studyData(study,raw,candleType='standard',interval='1m'){
-  if(study.type==='SCRIPT')return scriptStudyData(study.params.script,raw,interval);
+  if(study.type==='SCRIPT')return scriptStudyData(study.params.script,raw,interval,study.styles);
   const kind=study.candle==='chart'?candleType:study.candle,candles=kind==='heikin'?heikinAshi(raw):raw,values=sourceValues(candles,study.source),p=study.params,arrays={},levels=[];let error=null;
   switch(study.type){
     case 'ICHIMOKU':{const midpoint=period=>candles.map((_,i)=>i<period-1?null:(Math.max(...candles.slice(i-period+1,i+1).map(c=>c.high))+Math.min(...candles.slice(i-period+1,i+1).map(c=>c.low)))/2);arrays.conversion=midpoint(p.conversion);arrays.base=midpoint(p.base);arrays.upper=arrays.base.map((v,i)=>v==null||arrays.conversion[i]==null?null:(v+arrays.conversion[i])/2);arrays.lower=midpoint(p.spanB);arrays.lagging=candles.map(c=>c.close);return {levels,error,plots:STUDIES.ICHIMOKU.plots.map(item=>({...item,data:shiftStudyPoints(arrays[item.key],raw,['upper','lower'].includes(item.key)?p.displacement:item.key==='lagging'?-p.displacement:0,interval)}))};}
