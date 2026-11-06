@@ -26,7 +26,7 @@ test('local server serves the app on Windows, restricts methods and confines sta
     assert.equal((await fetch(base+'/missing-file')).status,404);
     assert.equal((await fetch(base+'/api/status')).status,403);
     assert.equal((await fetch(base+'/api/bots/example/reset-statistics',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
-    for(const suffix of ['/budget-baseline','/budget-baseline/preview'])assert.equal((await fetch(base+'/api/bots/example'+suffix,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
+    for(const suffix of ['/budget-baseline','/budget-baseline/preview','/wallet-step-reference','/wallet-step-reference/preview'])assert.equal((await fetch(base+'/api/bots/example'+suffix,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
     assert.equal((await fetch(base+'/api/storage/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
     assert.equal((await fetch(base+'/api/formula/markets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:'BTCUSDT',source:'A.종가@1h'})})).status,403);
     assert.equal((await fetch(base+'/api/positions/insights')).status,403);
@@ -35,7 +35,7 @@ test('local server serves the app on Windows, restricts methods and confines sta
     assert.equal((await fetch(base+'/api/storage/retry',{method:'POST',headers,body:'{}'})).status,200);assert.deepEqual(status.bots,[]);assert.deepEqual(status.positionOwners,[]);
     for(const body of [{symbol:'../bad',source:'TRUE@1h'},{symbol:'BTCUSDT',source:'A.constructor@1h'},{symbol:'BTCUSDT',source:'A.종가@1h',aliases:{A:'../bad'}}])assert.equal((await fetch(base+'/api/formula/markets',{method:'POST',headers,body:JSON.stringify(body)})).status,400);
     assert.equal((await fetch(base+'/api/positions/insights',{headers})).status,400);
-    assert.equal(status.capabilities.budgetBaselineReset,true);const preview=await fetch(base+'/api/bots/example/budget-baseline/preview',{method:'POST',headers,body:'{}'});assert.equal(preview.status,400);assert.match((await preview.json()).error,/계좌/);
+    assert.equal(status.capabilities.walletStepReferenceReset,true);const referencePreview=await fetch(base+'/api/bots/example/wallet-step-reference/preview',{method:'POST',headers,body:JSON.stringify({mode:'current'})});assert.equal(referencePreview.status,400);assert.match((await referencePreview.json()).error,/계좌/);assert.equal(status.capabilities.budgetBaselineReset,true);const preview=await fetch(base+'/api/bots/example/budget-baseline/preview',{method:'POST',headers,body:'{}'});assert.equal(preview.status,400);assert.match((await preview.json()).error,/계좌/);
     const reset=await fetch(base+'/api/bots/example/reset-statistics',{method:'POST',headers,body:'{}'});assert.equal(reset.status,400);assert.match((await reset.json()).error,/계좌/);
     assert.equal((await fetch(base+'/api/trading',{method:'POST',headers:{...headers,Origin:'https://untrusted.example'},body:'{"enabled":true}'})).status,403);
     const reboundStatus=await new Promise((resolve,reject)=>{const request=httpRequest(base+'/api/status',{headers:{...headers,Host:'untrusted.example'}},response=>{response.resume();resolve(response.statusCode);});request.on('error',reject);request.end();});assert.equal(reboundStatus,403);

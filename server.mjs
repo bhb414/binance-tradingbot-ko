@@ -90,6 +90,8 @@ export async function createServer({networkAccess,dataDirectory=process.env.WORK
         if(req.method==='POST'&&pathname==='/api/storage/retry'){await engine.serial(()=>engine.storage.recover({force:true}));json(200,engine.snapshot());return;}
         if(req.method==='POST'&&pathname==='/api/trading'){json(200,await engine.setTrading(body.enabled));return;}
         if(req.method==='POST'&&pathname==='/api/bots'){json(200,await engine.saveBot(body));return;}
+        const walletReference=/^\/api\/bots\/([A-Za-z0-9_-]+)\/wallet-step-reference(\/preview)?$/.exec(pathname);
+        if(req.method==='POST'&&walletReference){json(200,await engine.serial(()=>walletReference[2]?engine.walletSteps.previewReference(walletReference[1],body):engine.walletSteps.commitReference(walletReference[1],body.previewId)));return;}
         const budgetBaseline=/^\/api\/bots\/([A-Za-z0-9_-]+)\/budget-baseline(\/preview)?$/.exec(pathname);
         if(req.method==='POST'&&budgetBaseline){json(200,await engine.serial(()=>budgetBaseline[2]?engine.budgetBaselines.preview(budgetBaseline[1]):engine.budgetBaselines.commit(budgetBaseline[1],body.previewId)));return;}
         const resetStatistics=/^\/api\/bots\/([A-Za-z0-9_-]+)\/reset-statistics$/.exec(pathname);

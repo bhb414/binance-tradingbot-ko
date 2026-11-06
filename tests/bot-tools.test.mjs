@@ -1,4 +1,5 @@
 import {budgetBaselineReview} from '../public/bot-tools.js';
+import {budgetReferenceTool,walletReferenceForm,walletReferenceReview} from '../public/bot-tools.js';
 import test from 'node:test';import assert from 'node:assert/strict';
 import {copyBotSettings,resetBotSettings} from '../public/bot-tools.js';
 import {makeBot,validateBot} from '../public/core.js';import {makeActionRule} from '../public/actions.js';
@@ -55,3 +56,5 @@ test('budget baseline review distinguishes preserved records from the new budget
 });
 
 test('copy and settings reset preserve percentage and shortfall policies without live allocations',()=>{for(const budgetType of ['walletPercent','availablePercent'])for(const source of [makeBot(),makeMultiBot()]){Object.assign(source,{budgetType,budgetPercent:35,budgetShortfall:'available',budgetMode:'floor',budgetFloor:20,budgetAllocation:{limit:17}});for(const result of [copyBotSettings(source),resetBotSettings(source)]){assert.equal(result.budgetType,budgetType);assert.equal(result.budgetPercent,35);assert.equal(result.budgetShortfall,'available');assert.equal(result.budgetFloor,20);assert.equal(result.budgetAllocation,undefined);}}});
+
+test('wallet-reference form and review explain current versus custom balances, immediate changes and preserved trade records',()=>{const form=walletReferenceForm();assert.match(form,/value="current"/);assert.match(form,/value="custom"/);assert.match(form,/data-wallet-reference-amount/);const html=walletReferenceReview({wallet:1500,previousReference:1400,reference:1000,appliedReference:1400,before:120,after:140,nextIncrease:1600,remaining:100,allowed:true,warnings:['<script>unsafe</script>']});assert.match(html,/120 → 140/);assert.match(html,/기록/);assert.match(html,/즉시 적용/);assert.doesNotMatch(html,/<script>/);assert.match(budgetReferenceTool({budgetType:'walletStep'},{capabilities:{walletStepReferenceReset:true}}),/data-tool="wallet-step-reference"/);assert.doesNotMatch(budgetReferenceTool({budgetType:'walletStep'},{capabilities:{walletStepReferenceReset:true}}),/data-tool="budget-baseline"/);assert.match(budgetReferenceTool({budgetType:'amount'},{capabilities:{budgetBaselineReset:true}}),/data-tool="budget-baseline"/);});
