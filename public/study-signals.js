@@ -12,4 +12,5 @@ export class StudySignals{
  render(markers){this.markers=markers;const signature=JSON.stringify(markers);if(signature!==this.signature){this.plugin.setMarkers(markers);this.signature=signature;}}
  update(rows){this.render(studySignalMarkers(rows));}
  clear(){this.render([]);}
+ dispose(){this.plugin?.detach();this.plugin=null;this.markers=[];this.signature='';}
 }

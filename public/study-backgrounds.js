@@ -25,4 +25,5 @@ export class StudyBackgrounds{
  setSeries(series){this.series?.detachPrimitive(this.primitive);this.series=series;series.attachPrimitive(this.primitive);}
  update(rows){this.primitive.update(backgroundLayers(rows));}
  clear(){this.primitive.update([]);}
+ dispose(){this.series?.detachPrimitive(this.primitive);this.series=null;this.primitive.update([]);}
 }

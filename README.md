@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.69](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.69/binance-tradingbot-ko-v0.4.69-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.70](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.70/binance-tradingbot-ko-v0.4.70-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -38,7 +38,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.69](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.69/binance-tradingbot-ko-v0.4.69-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.70](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.70/binance-tradingbot-ko-v0.4.70-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -319,7 +319,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.69 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.70 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
@@ -416,3 +416,13 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 ```
 
 배경과 화살표는 실제 체결이나 주문이 아닙니다. 진행봉의 조건은 변할 수 있습니다. 조건 뒤 [1]은 이전 봉 조건을 현재 봉에 표시합니다. 새 봉이 추가됐다고 확정된 과거 조건을 미래 데이터로 다시 계산하지 않습니다. 예제 목록, 데이터·함수 삽입과 자동완성·인수 도움말에서도 사용할 수 있습니다. 배경은 클릭을 가로채지 않고 가격 범위를 바꾸지 않습니다. 화살표는 겹칠 때 잘리지 않도록 표시 여백을 확보합니다.
+
+## 화살표·배경 표시 대상
+
+지표 설정의 **스타일 → 각 화살표·배경 → 표시 대상**에서 **가격 차트 / 이 지표 패널**을 각각 선택합니다. 같은 지표의 일부 출력은 가격 차트에, 다른 출력은 보조지표 패널에 함께 표시할 수 있습니다. 기존 설정은 가격 차트 표시를 유지하며 수식 문법은 바뀌지 않습니다.
+
+**이 지표 패널**을 선택하면 입력 탭의 표시 위치가 **별도 패널**로 바뀌고 해당 지표의 선도 그 패널에 표시합니다. 화살표는 **기준선**에서 기울기20·기울기6 등 어느 선을 따를지 고릅니다. 자동은 첫 번째 표시선을 사용하며, 표시선이 없으면 첫 번째 일반 선, 일반 선도 없으면 0을 기준으로 사용합니다. 명시적으로 선택한 선을 숨겨도 그 선의 값에 화살표를 표시합니다. 제거한 기준선은 자동으로 돌아갑니다.
+
+같은 표시 대상·기준선·봉·위치의 화살표는 쌓기 순서대로 배치합니다. 배경은 선택한 패널 높이 전체를 칠합니다. 신호·배경만 있는 지표도 별도 패널을 만들 수 있습니다. 패널 표시를 사용하면서 입력의 표시 위치를 가격 차트 위로 바꾸면 저장 전에 별도 패널 선택을 안내합니다. 가격 차트에만 표시하려면 각 출력의 표시 대상을 가격 차트로 바꾸세요.
+
+저장한 대상·기준선·방향·쌓기 순서·색상·투명도는 기기 공통으로 복원됩니다. 표시 위치 선택은 주문이나 봇 조건·예산을 변경하지 않습니다.

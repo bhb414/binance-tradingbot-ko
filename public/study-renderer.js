@@ -1,3 +1,4 @@
+import {overlayRows,hasPaneOverlays,StudyPaneOverlays} from './study-overlay-targets.js';
 import {StudyBackgrounds} from './study-backgrounds.js';
 import {StudySignals} from './study-signals.js';
 import {BandFill,bandRows} from './band-fill.js';
@@ -27,13 +28,18 @@ export class StudyRenderer {
     const changed=config!==this.config;
     if(changed){
       const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getHeight()]));
-      for(const row of this.rows)if(row.fill)row.fillOwner.detachPrimitive(row.fill);
+      for(const row of this.rows){row.overlays?.dispose();if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
       for(const series of [...this.series].reverse())this.chart.removeSeries(series);this.series=[];this.rows=[];this.list.replaceChildren();let pane=0;
       for(const study of studies){
-        const active=studyActive(study,interval),definition={...STUDIES[study.type],plots:studyPlots(study)},index=active&&studyPane(study)&&definition.plots.some(p=>!p.signal&&!p.background&&study.styles[p.key].visible)?++pane:0;
+        const active=studyActive(study,interval),definition={...STUDIES[study.type],plots:studyPlots(study)},index=active&&studyPane(study)&&(definition.plots.some(p=>!p.signal&&!p.background&&study.styles[p.key].visible)||hasPaneOverlays(study,definition.plots))?++pane:0;
         const row={study,pane:index,plots:[],values:new Map()};
         if(active){for(const plot of definition.plots){if(plot.signal||plot.background||!study.styles[plot.key].visible)continue;const style=study.styles[plot.key],series=this.chart.addSeries(window.LightweightCharts[plot.histogram?'HistogramSeries':'LineSeries'],{color:style.color,lineWidth:style.width,lineStyle:plot.projection?2:style.lineStyle,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:!plot.histogram,title:studyLabel(study)+(definition.plots.length>1?' '+plot.label:''),...(studyPriceFormat(study,this.priceSeries?.options().priceFormat)?{priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)}:{})},index);row.plots.push({key:plot.key,series});this.series.push(series);}
           if((study.type==='BB'||definition.bandFill)&&study.fill?.visible&&study.fill.transparency<100){for(const key of ['upper','lower'])if(!row.plots.some(p=>p.key===key)){const series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:'transparent',lineVisible:false,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},index);row.plots.push({key,series,fillOnly:true});this.series.push(series);}row.fill=new BandFill();row.fillOwner=row.plots[0].series;row.fillOwner.attachPrimitive(row.fill);}
+          if(index>0&&hasPaneOverlays(study,definition.plots)){
+            const resolveSeries=anchor=>{const key=anchor?.key||'__overlay_zero',existing=row.plots.find(p=>p.key===key);if(existing)return existing.series;
+              const series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:'transparent',lineVisible:false,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)},index);row.plots.push({key,series,fillOnly:true,anchorOnly:true});this.series.push(series);return series;};
+            row.overlays=new StudyPaneOverlays(study,definition.plots,resolveSeries);
+          }
           if(index>0)this.chart.panes()[index].priceScale('right').applyOptions({scaleMargins:{top:study.type==='DMI'?.38:.26,bottom:.12}});
         }
         const element=document.createElement('div');element.className='study-chart-legend'+(!active?' is-muted':'');element.dataset.studyId=study.id;element.dataset.studyType=study.type;
@@ -44,10 +50,12 @@ export class StudyRenderer {
       this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
     }
     const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}
+      for(const plot of row.plots)if(plot.key==='__overlay_zero'){plot.data=candles.map(c=>({time:c.time,value:0}));plot.series.setData(plot.data);}
+      row.overlays?.update(data,studyActive(row.study,interval));
       if(row.fill)row.fill.update(bandRows(data.plots),row.study.fill);
       const first=row.plots[0]?.series;if(first){for(const line of row.levels||[])first.removePriceLine(line);row.levels=data.levels.map(price=>first.createPriceLine({price,color:'#c5c6cc',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''}));}
     }
-    this.signals.update(signalRows);this.backgrounds.update(signalRows);
+    const priceOverlays=overlayRows(signalRows,'price');this.signals.update(priceOverlays);this.backgrounds.update(priceOverlays);
     this.futureBars=Math.max(0,...this.rows.flatMap(r=>r.plots.flatMap(p=>(p.data||[]).filter(x=>x.time>candles.at(-1)?.time).map(x=>1))));this.futureTime=Math.max(candles.at(-1)?.time||0,...this.rows.flatMap(r=>r.plots.flatMap(p=>(p.data||[]).map(x=>x.time))));if(changed)this.revealFuture();this.valuesAt(this.valueTime);this.onValuesChanged?.();this.syncLabels();requestAnimationFrame(()=>this.layout());
   }
   revealFuture(){const raw=this.candles,range=this.chart.timeScale().getVisibleLogicalRange();if(!raw.length||!range||!this.futureBars||range.to<raw.length-8)return;const step=raw.length>1?raw.at(-1).time-raw.at(-2).time:60,bars=Math.min(300,Math.ceil((this.futureTime-raw.at(-1).time)/Math.max(1,step)));if(range.to<raw.length-1+bars+4)this.chart.timeScale().setVisibleLogicalRange({from:range.from,to:raw.length-1+bars+4});}
@@ -57,7 +65,7 @@ export class StudyRenderer {
     this.toggle.setAttribute('aria-label',label);this.toggle.setAttribute('aria-expanded',String(!labelsCollapsed));this.toggle.title=label+' · 지표 선은 그대로 표시합니다';
     this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+'<span>지표명 '+this.rows.length+'</span>';this.layout();
   }
-  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.fill?.update([],row.study.fill);for(const plot of row.plots)plot.data=[];row.values.clear();row.output.textContent='—';}}
+  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots)plot.data=[];row.values.clear();row.output.textContent='—';}}
   readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{const points=row.values.get(time??this.candles.at(-1)?.time),definition={...STUDIES[row.study.type],plots:studyPlots(row.study)},visible=(points||[]).filter(p=>row.study.styles[p.key].visible);return {label:studyLabel(row.study),value:row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(p.value)<.1?8:2)})+(definition.unit?' '+definition.unit:'')).join(' / '):'—'};});}
   valuesAt(time){this.valueTime=time;for(const row of this.rows){if(row.forecast&&!row.error&&(time==null||time===this.candles.at(-1)?.time)){row.output.textContent=row.forecast.caption;continue;}const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time);if(row.study.type==='DMI'&&active&&!row.error&&points?.length){const definition=STUDIES.DMI;row.output.innerHTML=points.filter(p=>row.study.styles[p.key].visible).map(p=>'<span style="color:'+row.study.styles[p.key].color+'">'+esc(definition.plots.find(plot=>plot.key===p.key).label)+' '+p.value.toLocaleString('en-US',{maximumFractionDigits:2})+'</span>').join(' / ');continue;}row.output.textContent=row.error?'계산 확인 필요':!active?(row.study.visible?'이 주기 숨김':'숨김'):points?.length?points.filter(point=>row.study.styles[point.key].visible).map(point=>point.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(point.value)<.1?8:2)})+(STUDIES[row.study.type].unit?' '+STUDIES[row.study.type].unit:'')).join(' / '):'—';}}
   layout(){
