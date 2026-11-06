@@ -17,6 +17,8 @@ const signature={
  weekday:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각의 요일. 월요일=1 ~ 일요일=7. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
  clockTime:{calendar:true,params:["시간대 (선택)"],help:["현재 감시 시각을 HHMM으로 반환. 예: 930 = 09:30. 기본 한국시간 · 한국시간/미국동부/UTC 중 선택."]},
  timeWindow:{calendar:true,params:["시작 HHMM","종료 HHMM","시간대 (선택)"],help:["시작 포함. 예: 900 = 09:00. 2300, 600처럼 자정을 넘는 구간도 지원합니다.","종료 미포함. 예: 1800 = 18:00 직전까지. 종료에만 2400을 사용할 수 있습니다.","기본 한국시간. 한국시간/미국동부/UTC. 미국 동부시간의 서머타임은 자동 반영합니다."]},
+  buySignal:{params:['"신호 이름"','표시할 조건'],help:['차트 전용 매수 화살표. 이름을 큰따옴표로 감쌉니다. 실제 주문은 전송하지 않습니다.','참인 봉마다 표시합니다. 진행봉은 바뀔 수 있으며 조건 뒤 [1]은 이전 봉 조건을 현재 봉에 표시합니다.']},
+  sellSignal:{params:['"신호 이름"','표시할 조건'],help:['차트 전용 매도 화살표. 이름을 큰따옴표로 감쌉니다. 실제 주문은 전송하지 않습니다.','상향돌파()·하향돌파()는 교차한 봉에만 참입니다. 일반 조건은 참인 봉마다 표시합니다.']},
   crossUp:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 아래에서 위로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≤ B에서 현재 A > B로 바뀌는 순간입니다.']},
   crossDown:{params:['A · 돌파하는 값','B · 기준 값'],help:['앞 값 A가 뒤 기준 B를 위에서 아래로 돌파합니다.','뒤 인수 B가 기준입니다. 이전 A ≥ B에서 현재 A < B로 바뀌는 순간입니다.']},
   sma:{params:['데이터','기간'],help:['평균을 계산할 데이터. 예: 종가, 거래량.','평균에 사용할 봉 수 · 1~500 정수.']},
@@ -48,8 +50,8 @@ export function signatureAt(source,caret){
   }
   if(comment||stack.at(-1)?.type==='[')return null;
   const call=[...stack].reverse().find(item=>item.name);
-  if(!call||!signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast'}[call.name.toLowerCase()]))])return null;
-  const definition=signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast'}[call.name.toLowerCase()]))];
+  if(!call||!signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal'}[call.name.toLowerCase()]))])return null;
+  const definition=signature[(globalThis.AnalysisFormula.functionAliases[call.name.toLowerCase()]||({'선':'plot','예상선':'forecast','plot':'plot','forecast':'forecast','매수신호':'buySignal','매도신호':'sellSignal','buysignal':'buySignal','sellsignal':'sellSignal'}[call.name.toLowerCase()]))];
   return {...definition,name:call.name,argument:call.arg};
 }
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

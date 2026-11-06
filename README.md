@@ -2,7 +2,7 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.67](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.67/binance-tradingbot-ko-v0.4.67-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.68](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.68/binance-tradingbot-ko-v0.4.68-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -38,7 +38,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.67](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.67/binance-tradingbot-ko-v0.4.67-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.68](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.68/binance-tradingbot-ko-v0.4.68-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -319,7 +319,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.67 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.68 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
@@ -381,3 +381,20 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 ## 사용자 지표 입력 통합
 
 지표 목록의 **＋ 지표 만들기** 한 곳에서 작성합니다. `SMA(하이킨종가, 6)` 같은 계산식을 입력하면 선 하나를 그리고, `단기 = ...`와 `선("이름", 단기)`를 여러 줄로 입력하면 자동으로 변수와 출력선을 처리합니다. 별도 유형 선택은 없습니다. 기존 수식·스크립트 지표 수정도 같은 입력창을 사용하며 이름·색상·표시 위치·봉 주기 설정을 유지합니다. 예제와 데이터·함수 추가도 같은 창에 모았습니다. 목록에 저장한 뒤 ＋를 눌러 차트에 추가합니다.
+
+## 지표 조건 화살표
+
+**지표 → ＋ 지표 만들기**에서 선과 함께, 또는 화살표만 작성할 수 있습니다. 예제의 **골든·데드크로스 매수·매도 화살표**를 선택하면 바로 시작할 수 있습니다.
+
+```text
+단기 = VWMA(하이킨종가, 6, 거래량)
+장기 = SMA(하이킨종가, 55)
+선("단기", 단기)
+선("장기", 장기)
+매수신호("골든크로스", 상향돌파(단기, 장기))
+매도신호("데드크로스", 하향돌파(단기, 장기))
+```
+
+매수신호는 기본 초록 ↑·캔들 아래, 매도신호는 빨강 ↓·캔들 위이며 **스타일**에서 각각 표시 여부·색상·위치·크기를 설정합니다. 화살표는 항상 가격 차트에 표시하며 지표 선은 선택한 표시 위치를 사용합니다. 신호 이름은 자유롭게 정합니다. 한 지표의 선·신호 출력은 합계 최대 6개입니다.
+
+일반 조건은 참인 봉마다 표시하고, 상향돌파·하향돌파는 교차한 봉에서만 표시합니다. 진행봉 신호는 진행봉 값에 따라 나타나거나 사라질 수 있습니다. 조건 뒤 [1]을 붙이면 이전 봉의 조건을 현재 봉에 표시합니다. 예: 매수신호("이전 봉 골든", 상향돌파(단기, 장기)[1]). 신호는 차트 표시 전용이며 주문은 전송하지 않습니다. 실제 체결 B/S 표시와 독립적으로 동작합니다. 다른 기기에서도 저장한 지표를 사용할 수 있습니다.
