@@ -10,6 +10,6 @@ export function studyInputType(source){
   if(c==='"'){quoted=true;statement+=c;continue;}if(c==='('||c==='[')depth++;if(c===')'||c===']')depth=Math.max(0,depth-1);
   if((c==='\n'||c===';')&&depth===0){if(statement.trim())statements.push(statement.trim());statement='';}else statement+=c;
  }if(statement.trim())statements.push(statement.trim());const api=globalThis.AnalysisFormula;
- for(const text of statements){if(/^(?:선|예상선|plot|forecast|매수신호|매도신호|buySignal|sellSignal)\s*\(/i.test(text))return 'SCRIPT';const m=/^([A-Za-z_가-힣][A-Za-z0-9_가-힣]*)\s*=(?!=)/.exec(text);if(m){const name=m[1].toLowerCase();if(!Object.hasOwn(api.variableAliases,name)&&!Object.hasOwn(api.functionAliases,name)&&!Object.hasOwn(api.constantAliases||{},name))return 'SCRIPT';}}
+ for(const text of statements){if(/^(?:선|예상선|plot|forecast|매수신호|매도신호|buySignal|sellSignal|배경|bgcolor|화살표|화살표신호|arrow)\s*\(/i.test(text))return 'SCRIPT';const m=/^([A-Za-z_가-힣][A-Za-z0-9_가-힣]*)\s*=(?!=)/.exec(text);if(m){const name=m[1].toLowerCase();if(!Object.hasOwn(api.variableAliases,name)&&!Object.hasOwn(api.functionAliases,name)&&!Object.hasOwn(api.constantAliases||{},name))return 'SCRIPT';}}
  return 'FORMULA';
 }

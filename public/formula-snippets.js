@@ -6,7 +6,7 @@ const functions=[['조건','판단에 따라 값 선택'],['최고','최근 N봉
 export function formulaSnippets({chart=false,symbols=[],script=false}={}){
  const api=globalThis.AnalysisFormula,item=(name,description,group,fn=false)=>({name,description,group,insert:name+(fn?'()':''),function:fn,aliases:Object.entries(fn?api.functionAliases:api.variableAliases).filter(([,canonical])=>canonical===(fn?api.functionAliases:api.variableAliases)[name.toLowerCase()]).map(([alias])=>alias)});
  const result=prices.map(name=>item(name,name.startsWith('하이킨')?'하이킨아시 가격':'일반 봉 데이터','봉 데이터'));
- result.push(...functions.map(([name,description])=>item(name,description,'함수',true)));if(script)result.push(item('선','수식을 선으로 표시 · 선택한 봉 수만큼 이동','스크립트',true),item('예상선','최근 기울기를 미래 봉 위치에 연장','스크립트',true),item('매수신호','조건이 참인 봉에 매수 화살표 · 표시 전용','스크립트',true),item('매도신호','조건이 참인 봉에 매도 화살표 · 표시 전용','스크립트',true));
+ result.push(...functions.map(([name,description])=>item(name,description,'함수',true)));if(script)result.push(item('선','수식을 선으로 표시 · 선택한 봉 수만큼 이동','스크립트',true),item('예상선','최근 기울기를 미래 봉 위치에 연장','스크립트',true),item('매수신호','조건이 참인 봉에 매수 화살표 · 표시 전용','스크립트',true),item('매도신호','조건이 참인 봉에 매도 화살표 · 표시 전용','스크립트',true),item('배경','조건이 참인 봉의 배경을 세로로 칠하기','스크립트',true),item('화살표','글자·방향·위치·쌓기 순서를 정하는 신호','스크립트',true));
  if(!chart){
   result.push(...positions.slice(0,4).map(name=>item(name,'현재 보유 포지션','현재 포지션',true)),item('평균매수가','현재 평균 진입가','현재 포지션'));
   result.push(...[['요일','현재 요일'],['시각','현재 시각'],['시간범위','현재 시각이 범위 안인지']].map(([name,description])=>item(name,description,'요일·시간',true)));

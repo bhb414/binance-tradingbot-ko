@@ -39,7 +39,7 @@ test('signal scripts and styles survive reusable-library and chart-settings roun
  const legacy=createStudy('SCRIPT');assert.ok(!('position' in validateStudy(legacy).styles.line0));assert.throws(()=>validateStudy({...s,styles:{...s.styles,line1:{...s.styles.line1,position:'inBar'}}}));
 });
 test('marker rendering keeps stable data, replaces its price-series primitive, clears stale symbols, and never touches execution markers',()=>{
- const calls=[],plugins=[],external={markers:['execution']};const createMarkers=(series,initial,options)=>{const p={setMarkers:m=>calls.push({series,m}),detach:()=>p.detached=true};plugins.push(p);assert.equal(options.autoScale,false);return p;};
+ const calls=[],plugins=[],external={markers:['execution']};const createMarkers=(series,initial,options)=>{const p={setMarkers:m=>calls.push({series,m}),detach:()=>p.detached=true};plugins.push(p);assert.equal(options.autoScale,true);return p;};
  const a={},b={},renderer=new StudySignals(a,{createMarkers}),raw=rows([1,2]),s=custom('매수신호("신호", 1)'),entries=[{study:s,data:studyData(s,raw)}];renderer.update(entries);const before=calls.length;renderer.update(entries);assert.equal(calls.length,before);renderer.setSeries(b);assert.equal(plugins[0].detached,true);assert.equal(calls.at(-1).series,b);assert.equal(calls.at(-1).m.length,2);renderer.clear();assert.deepEqual(calls.at(-1).m,[]);renderer.update(entries);renderer.update([]);assert.deepEqual(calls.at(-1).m,[]);assert.deepEqual(external.markers,['execution']);
 });
 test('signals stay in the sandbox and bounded output limit applies to mixed lines and arrows',()=>{
