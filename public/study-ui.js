@@ -72,6 +72,7 @@ function syncForecastInputs(){
 function syncCycleInputs(){
  if(editing?.type!=='CYCLE')return;const p=editing.params,theory=p.reference==='theory',forecast=['current','remaining'].includes(p.predictionSource);
  syncForecastOptions('forecast',p.forecastMethod,forecast);
+ const projectionInput=document.querySelector('[data-study-field="projectionBars"]');if(projectionInput)projectionInput.closest('label').hidden=!p.showProjection;
  const display=document.querySelector('[data-study-field="display"]');if(display)for(const item of display.options)item.textContent=(item.value==='bars'?'봉 수':'배수')+' · 기준 / '+(p.predictionSource==='interval'?'간격':'예상')+' / 경과';
  for(const key of ['forecastMethod','forecastRangeBars','forecastSlopeBars','forecastSearchBars']){const input=document.querySelector('[data-study-field="'+key+'"]');if(!input)continue;input.closest('label').hidden=!forecast||(key==='forecastRangeBars'&&!['low','high','fastest','fastest-range','mean-price','mean-bars'].includes(p.forecastMethod))||(key==='forecastSlopeBars'&&!['slope','fastest','mean-bars'].includes(p.forecastMethod));}
  for(const key of ['lookback','minimum','maximum']){const input=document.querySelector('[data-study-field="'+key+'"]');if(input){input.disabled=theory;input.title=theory?'실측 후보 기준에서 사용하는 설정입니다.':'';}}
@@ -109,7 +110,7 @@ function updateForecastPreview(){
   const valid=validateStudy(editing),candles=previewCandles[context];output.className='study-formula-status';
   if(!candles.length){output.textContent='차트 봉을 수신하면 가정별 교차를 계산합니다.';return;}
   const data=studyData(valid,candles,previewCandleTypes[context],previewIntervals[context]);if(data.error)throw Error(data.error);
-  if(editing.type==='CYCLE'){output.textContent=cycleForecastReadings(valid,data.cycle?.at(-1)||{});return;}
+  if(editing.type==='CYCLE'){output.textContent=cycleForecastReadings(valid,data.cycle?.at(-1)||{});const projection=data.cycleProjection;if(valid.params.showProjection&&projection?.plots.some(plot=>plot.data.length))output.textContent+=' · 오른쪽 '+projection.horizon+'봉 연장'+(Number.isFinite(projection.meetingBars)?' · 교점 '+projection.meetingBars.toLocaleString('ko-KR',{maximumFractionDigits:2})+'봉 뒤'+(projection.withinHorizon?'':' (표시 범위 밖)'):'');return;}
   const info=data.forecast?.comparison;output.textContent=info?.caption||'비교할 두 이평의 계산을 기다립니다.';
   const candidates=data.forecast?.candidates||[];details.hidden=!candidates.length;
   $('#study-forecast-candidate-list').innerHTML=candidates.map(c=>'<li><strong>'+esc(c.label)+'</strong><span>'+(Number.isFinite(c.price)?'가정 종가 '+esc(c.price.toLocaleString('en-US',{maximumFractionDigits:8}))+' · ':'')+esc(c.reason||('교차 '+(Number.isFinite(c.crossBars)?c.crossBars+'봉':'없음')+' · 접촉 '+(Number.isFinite(c.touchBars)?c.touchBars+'봉':'없음')))+'</span></li>').join('');

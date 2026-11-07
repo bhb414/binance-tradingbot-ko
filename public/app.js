@@ -205,7 +205,7 @@ function syncChartButtons(){
 }
 function applyChartRange(preset){
   chartWorkspace.select({range:preset});syncChartButtons();if(!chart||!candles.length)return;
-  chart.timeScale().setVisibleLogicalRange(presetRange(candles.length,currentInterval,preset));persistChartView();
+  chart.timeScale().setVisibleLogicalRange(presetRange(candles.length,currentInterval,preset));homeStudies.revealFuture();persistChartView();
 }
 function initChart() {
   if (!window.LightweightCharts) { $('#chart-fallback').hidden=false; return; }

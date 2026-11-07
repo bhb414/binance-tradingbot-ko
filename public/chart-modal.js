@@ -52,7 +52,7 @@ export function openChartModal(instrument,options={}){
   initialize();selected=instrument;snapshot=null;lastKey=null;$('#modal-chart-title').textContent=instrument.symbol;$('#modal-chart-product').textContent=instrumentName(instrument)+' · '+productLabel(instrument)+' · BINANCE';$('#modal-chart-quote').textContent='—';$('#modal-interval').value=options.interval||'15m';selectedType=chartType(options.candleType).id;typePicker.sync(selectedType);
   $('#market-chart-dialog').showModal();initialize();refresh(true);
 }
-$('#modal-interval').addEventListener('change',()=>refresh(true));$('#modal-indicator-button').addEventListener('click',()=>openStudyLibrary({context:'modal'}));$('#modal-chart-fit').addEventListener('click',()=>chart?.timeScale().fitContent());
+$('#modal-interval').addEventListener('change',()=>refresh(true));$('#modal-indicator-button').addEventListener('click',()=>openStudyLibrary({context:'modal'}));$('#modal-chart-fit').addEventListener('click',()=>{chart?.timeScale().fitContent();studies?.revealFuture();});
 $('#modal-chart-fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('#market-chart-dialog').requestFullscreen();}catch(error){$('#modal-chart-status').textContent=error.message;}});
 $('#market-chart-dialog').addEventListener('close',()=>{request++;history?.deactivate();snapshot=null;executions?.clear();positionLines?.clear();currentPriceLine?.clear();inspector?.clear();});setInterval(()=>refresh(),5000);
 subscribeStudies(()=>{if(snapshot&&$('#market-chart-dialog').open)draw();});
