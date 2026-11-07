@@ -38,14 +38,15 @@ test('closed-candle observations and theoretical history stay causal under appen
  const s=createStudy('CYCLE',{candle:'standard'});s.params.reference='theory';s.params.display='ratio';const before=studyData(s,raw.slice(0,400)),full=studyData(s,raw);assert.deepEqual(full.cycle.slice(0,400),before.cycle);
  const changed=structuredClone(raw);Object.assign(changed.at(-1),{open:1000,high:1100,low:900,close:1050});assert.deepEqual(last(studyData(s,changed)),last(full));
 });
-test('unsupported theoretical averages explain the missing denominator without hiding raw measurements',()=>{
- const s=createStudy('CYCLE');s.params.reference='theory';s.params.average='VWMA';s.params.display='ratio';const data=studyData(s,raw),meta=data.cycle.at(-1);assert.equal(meta.period,null);assert.match(data.caption,/가중치가 봉마다/);assert.match(cycleReferenceMessage(s,meta),/실측 후보/);assert.match(cycleLegendValues(s,{period:null,basis:null,interval:14,elapsed:4}).interval,/14봉.*배수 대기/);
+test('VWMA and adaptive averages use a labeled common SMA reference instead of an unsupported denominator',()=>{
+ const s=createStudy('CYCLE');s.params.reference='theory';s.params.average='VWMA';s.params.display='ratio';const data=studyData(s,raw),meta=data.cycle.at(-1);near(meta.period,theoreticalCyclePeriod('SMA',7,15));assert.equal(cycleReferenceMessage(s,meta),'');assert.match(data.caption,/SMA 이론/);assert.match(cycleReadings(s,meta),/실제 교차 VWMA 7·15.*이론 참조 SMA 7·15/);assert.match(cycleLegendValues(s,meta).period,/SMA 이론/);
 });
+
 test('missing-data messages distinguish insufficient candles from failed periodicity checks',()=>{
  const s=createStudy('CYCLE');assert.match(cycleReferenceMessage(s,{period:null,available:37}),/37 \/ 200봉/);assert.match(cycleReferenceMessage(s,{period:null,available:200}),/반복성/);assert.equal(cycleReferenceMessage(s,{period:40}),'');
 });
 test('legend and historical readings name the selected reference and explicitly show the optional half scale',()=>{
- const s=createStudy('CYCLE');s.params.reference='theory';s.params.display='ratio';const meta={period:20,basis:20,interval:30,elapsed:5};assert.equal(cycleLegendValues(s,meta).period,'이론 1배 20봉');assert.equal(cycleLegendValues(s,meta).interval,'간격 1.5배');assert.match(cycleReadings(s,meta),/이론 주기 20봉.*1배 기준 20봉/);
+ const s=createStudy('CYCLE');s.params.reference='theory';s.params.display='ratio';const meta={period:20,basis:20,interval:30,elapsed:5};assert.equal(cycleLegendValues(s,meta).period,'SMA 이론 1배 20봉');assert.equal(cycleLegendValues(s,meta).interval,'간격 1.5배');assert.match(cycleReadings(s,meta),/이론 주기 20봉.*1배 기준 20봉/);
  s.params.reference='estimated';s.params.basis='half';assert.match(cycleLegendValues(s,{...meta,basis:10}).period,/실측 후보 ½ 1배 10봉/);assert.match(cycleReadings(s,{...meta,basis:10}),/선택 주기의 ½/);
 });
 test('legacy cycle settings gain only the estimated reference default and retain every previous selection',()=>{
@@ -54,4 +55,17 @@ test('legacy cycle settings gain only the estimated reference default and retain
 test('both reference choices survive server persistence without touching unrelated indicators',async()=>{
  const bb=createStudy('BB'),s=createStudy('CYCLE'),store=new ChartSettingsStore(null);let revision=0;
  for(const reference of ['theory','estimated']){s.params.reference=reference;const document={version:1,timeframeVersion:2,studies:[bb,s]};await store.save({revision,document});const saved=await store.get();assert.deepEqual(saved.document,document);revision=saved.revision;}
+});
+
+test('every measurement MA uses the same-period SMA reference and retains its own measured crossings',()=>{
+ for(const kind of ['SMA','EMA','VWMA','KAMA','HMA'])for(const [fast,slow]of [[7,15],[7,20]]){
+  const s=createStudy('CYCLE',{candle:'standard'});Object.assign(s.params,{average:kind,fast,slow,reference:'theory',anchor:'live'});
+  const theory=studyData(s,raw),meta=theory.cycle.at(-1);near(meta.period,theoreticalCyclePeriod('SMA',fast,slow));assert.match(cycleReadings(s,meta),new RegExp('실제 교차 '+kind+' '+fast+'·'+slow));
+  s.params.reference='estimated';const measured=studyData(s,raw);assert.deepEqual(theory.cycle.map(p=>[p.interval,p.elapsed]),measured.cycle.map(p=>[p.interval,p.elapsed]));
+ }
+});
+test('changing volume changes VWMA crossing observations but never its common SMA theoretical denominator',()=>{
+ const changed=raw.map((c,i)=>({...c,volume:i%13===0?10000:1})),s=createStudy('CYCLE',{candle:'standard'});Object.assign(s.params,{average:'VWMA',reference:'theory',anchor:'live'});
+ const before=studyData(s,raw),after=studyData(s,changed);assert.deepEqual(before.cycle.map(p=>p.basis),after.cycle.map(p=>p.basis));assert.ok(before.cycle.some((p,i)=>p.interval!==after.cycle[i].interval||p.elapsed!==after.cycle[i].elapsed));
+ s.params.average='SMA';assert.deepEqual(studyData(s,raw).cycle,studyData(s,changed).cycle);
 });

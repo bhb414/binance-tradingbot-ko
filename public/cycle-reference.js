@@ -24,17 +24,17 @@ export function theoreticalCyclePeriod(kind,fast,slow){
  if(maximum>1e-20){let lo=Math.max(step/100,peak-step),hi=Math.min(Math.PI,peak+step);for(let i=0;i<60;i++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;if(gain(a)>gain(b))hi=b;else lo=a;}const middle=(lo+hi)/2,omega=gain(Math.PI)>gain(middle)?Math.PI:middle;result=2*Math.PI/omega;}
  if(theoryCache.size>=128)theoryCache.delete(theoryCache.keys().next().value);theoryCache.set(key,result);return result;
 }
-export const cycleReferenceName=study=>study.params.reference==='theory'?'이론':'실측 후보';
+export const cycleReferenceName=study=>study.params.reference==='theory'?'SMA 이론':'실측 후보';
 const number=value=>Number.isFinite(value)?value.toLocaleString('ko-KR',{maximumFractionDigits:2}):null;
 export const cycleBars=value=>number(value)===null?'미확인':number(value)+'봉';
 export function cycleReferenceMessage(study,meta){
  if(Number.isFinite(meta?.period)){if(study.params.reference!=='theory'&&meta?.candidateConfirmed===false){const candidate=meta.candidates?.find(c=>c.period===meta.period);return '참고 후보 · 반복성 약함'+(candidate?' · 파형 설명력 '+Math.round(candidate.explainedFraction*100)+'%':'');}return '';}
- if(study.params.reference==='theory')return THEORY_CYCLE_AVERAGES.includes(study.params.average)?'이론 주기 계산 불가':'이론 주기 미지원 · '+study.params.average+'는 가중치가 봉마다 바뀝니다. 실측 후보를 선택하세요.';
+ if(study.params.reference==='theory')return 'SMA 이론 기준 표시 대기 · 기준 봉 데이터와 기간을 확인하세요.';
  return (meta?.available??0)<study.params.lookback?'실측 주기 미확인 · 분석 가능한 '+(meta?.available??0)+' / '+study.params.lookback+'봉':'실측 주기 미확인 · 반복성 기준 미충족';
 }
 export function cycleReadings(study,meta){
  const candidates=study.params.reference!=='theory'&&meta?.candidates?.length?' · 후보 '+meta.candidates.map(c=>cycleBars(c.period)+'(설명력 '+Math.round(c.explainedFraction*100)+'%)').join(' / ')+' · 설명력은 예측 확률이 아닙니다.':'';
- return cycleReferenceName(study)+(meta?.candidateConfirmed===false&&Number.isFinite(meta?.period)?' (참고)':'')+' 주기 '+cycleBars(meta?.period)+' · 1배 기준 '+cycleBars(meta?.basis)+(study.params.basis==='half'?' (선택 주기의 ½)':'')+' · 최근 돌파 간격 '+cycleBars(meta?.interval)+' · 경과 '+cycleBars(meta?.elapsed)+candidates;
+ return cycleReferenceName(study)+(meta?.candidateConfirmed===false&&Number.isFinite(meta?.period)?' (참고)':'')+' 주기 '+cycleBars(meta?.period)+' · 1배 기준 '+cycleBars(meta?.basis)+(study.params.basis==='half'?' (선택 주기의 ½)':'')+' · 최근 돌파 간격 '+cycleBars(meta?.interval)+' · 경과 '+cycleBars(meta?.elapsed)+(study.params.reference==='theory'?' · 실제 교차 '+study.params.average+' '+study.params.fast+'·'+study.params.slow+' / 이론 참조 SMA '+study.params.fast+'·'+study.params.slow:'')+candidates;
 }
 export function cycleLegendValues(study,meta){
  const ratio=study.params.display==='ratio',base=ratio?meta?.basis:meta?.period,tag=cycleReferenceName(study)+(meta?.candidateConfirmed===false&&Number.isFinite(meta?.period)?'(참고)':'')+(ratio&&study.params.basis==='half'?' ½':'');
