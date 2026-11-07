@@ -44,7 +44,7 @@ test('marker rendering keeps stable data, replaces its price-series primitive, c
 });
 test('signals stay in the sandbox and bounded output limit applies to mixed lines and arrows',()=>{
  for(const s of ['매수신호("x")','매도신호("x", 종가, 1)','매수신호(x, 1)','매수신호("x", fetch())','매도신호("x", 현재수익률())','매수신호("x", 종가@1h)','매수신호 = 1\n선("x", 종가)'])assert.throws(()=>compileStudyScript(s),s);
- const six=Array.from({length:6},(_,i)=>'매수신호("신호'+i+'", 1)').join('\n');assert.equal(compileStudyScript(six).plots.length,6);assert.throws(()=>compileStudyScript(six+'\n선("초과", 종가)'),/최대 6/);
+ const six=Array.from({length:20},(_,i)=>'매수신호("신호'+i+'", 1)').join('\n');assert.equal(compileStudyScript(six).plots.length,20);assert.throws(()=>compileStudyScript(six+'\n선("초과", 종가)'),/최대 20/);
  const escaped='매수신호("이름, (특수) // 문자", 종가 > 0)';assert.equal(scriptStudyData(escaped,rows([1])).error,null);
 });
 test('new signal functions have script-only insertion snippets and argument help',()=>{

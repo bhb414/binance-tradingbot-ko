@@ -42,9 +42,9 @@ test('concurrent devices reject stale revisions without overwriting edits or rec
  const store=new CustomStudyStore(null),a=client(store),b=client(store);await Promise.all([a.load(),b.load()]);const f=customStudyCopy(formula());await a.save(f);await assert.rejects(()=>b.save(customStudyCopy(formula('다른 지표'))),/다른 화면/);assert.equal(b.studies.length,0);await b.load();await b.remove(f.id);await assert.rejects(()=>a.save({...f,params:{...f.params,name:'오래된 화면'}}),/다른 화면/);assert.deepEqual((await store.get()).studies,[]);
 });
 
-test('catalog capacity is independent from the twelve active chart indicators',async()=>{
+test('catalog capacity is independent from the thirty active chart indicators',async()=>{
  const store=new CustomStudyStore(null);let revision=0;for(let i=0;i<MAX_CUSTOM_STUDIES;i++){const result=await store.update({revision,action:'save',study:customStudyCopy(formula('지표 '+i))});revision=result.revision;}assert.equal((await store.get()).studies.length,50);await assert.rejects(()=>store.update({revision,action:'save',study:customStudyCopy(formula('초과'))}),/최대/);
- const sample=(await store.get()).studies[0];await store.update({revision,action:'save',study:{...sample,params:{...sample.params,name:'수정은 가능'}}});assert.throws(()=>decodeStudies(JSON.stringify(documentFor(Array.from({length:13},()=>customChartCopy(sample))))));
+ const sample=(await store.get()).studies[0];await store.update({revision,action:'save',study:{...sample,params:{...sample.params,name:'수정은 가능'}}});assert.throws(()=>decodeStudies(JSON.stringify(documentFor(Array.from({length:31},()=>customChartCopy(sample))))));
 });
 
 test('invalid definition types, formulas, styles and actions leave the previous catalog intact',async()=>{

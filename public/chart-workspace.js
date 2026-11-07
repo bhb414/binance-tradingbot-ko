@@ -1,3 +1,4 @@
+import {MAX_STUDIES} from './study-limits.js';
 import {CHART_TYPE_IDS} from './chart-types.js';
 import {CHART_INTERVALS,chartIntervalSeconds} from './chart-timeframes.js';
 export const CHART_WORKSPACE_KEY='fw-chart-workspace-v1';
@@ -24,7 +25,7 @@ export function normalizeChartWorkspace(value){
       clean.price={autoScale:view.price.autoScale};
       if(finite(view.price.from)&&finite(view.price.to)&&view.price.to>view.price.from&&Math.abs(view.price.from)<1e15&&Math.abs(view.price.to)<1e15)Object.assign(clean.price,{from:view.price.from,to:view.price.to});
     }
-    for(const [id,factor] of Object.entries(view.panes||{}).slice(0,21))if(/^[a-zA-Z0-9_-]{1,64}$/.test(id)&&finite(factor)&&factor>=.001&&factor<=100)clean.panes[id]=factor;
+    for(const [id,factor] of Object.entries(view.panes||{}).slice(0,MAX_STUDIES+1))if(/^[a-zA-Z0-9_-]{1,64}$/.test(id)&&finite(factor)&&factor>=.001&&factor<=100)clean.panes[id]=factor;
     next.views[key]=clean;
   }
   for(const [key,prices] of Object.entries(value.lines||{}).slice(-40))if(validInstrument(key)&&Array.isArray(prices))next.lines[key]=prices.filter(price=>finite(price)&&price>0&&price<1e15).slice(-50);

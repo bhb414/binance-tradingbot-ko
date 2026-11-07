@@ -43,7 +43,7 @@ test('generic arrows support custom or empty text, independent direction and pos
  for(const style of [{...s.styles.line0,direction:'left'},{...s.styles.line0,order:-1},{...s.styles.line0,order:100},{...s.styles.line0,order:1.5}])assert.throws(()=>validateStudy({...s,styles:{...s.styles,line0:style}}));
 });
 test('background outputs have their own bounded slots and sandbox validation and both functions have snippets and help',()=>{
- const lines=Array.from({length:6},(_,i)=>'선("선'+i+'", 종가)').join('\n'),bgs=Array.from({length:6},(_,i)=>'배경("배경'+i+'", 종가 > 0)').join('\n');assert.equal(compileStudyScript(lines+'\n'+bgs).backgrounds.length,6);assert.throws(()=>compileStudyScript(bgs+'\n배경("초과", 1)'),/최대 6/);assert.throws(()=>compileStudyScript(lines+'\n화살표("초과", 1)'),/최대 6/);
+ const lines=Array.from({length:20},(_,i)=>'선("선'+i+'", 종가)').join('\n'),bgs=Array.from({length:6},(_,i)=>'배경("배경'+i+'", 종가 > 0)').join('\n');assert.equal(compileStudyScript(lines+'\n'+bgs).backgrounds.length,6);assert.throws(()=>compileStudyScript(bgs+'\n배경("초과", 1)'),/최대 6/);assert.throws(()=>compileStudyScript(lines+'\n화살표("초과", 1)'),/최대 20/);
  for(const s of ['배경("x")','배경("x", 1, 2)','배경("x", 현재수익률())','배경("x", 종가@1h)','배경("x", fetch())','화살표("x", 1, "up")'])assert.throws(()=>compileStudyScript(s));
  assert.equal(studyInputType('bgcolor("x", 종가 > 0)'),'SCRIPT');for(const name of ['배경','화살표']){assert.equal(formulaSnippets({chart:true,script:true}).find(x=>x.name===name)?.insert,name+'()');assert.ok(!formulaSnippets().some(x=>x.name===name));const text=name+'("x", ';assert.equal(signatureAt(text,text.length).argument,1);}
 });

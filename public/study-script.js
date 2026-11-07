@@ -1,3 +1,4 @@
+import {MAX_SCRIPT_PLOTS,MAX_SCRIPT_BACKGROUNDS} from './study-limits.js';
 import {compileStudyFormula} from './study-expression.js';
 import {formulaSeries} from './indicators.js';
 import {shiftStudyPoints,projectStudyPoints} from './study-time.js';
@@ -27,7 +28,7 @@ export function compileStudyScript(source){
  for(const statement of statements(source)){try{const match=statement.text.match(/^(선|예상선|막대|histogram|plot|forecast|매수신호|매도신호|buySignal|sellSignal|배경|bgcolor|화살표|화살표신호|arrow)\s*\(([\s\S]*)\)$/i);
   if(match){
    const values=args(match[2]),name=match[1].toLowerCase(),projection=['예상선','forecast'].includes(name),histogram=['막대','histogram'].includes(name),generic=['화살표','화살표신호','arrow'].includes(name),signal=generic||['매수신호','매도신호','buysignal','sellsignal'].includes(name),background=['배경','bgcolor'].includes(name);
-   if(background?backgrounds.length===6:plots.length===6)throw Error(background?'한 지표는 배경 조건을 최대 6개 사용합니다.':'한 지표는 선·막대·신호를 합쳐 최대 6개 출력합니다.');
+   if(background?backgrounds.length>=MAX_SCRIPT_BACKGROUNDS:plots.length>=MAX_SCRIPT_PLOTS)throw Error(background?'한 지표는 배경 조건을 최대 '+MAX_SCRIPT_BACKGROUNDS+'개 사용합니다.':'한 지표는 선·막대·신호를 합쳐 최대 '+MAX_SCRIPT_PLOTS+'개 출력합니다.');
    if(values.length<2||values.length>(signal||background?2:projection?5:3))throw Error(background?'배경("이름", 조건)':generic?'화살표("글자", 조건)':signal?'매수신호("이름", 조건) 또는 매도신호("이름", 조건)':projection?'예상선("이름", 수식, 예상봉수, 기울기비교봉수, 기준봉)':histogram?'막대("이름", 수식, 색 기준식 선택)':'선("이름", 수식, 표시이동봉수)');
    let label;try{label=JSON.parse(values[0]);}catch{throw Error('선·신호 이름은 "이름"처럼 큰따옴표로 감싸세요.');}
    if(typeof label!=='string'||!generic&&!label.trim()||label.length>40)throw Error('선·신호 이름은 1~40자로 입력하세요.');

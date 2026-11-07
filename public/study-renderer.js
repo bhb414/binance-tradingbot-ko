@@ -72,6 +72,7 @@ export class StudyRenderer {
   layout(){
     const panes=this.chart.panes(),tops=[];let y=0;for(const pane of panes){tops.push(y);y+=pane.getHeight()+1;}
     const offsets=new Map(),rowHeight=matchMedia('(max-width:540px)').matches?26:22;for(const row of this.rows){const offset=offsets.get(row.pane)||0;row.element.style.top=((tops[row.pane]||0)+(row.pane?5:33)+offset*rowHeight)+'px';offsets.set(row.pane,offset+1);}
-    this.toggle.style.top=(labelsCollapsed?33:Math.min(33+(offsets.get(0)||0)*rowHeight,Math.max(33,(panes[0]?.getHeight()||300)-28)))+'px';
+    const scrolling=[...offsets].some(([index,count])=>count>Math.max(3,Math.floor(((panes[index]?.getHeight()||300)-70)/rowHeight)));this.list.classList.toggle('is-scrollable',scrolling);this.list.style.setProperty('--legend-list-height',Math.min(240,Math.max(100,(panes[0]?.getHeight()||300)-70))+'px');
+    this.toggle.style.top=(scrolling||labelsCollapsed?33:Math.min(33+(offsets.get(0)||0)*rowHeight,Math.max(33,(panes[0]?.getHeight()||300)-28)))+'px';
   }
 }

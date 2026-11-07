@@ -38,7 +38,7 @@ test('completed bar values and colors remain unchanged when later candles arrive
  const a=studyData(s,raw.slice(0,6)).plots[0].data,b=studyData(s,raw).plots[0].data;assert.deepEqual(a,b.slice(0,6));
 });
 test('bar syntax keeps output limits, sandbox rules, reserved names and editor help',()=>{
- for(const source of ['막대("x", 종가, 0, 1)','막대("x", 현재수익률())','막대("x", 종가, 종가@1h)','막대("x", 종가, A.종가)','막대 = 1\n선("x", 막대)',Array.from({length:7},(_,i)=>'막대("'+i+'", 종가)').join('\n')])assert.throws(()=>compileStudyScript(source),source);
+ for(const source of ['막대("x", 종가, 0, 1)','막대("x", 현재수익률())','막대("x", 종가, 종가@1h)','막대("x", 종가, A.종가)','막대 = 1\n선("x", 막대)',Array.from({length:21},(_,i)=>'막대("'+i+'", 종가)').join('\n')])assert.throws(()=>compileStudyScript(source),source);
  assert.ok(formulaSnippets({chart:true,script:true}).some(x=>x.name==='막대'));assert.ok(!formulaSnippets({chart:false}).some(x=>x.name==='막대'));
  const text='막대("값", 종가, ';assert.ok(signatureAt(text,text.length));assert.equal(scriptStudyData('선("x", 종가)',rows([1,2])).error,null);
 });
