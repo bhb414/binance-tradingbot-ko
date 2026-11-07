@@ -28,7 +28,7 @@ export class CurrentPriceLine{
 export class CandleInspection{
  constructor({chart,studies,onChange=()=>{},isDrawing=()=>false,hitTest=()=>true}){
   this.studies=studies;this.hitTest=hitTest;this.onChange=onChange;this.isDrawing=isDrawing;this.raw=new Map();this.displayed=new Map();this.pin=null;this.hover=null;this.key=null;this.heikin=false;this.chartType='standard';this.executions=[];this.point=null;
-  this.move=p=>{if(this.pin!==null||this.isDrawing())return;const t=chartSeconds(p.time);this.hover=this.raw.has(t)?t:null;this.publish();};
+  this.move=p=>{if(this.pin!==null||this.isDrawing())return;const t=chartSeconds(p.time),hover=this.raw.has(t)?t:null;if(hover===this.hover)return;this.hover=hover;this.publish();};
   this.click=p=>{if(this.isDrawing())return;const t=nearestChartTime(chart,this.raw,{...p,time:chartSeconds(p.time)});if(!this.raw.has(t)||!this.hitTest({...p,time:t})){if(this.pin!==null)this.release();return;}this.pin=t;this.hover=null;this.point=p.point&&Number.isFinite(p.point.x)&&Number.isFinite(p.point.y)?{x:p.point.x,y:p.point.y}:null;this.publish(true);};
   this.chart=chart;chart.subscribeCrosshairMove(this.move);chart.subscribeClick(this.click);chart.subscribeDblClick?.(this.click);
  }

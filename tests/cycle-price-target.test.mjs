@@ -90,9 +90,37 @@ test('forecast arrows use only the first eligible positive long and positive sho
  s.params.showPositiveTargets=false;arrows.update({study:s,context:{referencePrice:100},solver,path});assert.deepEqual(updates.at(-1),[]);arrows.destroy();
 });
 
-test('new quotes clear vanished hypothetical arrows and stale asynchronous scans cannot restore old markers',()=>{
+test('new quotes replace vanished arrows after a complete scan and stale asynchronous scans cannot restore old markers',()=>{
  const s=cycle(),updates=[],queue=[],plugin={setMarkers:x=>updates.push(x),detach(){}},arrows=new CyclePriceArrows({}, {createMarkers:()=>plugin,schedule:fn=>{queue.push(fn);return fn;},cancel(){}}),path=[0,1,2,3].map(h=>({time:100+h*60,value:h}));
- const positive={at:()=>({price:101,crossingSide:'above',earlierCross:null,earlierTouch:null})};arrows.update({study:s,context:{referencePrice:100},solver:positive,path});queue.shift()();assert.equal(updates.at(-1)[0].text,'롱');
- const unavailable={at:()=>({price:null})};arrows.update({study:s,context:{referencePrice:102},solver:unavailable,path});assert.deepEqual(updates.at(-1),[]);while(queue.length)queue.shift()();assert.deepEqual(updates.at(-1),[]);
+ const positive={at:()=>({price:101,crossingSide:'above',earlierCross:null,earlierTouch:null})};arrows.update({study:s,context:{referencePrice:100},solver:positive,path});while(queue.length)queue.shift()();assert.equal(updates.at(-1)[0].text,'롱');
+ const prior=updates.at(-1),unavailable={at:()=>({price:null})};arrows.update({study:s,context:{referencePrice:102},solver:unavailable,path});assert.equal(updates.at(-1),prior,'keep last complete result while recalculating');while(queue.length)queue.shift()();assert.deepEqual(updates.at(-1),[]);
  s.params.showPositiveTargets=true;s.params.priceTargetMultiplier=20;arrows.update({study:s,context:{referencePrice:100},solver:positive,path});arrows.destroy();while(queue.length)queue.shift()();assert.deepEqual(updates.at(-1),[]);
+});
+
+test('a changed quote with the same arrows never clears or redraws them, and a changed result commits both directions together',()=>{
+ const s=cycle(),updates=[],queue=[],plugin={setMarkers:x=>updates.push(x),detach(){}},arrows=new CyclePriceArrows({}, {createMarkers:()=>plugin,schedule:fn=>{queue.push(fn);return fn;},cancel(){}}),path=[0,1,2,3,4].map(h=>({time:100+h*60,value:h}));
+ const solver=(longAt,shortAt,extra=0)=>({at:h=>({price:h===longAt?101+extra:h===shortAt?99-extra:null,crossingSide:'above',earlierCross:null,earlierTouch:null})});
+ arrows.update({study:s,context:{referencePrice:100},solver:solver(1,3),path});queue.shift()();assert.equal(updates.length,0,'never publish a partial pair');while(queue.length)queue.shift()();assert.equal(updates.length,1);const complete=updates[0];
+ for(let i=0;i<10;i++){arrows.update({study:s,context:{referencePrice:100},solver:solver(1,3,.001*i),path});while(queue.length){assert.equal(updates.length,1);queue.shift()();}}assert.equal(updates.at(-1),complete);
+ arrows.update({study:s,context:{referencePrice:100},solver:solver(2,4),path});while(queue.length){assert.equal(updates.length,1);queue.shift()();}assert.equal(updates.length,2);assert.deepEqual(updates[1].map(m=>m.time),[220,340]);assert.ok(updates.every(markers=>markers.length===2),'no empty intermediate frame');
+ s.params.showPositiveTargets=false;arrows.update({study:s,context:{referencePrice:100},solver:solver(2,4),path});assert.deepEqual(updates.at(-1),[],'explicit hide takes effect immediately');arrows.destroy();
+});
+
+test('moving from a forecast into its tooltip keeps the observation and clicking the box pins that observation without moving its anchor',()=>{
+ const chart={subscribeCrosshairMove(){},subscribeClick(){},unsubscribeCrosshairMove(){},unsubscribeClick(){}},queue=[],views=[];let hovered=false,selections=0;
+ const model=new CyclePriceInspection({chart,read:e=>e.time===160?{time:160,value:1}:null,onChange:v=>views.push(v),onSelect:()=>selections++,isTooltipHovered:()=>hovered,schedule:fn=>{queue.push(fn);return fn;},cancel(){}});
+ const event={time:160,paneIndex:1,point:{x:250,y:100}};model.move(event);assert.equal(views.at(-1).pinned,false);
+ model.move({});hovered=true;queue.shift()();assert.equal(views.at(-1).reading.time,160,'canvas leave cannot hide a hovered tooltip');
+ model.pinCurrent();assert.equal(selections,1);assert.equal(views.at(-1).pinned,true);assert.equal(views.at(-1).selected,false,'preserve the existing tooltip anchor');assert.equal(views.at(-1).event,event);
+ hovered=false;model.move({time:100,paneIndex:0});assert.equal(views.at(-1).reading.time,160);model.destroy();assert.equal(views.at(-1),null);
+});
+
+test('rapid forecast pointer moves read only the last bar per frame, and same-bar moves skip reads while quote refresh still updates',()=>{
+ const chart={subscribeCrosshairMove(){},subscribeClick(){},unsubscribeCrosshairMove(){},unsubscribeClick(){}},frames=new Map(),views=[];let id=0,reads=0,value=1;
+ const flush=()=>{const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback();};
+ const model=new CyclePriceInspection({chart,read:e=>{reads++;return {time:e.time,value};},onChange:v=>views.push(v),frame:fn=>{frames.set(++id,fn);return id;},cancelFrame:key=>frames.delete(key)});
+ for(let i=0;i<100;i++)model.move({time:100+i,paneIndex:1,point:{x:i,y:20}});assert.equal(reads,0);assert.equal(frames.size,1);flush();assert.equal(reads,1);assert.equal(views.at(-1).reading.time,199);
+ for(let i=0;i<100;i++)model.move({time:199,paneIndex:1,point:{x:100+i,y:30}});flush();assert.equal(reads,1);assert.equal(views.length,1);
+ value=2;model.refresh();assert.equal(reads,2);assert.equal(views.at(-1).reading.value,2);
+ model.move({time:250,paneIndex:1});model.click({time:230,paneIndex:1});flush();assert.equal(views.at(-1).reading.time,230);assert.equal(views.at(-1).pinned,true);model.destroy();assert.equal(frames.size,0);
 });

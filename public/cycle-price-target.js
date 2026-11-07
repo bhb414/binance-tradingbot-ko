@@ -1,8 +1,9 @@
 import {assumedForecastValues,extendForecastAverage,forecastCrossings} from './ma-forecast-scenarios.js';
 const finite=Number.isFinite;
-const number=(n,d=8)=>finite(n)?n.toLocaleString('ko-KR',{maximumFractionDigits:d}):'미확인';
+const formats=new Map(),percentFormat=new Intl.NumberFormat('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:4});
+const number=(n,d=8)=>{if(!finite(n))return '미확인';if(!formats.has(d))formats.set(d,new Intl.NumberFormat('ko-KR',{maximumFractionDigits:d}));return formats.get(d).format(n);};
 export function cyclePriceSummary(bars,multiplier,change){
- const value=!finite(change)?'계산 불가':(change<0?'−':change>0?'+':'')+Math.abs(change).toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:4})+'%';
+ const value=!finite(change)?'계산 불가':(change<0?'−':change>0?'+':'')+percentFormat.format(Math.abs(change))+'%';
  return bars+'봉 후 · '+number(multiplier,2)+'배 변동 '+value;
 }
 

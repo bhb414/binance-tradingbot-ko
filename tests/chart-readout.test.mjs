@@ -37,6 +37,13 @@ test('drawing clicks, blank future chart space and invalid times cannot select a
  const f=inspector();f.setDrawing(true);f.chart.click({time:100});assert.equal(f.view.pinned,false);f.chart.move({time:100});assert.equal(f.view.time,200);f.setDrawing(false);
  f.chart.click({time:NaN});f.chart.click({time:300});f.chart.click({});assert.equal(f.view.pinned,false);f.chart.click({time:100});assert.equal(f.view.time,100);f.chart.click({time:200});assert.equal(f.view.time,200);
 });
+
+test('pointer movements within one candle or future blank space do not repeatedly format legends, while new quote data still refreshes',()=>{
+ const f=inspector(),publish=f.model.onChange;let updates=0;f.model.onChange=view=>{updates++;publish(view);};
+ for(let i=0;i<100;i++)f.chart.move({time:100,point:{x:i,y:i}});assert.equal(updates,1);assert.equal(f.view.time,100);
+ const next=structuredClone(f.raw);next[0].close=13;f.model.update({key:'usdm:BTCUSDT:1m',raw:next});assert.equal(updates,2);assert.equal(f.view.raw.close,13);
+ for(let i=0;i<100;i++)f.chart.move({time:300+i,point:{x:i,y:i}});assert.equal(updates,3);assert.equal(f.view.time,200);
+});
 test('USDT equity includes both cross and isolated unrealized PnL, keeps wallet/free collateral separate, and can be negative',()=>{
  const positions=[{symbol:'BTCUSDT',positionSide:'BOTH',positionAmt:'2',entryPrice:'100',markPrice:'110',unRealizedProfit:'20',marginAsset:'USDT'},{symbol:'ETHUSDT',positionSide:'SHORT',positionAmt:'-1',entryPrice:'100',markPrice:'110',unRealizedProfit:'-10',isolatedWallet:'30',marginAsset:'USDT'},{symbol:'BTCUSDC',positionSide:'BOTH',positionAmt:'1',entryPrice:'100',markPrice:'500',unRealizedProfit:'400',marginAsset:'USDC'}];
  const a=accountView({assets:[{asset:'USDT',walletBalance:'100',availableBalance:'50'}]},positions,[],true);assert.equal(a.unrealizedProfit,10);assert.equal(a.equity,110);assert.equal(a.walletBalance,100);assert.equal(a.availableBalance,50);

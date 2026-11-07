@@ -2,6 +2,8 @@
 export function installChartTooltip(host,{chart,series,chartElement,onDismiss}){
  let view=null,frame=0,pointer=null,anchorPoint=null;const area=host.parentElement;
  host.classList.add('chart-candle-tooltip');host.hidden=true;host.setAttribute('role','region');
+ const contain=event=>event.stopPropagation(),containedEvents=['pointerdown','click','dblclick','wheel'];
+ for(const name of containedEvents)host.addEventListener(name,contain);
  const set=(key,value)=>{if(host.style[key]!==value)host.style[key]=value;};
  function position(){
   frame=0;if(!(view?.pinned||view?.projection&&view.hovered)||!(view.candle||view.projection)){host.hidden=true;return;}
@@ -27,5 +29,5 @@ export function installChartTooltip(host,{chart,series,chartElement,onDismiss}){
  window.visualViewport?.addEventListener('resize',schedule);window.visualViewport?.addEventListener('scroll',schedule);
  const observer=new ResizeObserver(schedule);observer.observe(area);observer.observe(host);
  chart.timeScale().subscribeVisibleLogicalRangeChange(schedule);
- return {setSeries(next){series=next;schedule();},update(next){if(next.selected)anchorPoint=pointer||next.point;if(!next.pinned)anchorPoint=null;view={...next,point:anchorPoint||next.point};if(!(view.pinned||view.projection&&view.hovered)||!(view.candle||view.projection))host.hidden=true;else schedule();},destroy(){cancelAnimationFrame(frame);observer.disconnect();chartElement.removeEventListener('pointerdown',remember,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('scroll',schedule);chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);host.hidden=true;}};
+ return {setSeries(next){series=next;schedule();},update(next){if(next.selected)anchorPoint=pointer||next.point;if(!next.pinned)anchorPoint=null;view={...next,point:anchorPoint||next.point};if(!(view.pinned||view.projection&&view.hovered)||!(view.candle||view.projection))host.hidden=true;else schedule();},destroy(){for(const name of containedEvents)host.removeEventListener(name,contain);cancelAnimationFrame(frame);observer.disconnect();chartElement.removeEventListener('pointerdown',remember,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('scroll',schedule);chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);host.hidden=true;}};
 }
