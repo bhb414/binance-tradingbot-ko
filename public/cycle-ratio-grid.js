@@ -3,7 +3,7 @@
 export function cycleRatioGridRows(series,height){
  if(!Number.isFinite(height)||height<=0)return [];
  const found=new Map(),put=value=>{const y=series.priceToCoordinate(value);if(Number.isFinite(y)&&y>=0&&y<=height)found.set(Math.round(y),{value,y});};
- put(.25);put(.5);
+ put(.25);put(.5);put(.75);
  for(let y=0;y<=Math.ceil(height);y++){
   const price=series.coordinateToPrice(y);if(!Number.isFinite(price))continue;
   const value=Math.round(price*2)/2;if(value>=1)put(value);

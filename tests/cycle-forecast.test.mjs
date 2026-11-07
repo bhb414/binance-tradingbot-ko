@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStudy,studyData,studyPlots,validateStudy,decodeStudies} from '../public/chart-studies.js';
 import {cycleLegendValues,cycleReadings} from '../public/cycle-reference.js';
+import {cycleForecastReadings} from '../public/cycle-forecast.js';
 const raw=Array.from({length:150},(_,i)=>({time:1700000000+i*60,open:100+Math.sin(i/7),high:102+Math.sin(i/7),low:98+Math.sin(i/7),close:100+Math.sin(i/7+.3)+Math.cos(i/19)*.2,volume:3+i%13}));
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7*Math.max(1,Math.abs(b)),a+' != '+b);
 function cycle(source='current',method='fastest-range'){
@@ -18,11 +19,29 @@ test('the existing interval slot switches between old spacing, previous complete
  assert.deepEqual(current.cycle.map(p=>p.elapsed),original.cycle.map(p=>p.elapsed));assert.deepEqual(current.cycle.map(p=>p.interval),original.cycle.map(p=>p.interval));
 });
 
-test('remaining forecasts and final elapsed estimates change each candle and are not replaced by a one-step elapsed counter',()=>{
- const s=cycle('remaining','mean-bars'),d=studyData(s,raw);assert.match(studyPlots(s)[1].label,/평균 남은/);
+test('elapsed-aligned forecasts change each candle and are not replaced by a one-step elapsed counter',()=>{
+ const s=cycle('remaining','mean-bars'),d=studyData(s,raw);assert.match(studyPlots(s)[1].label,/평균 예상경과/);
  const points=d.cycle.filter(p=>Number.isFinite(p.prediction));assert.ok(points.length>40);assert.ok(new Set(points.map(p=>p.prediction)).size>5);
  assert.ok(points.some((p,i)=>i&&p.elapsed===points[i-1].elapsed+1&&Math.abs(p.prediction-points[i-1].prediction-1)>.01));
- assert.match(cycleReadings(s,d.cycle.at(-1)),/예상 종료.*남은/);
+ assert.match(cycleReadings(s,d.cycle.at(-1)),/예상 교차 경과.*남은/);
+});
+
+test('remaining mode plots elapsed plus remaining with no one-bar deduction for every forecast aggregate, anchor and ratio basis',()=>{
+ for(const method of ['fastest','mean-bars','mean-price'])for(const anchor of ['live','closed'])for(const display of ['bars','ratio'])for(const basis of ['full','half']){
+  const s=cycle('remaining',method);Object.assign(s.params,{anchor,display,basis});const data=studyData(s,raw),plot=new Map(data.plots[1].data.map(p=>[p.time,p.value]));let checked=0;
+  for(const meta of data.cycle){
+   if(Number.isFinite(meta.elapsed)&&Number.isFinite(meta.forecastRemaining)){
+    const target=meta.elapsed+meta.forecastRemaining;near(meta.forecastTarget,target);near(meta.prediction,target);near(plot.get(meta.time),display==='bars'?target:target/meta.basis);near(meta.forecastEnd,target-1);checked++;
+   }else{assert.ok(!Number.isFinite(meta.prediction));assert.ok(!Number.isFinite(plot.get(meta.time)));}
+  }
+  assert.ok(checked>30,method+' '+anchor+' '+display+' '+basis);
+ }
+});
+
+test('the legend retains remaining length separately from the plotted target in both bars and multiples',()=>{
+ const s=cycle('remaining','fastest'),meta={period:100,basis:100,elapsed:29,forecastRemaining:17,forecastTarget:46,prediction:46,forecastEnd:45};
+ s.params.display='ratio';assert.equal(cycleLegendValues(s,meta).interval,'최단 예상경과 0.46배 · 남은 0.17배');assert.match(cycleForecastReadings(s,meta),/현재 경과 0.29배 \+ 예상 남은 0.17배 ≈ 예상 교차 경과 0.46배/);
+ s.params.display='bars';assert.equal(cycleLegendValues(s,meta).interval,'최단 예상경과 46봉 · 남은 17봉');assert.match(cycleReadings(s,meta),/예상 교차 경과 46봉 · 남은 17봉/);
 });
 
 test('theory full and half scales convert the same predicted crossing time instead of changing its calculation',()=>{

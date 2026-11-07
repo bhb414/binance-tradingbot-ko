@@ -51,10 +51,18 @@ test('unsupported or denied native fullscreen retains a usable full-window mode 
  }
 });
 
+test('mobile and touch screens expand only inside the browser and never request native fullscreen that hides navigation',async()=>{
+ const {doc,panel,control}=fakeFullscreen();let queries=0;
+ doc.defaultView={matchMedia(query){assert.equal(query,'(pointer:coarse), (max-width:900px)');queries++;return {matches:true};}};
+ await control.enter();assert.equal(queries,1);assert.equal(doc.fullscreenElement,null);assert.equal(control.active,true);assert.equal(panel.classList.contains('is-chart-fullscreen'),true);
+ await control.exit();assert.equal(doc.fullscreenElement,null);assert.equal(control.active,false);
+});
+
 test('cycle grid includes every visible half multiple above one, follows zoom, and remains bounded by viewport pixels',()=>{
  const series=(lo,hi,height)=>({priceToCoordinate:value=>(hi-value)/(hi-lo)*height,coordinateToPrice:y=>hi-y/height*(hi-lo)});
- assert.deepEqual(cycleRatioGridRows(series(0,8,400),400).map(p=>p.value).sort((a,b)=>a-b),[.25,.5,...Array.from({length:15},(_,i)=>1+i*.5)]);
+ assert.deepEqual(cycleRatioGridRows(series(0,8,400),400).map(p=>p.value).sort((a,b)=>a-b),[.25,.5,.75,...Array.from({length:15},(_,i)=>1+i*.5)]);
+ assert.deepEqual(cycleRatioGridRows(series(.7,.8,400),400).map(p=>p.value),[.75]);
  assert.deepEqual(cycleRatioGridRows(series(5,10,400),400).map(p=>p.value).sort((a,b)=>a-b),Array.from({length:11},(_,i)=>5+i*.5));
- const large=cycleRatioGridRows(series(0,1e9,300),300);assert.ok(large.length<=301);assert.ok(large.every(p=>p.value*2===Math.round(p.value*2)));
+ const large=cycleRatioGridRows(series(0,1e9,300),300);assert.ok(large.length<=301);assert.ok(large.every(p=>p.value<1||p.value*2===Math.round(p.value*2)));
  assert.deepEqual(cycleRatioGridRows(series(0,8,400),0),[]);
 });
