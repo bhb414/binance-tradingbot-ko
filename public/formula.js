@@ -17,7 +17,7 @@ export function formulaTimeframes(formula){
     }
     const name=node.type==='call'?api.functionAliases[node.name.toLowerCase()]:null;
     if(name==='frame')throw new Error('봉() 대신 EMA(종가, 20)@1h[1]처럼 봉 주기를 지정하세요.');
-    const history=['occurs','countTrue','occursStarts','countStarts','sma','ema','vwma','nextBar','nw','percentile','rsi','stdev','atr','change','changePct','crossUp','crossDown','bbUpper','bbMiddle','bbLower'].includes(name)||['lag','range'].includes(node.type);
+    const history=['kama','hma','cyclePeriod','barsSince','crossInterval','occurs','countTrue','occursStarts','countStarts','sma','ema','vwma','nextBar','nw','percentile','rsi','stdev','atr','change','changePct','crossUp','crossDown','bbUpper','bbMiddle','bbLower'].includes(name)||['lag','range'].includes(node.type);
     if(history&&children(node).some(hasFrame))throw new Error('과거 봉을 계산하는 함수 전체에 주기를 붙이세요. 예: 상향돌파(종가, EMA(종가, 20))@5m');
     if(history&&!scope)throw new Error('계산식 뒤에 봉 주기를 지정하세요. 예: EMA(종가, 20)@1h[1]');
     if(node.type==='variable'&&!scope&&!Object.hasOwn(api.constantAliases,node.name.toLowerCase())&&!POSITION_FIELDS.includes(api.variableAliases[node.name.toLowerCase()]))throw new Error('데이터 뒤에 봉 주기를 지정하세요. 예: 종가@5m[1]');

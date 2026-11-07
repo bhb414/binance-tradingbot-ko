@@ -1,3 +1,4 @@
+import {createKAMA,createHMA,createCycleEstimator,createBarsSince,createCrossTracker} from './adaptive-cycle.js';
 // Adapted from the user's 2026-10-27 analysis formula engine.
 // Deliberately parses expressions; never executes JavaScript from input.
 (function (root, factory) {
@@ -244,6 +245,8 @@
     'min': 'min', '최소': 'min', 'max': 'max', '최대': 'max',
     'sma': 'sma', '평균': 'sma', '이평': 'sma',
     'ema': 'ema', '지수이평': 'ema', 'rsi': 'rsi',
+    'kama':'kama','적응이평':'kama','카우프만이평':'kama','hma':'hma','hullma':'hma','헐이평':'hma',
+    '주기추정':'cyclePeriod','cycleperiod':'cyclePeriod','경과봉수':'barsSince','barssince':'barsSince','교차간격':'crossInterval','crossinterval':'crossInterval',
     'vwma':'vwma', '거래량가중이평':'vwma', '거래량가중이동평균':'vwma',
     'nextbar':'nextBar', '다음봉':'nextBar', '가정봉':'nextBar',
     'nw':'nw', '나다라야왓슨':'nw', 'nadarayawatson':'nw',
@@ -311,11 +314,21 @@
     if (node.type === 'variable'&&calendarConstant(node.name)==null) resolveVariable(node.name);
     if (node.type === 'call') {
       const name = resolveFunction(node.name);
-      const arity = {choose:[3],highest:[2],lowest:[2],occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nextBar: [5,6], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
+      const arity = {kama:[2,3,4],hma:[2],cyclePeriod:[4],barsSince:[1],crossInterval:[2],choose:[3],highest:[2],lowest:[2],occurs:[3,4],countTrue:[2],occursStarts:[3,4],countStarts:[2],currentReturn:[0],priceChange:[0],currentPnl:[0],hasPosition:[0],weekday:[0,1],clockTime:[0,1],timeWindow:[2,3], abs: [1], min: [2], max: [2], sma: [2], ema: [2], vwma: [2,3], nextBar: [5,6], nw: [3], percentile: [3], rsi: [2], frame: [3], stdev: [2], change: [2], changePct: [2], crossUp: [2], crossDown: [2], between: [3], bbUpper: [3], bbMiddle: [2, 3], bbLower: [3], atr: [1] }[name];
       if (!arity.includes(node.args.length)) throw new FormulaError(`${node.name} 함수의 인수 개수가 맞지 않습니다`, node.position);
-      if (['sma','ema','vwma','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
+      if (['sma','ema','vwma','kama','hma','rsi','stdev','bbUpper','bbMiddle','bbLower'].includes(name)) {
         const period=node.args[1];
         if (period.type!=='number'||!Number.isInteger(period.value)||period.value<1||period.value>MAX_WINDOW) throw new FormulaError(`지표 기간은 1~${MAX_WINDOW} 정수로 입력하세요`, period.position);
+      }
+      if(['kama','hma','cyclePeriod','barsSince','crossInterval'].includes(name)){
+        const sources=name==='crossInterval'?node.args:node.args.slice(0,1);if(sources.some(arg=>!historicalCondition(arg)))throw new FormulaError('이 함수에는 봉 데이터를 사용하세요. 현재 시각·포지션 값의 과거 이력은 없습니다',node.position);
+      }
+      if(name==='kama'){
+        for(const arg of node.args.slice(2))if(arg.type!=='number'||!Number.isInteger(arg.value)||arg.value<1||arg.value>MAX_WINDOW)throw new FormulaError('KAMA 빠른·느린 기간은 1~500 정수입니다',arg.position);
+        if((node.args[2]?.value??2)>=(node.args[3]?.value??30))throw new FormulaError('KAMA 빠른 기간은 느린 기간보다 짧아야 합니다',node.position);
+      }
+      if(name==='cyclePeriod'){
+        const [window,minimum,maximum]=node.args.slice(1);if([window,minimum,maximum].some(arg=>arg.type!=='number'||!Number.isInteger(arg.value))||window.value<16||window.value>MAX_WINDOW||minimum.value<4||maximum.value<=minimum.value||maximum.value>Math.floor(window.value/2))throw new FormulaError('주기추정(값, 조회봉수 16~500, 최소주기 4 이상, 최대주기): 최소 < 최대, 조회봉수는 최대주기의 2배 이상이어야 합니다',node.position);
       }
       if(name==='nextBar'){
         if(!historicalCondition(node.args[0]))throw new FormulaError('다음봉 계산식에는 봉 데이터 지표·조건을 사용하세요. 현재 시각·포지션의 미래값은 가정하지 않습니다',node.position);
@@ -598,8 +611,21 @@
     return context.indicatorCache.get(cacheKey)[index] ?? null;
   }
 
+  function sequentialCall(node,context,index,name){
+    const key='causal:'+expressionKey(node,context),lookback=name==='cyclePeriod'?node.args[1].value:null;
+    const create=()=>name==='kama'?createKAMA(node.args[1].value,node.args[2]?.value??2,node.args[3]?.value??30):name==='hma'?createHMA(node.args[1].value):name==='barsSince'?createBarsSince():name==='crossInterval'?createCrossTracker():createCycleEstimator(lookback,node.args[2].value,node.args[3].value,()=>{if(++context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');});
+    if(!context.indicatorCache.has(key)){const start=lookback?Math.max(0,index-lookback+1):0;context.indicatorCache.set(key,{start,last:start-1,values:new Map(),state:create()});}
+    const cache=context.indicatorCache.get(key);if(cache.values.has(index))return cache.values.get(index);
+    if(index<cache.start||(lookback&&index<cache.last&&!cache.values.has(index))){cache.start=lookback?Math.max(0,index-lookback+1):0;cache.last=cache.start-1;cache.state=create();}
+    for(let i=cache.last+1;i<=index;i++){
+      if(++context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');
+      const a=evaluateNode(node.args[0],context,i),value=name==='crossInterval'?cache.state.push(a,evaluateNode(node.args[1],context,i)):cache.state.push(a);if(!lookback||i<lookback-1||i>=cache.start+lookback-1)cache.values.set(i,finite(value)?value:null);cache.last=i;
+    }
+    return cache.values.get(index)??null;
+  }
   function evaluateCall(node, context, index) {
     const name = resolveFunction(node.name);
+    if(['kama','hma','cyclePeriod','barsSince','crossInterval'].includes(name))return sequentialCall(node,context,index,name);
     if(name==='nextBar')return projectNextBar(node,context,index);
     if(name==='choose'){const condition=evaluateNode(node.args[0],context,index);return finite(condition)?evaluateNode(node.args[truthy(condition)?1:2],context,index):null;}
     if(name==='highest'||name==='lowest'){const period=readWindowPeriod(node.args[1],context,index,0);if(!period||index<period-1)return null;let value=null;for(let i=index-period+1;i<=index;i++){const n=evaluateNode(node.args[0],context,i);if(!finite(n))return null;value=value===null?n:name==='highest'?Math.max(value,n):Math.min(value,n);}return value;}

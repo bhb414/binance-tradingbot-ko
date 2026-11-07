@@ -3,6 +3,9 @@ import {compileStudyFormula} from './study-expression.js';
 import {formulaSeries} from './indicators.js';
 import {shiftStudyPoints,projectStudyPoints} from './study-time.js';
 export const SCRIPT_EXAMPLES=[
+{name:'7·15 이평 · 추정 주기와 교차 간격',source:'단기 = SMA(하이킨종가, 7)\n장기 = SMA(하이킨종가, 15)\n선("추정 한 바퀴", 주기추정(단기-장기, 200, 8, 100)[1])\n선("최근 완료 간격", 교차간격(단기, 장기)[1])\n선("교차 후 경과", 경과봉수(상향돌파(단기,장기) or 하향돌파(단기,장기))[1])',placement:'pane'},
+{name:'7·15 이평 · 한 바퀴 대비 배수',source:'단기 = SMA(하이킨종가, 7)\n장기 = SMA(하이킨종가, 15)\n기준 = 주기추정(단기-장기, 200, 8, 100)\n선("완료 간격 배수", (교차간격(단기,장기)/기준)[1])\n선("진행 배수", (경과봉수(상향돌파(단기,장기) or 하향돌파(단기,장기))/기준)[1])\n선("¼배", 0.25)\n선("½배", 0.5)\n선("1배", 1)\n선("2배", 2)\n선("3배", 3)\n선("4배", 4)',placement:'pane'},
+{name:'KAMA와 Hull MA',source:'선("KAMA 10 · 2·30", KAMA(하이킨종가, 10, 2, 30))\n선("Hull MA 20", HMA(하이킨종가, 20))',placement:'overlay'},
 {name:'골든·데드크로스 매수·매도 화살표',source:'단기 = VWMA(하이킨종가, 6, 거래량)\n장기 = SMA(하이킨종가, 55)\n선("단기", 단기)\n선("장기", 장기)\n매수신호("골든크로스", 상향돌파(단기, 장기))\n매도신호("데드크로스", 하향돌파(단기, 장기))'},
 {name:'이격 막대 · 0 기준으로 색상',source:'이격 = VWMA(하이킨종가, 5, 거래량) - SMA(하이킨종가, 5)\n막대("이격", 이격)\n선("0 기준선", 0)',placement:'pane'},
 {name:'이격 막대 · 다른 선식으로 색상',source:'이격 = VWMA(하이킨종가, 5, 거래량) - SMA(하이킨종가, 5)\n기준 = SMA(이격, 5)\n막대("이격", 이격, 기준)\n선("색 기준선", 기준)',placement:'pane'},
