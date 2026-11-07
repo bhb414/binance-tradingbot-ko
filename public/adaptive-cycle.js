@@ -49,9 +49,9 @@ function spectrumState(period,window){
 }
 // Detrended rolling lag correlations must have a distinct positive peak and
 // agree with a sinusoidal fit. This is an estimate, never a crossover forecast.
-export function createCycleEstimator(window,minimum,maximum,tick=()=>{}){
+export function createCycleEstimator(window,minimum,maximum,tick=()=>{},{candidates=false}={}){
  const sources=[],sum=[0],squares=[0],times=[0],products=new Float64Array(maximum+2),spectra=new Map();
- for(let k=minimum;k<=maximum;k++){tick();spectra.set(k,spectrumState(k,window));}
+ for(let k=minimum-(candidates?1:0);k<=maximum+(candidates?1:0);k++){tick();spectra.set(k,spectrumState(k,window));}
  let anchor=null,valid=0;
  const segment=(array,a,b)=>array[b+1]-array[a];
  return {push(value){
@@ -60,7 +60,7 @@ export function createCycleEstimator(window,minimum,maximum,tick=()=>{}){
   const start=index-window+1,out=start>0?sources[start-1]:0,ready=valid>=window,tt=window*(window*window-1)/12;
   let mean=0,slope=0,variance=0;
   if(ready){const total=segment(sum,start,index),raw=segment(squares,start,index)-total*total/window;mean=total/window;slope=(segment(times,start,index)-(start+(window-1)/2)*total)/tt;variance=Math.max(0,raw-slope*slope*tt);if(variance<=Number.EPSILON*128*Math.max(raw,1e-300))variance=0;}
-  let left=null,middle=null,best=null,bestScore=0;
+  let left=null,middle=null,best=null,bestScore=0;const correlations=candidates?new Map():null;
   for(let k=minimum-1;k<=maximum+1;k++){
    tick();products[k]+=(index>=k?sources[index-k]*z:0)-(start>0?sources[start-1]*sources[start-1+k]:0);
    const spectral=spectra.get(k);if(spectral){const re=spectral.re-out,im=spectral.im;spectral.re=spectral.rotationC*re-spectral.rotationS*im+z*spectral.endC;spectral.im=spectral.rotationS*re+spectral.rotationC*im-z*spectral.endS;}
@@ -70,6 +70,7 @@ export function createCycleEstimator(window,minimum,maximum,tick=()=>{}){
     const va=segment(squares,start,index-k)-a*a/count-2*slope*ta+slope*slope*tvar,vb=segment(squares,start+k,index)-b*b/count-2*slope*tb+slope*slope*tvar,cov=products[k]-a*b/count-slope*(ta+tb)+slope*slope*tvar;
     if(va>0&&vb>0)correlation=Math.max(-1,Math.min(1,cov/Math.sqrt(va*vb)));
    }
+   if(correlations&&k>=minimum&&k<=maximum)correlations.set(k,correlation);
    const candidate=k-1;
    if(candidate>=minimum&&candidate<=maximum&&middle!==null&&left!==null&&correlation!==null&&middle>=left&&middle>correlation&&middle>=.55){
     const power=spectra.get(candidate).power(mean,slope,variance),score=middle*power;
@@ -77,9 +78,20 @@ export function createCycleEstimator(window,minimum,maximum,tick=()=>{}){
    }
    left=middle;middle=correlation;
   }
-  return best;
+  if(!candidates)return best;
+  if(!ready||variance<=0)return {period:null,confirmed:false,candidates:[]};
+  const powers=new Map([...spectra].map(([period,spectral])=>[period,spectral.power(mean,slope,variance)]));
+  const describe=period=>({period,explainedFraction:powers.get(period),correlation:correlations.get(period),confirmed:period===best});
+  const peaks=[...powers].filter(([period,power])=>period>=minimum&&period<=maximum&&power>1e-10&&power>=(powers.get(period-1)??-1)&&power>(powers.get(period+1)??-1)).map(([period])=>describe(period)).sort((a,b)=>b.explainedFraction-a.explainedFraction);
+  const selected=best===null?[]:[describe(best)];
+  for(const peak of peaks){if(selected.every(candidate=>Math.abs(1/candidate.period-1/peak.period)>=1/window))selected.push(peak);if(selected.length>=3)break;}
+  return {period:selected[0]?.period??null,confirmed:selected[0]?.confirmed??false,candidates:selected};
  }};
 }
 export const kama=(values,period,fast=2,slow=30)=>{const state=createKAMA(period,fast,slow);return values.map(value=>state.push(value));};
 export const hma=(values,period)=>{const state=createHMA(period);return values.map(value=>state.push(value));};
 export const cyclePeriod=(values,window=200,minimum=8,maximum=100)=>{const state=createCycleEstimator(window,minimum,maximum);return values.map(value=>state.push(value));};
+
+// Exploratory chart candidates retain weak spectral peaks with explicit quality metadata.
+// Formula/bot cyclePeriod continues to return only the original confirmed estimate.
+export const cycleCandidateSeries=(values,window=200,minimum=8,maximum=100)=>{const state=createCycleEstimator(window,minimum,maximum,()=>{},{candidates:true});return values.map(value=>state.push(value));};

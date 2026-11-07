@@ -36,7 +36,7 @@ export class StudyRenderer {
     this.candles=candles;this.interval=interval;this.candleType=candleType;this.priceLegend.update(candleType);setStudyPreviewData(this.context,candles,interval);const studies=getStudies(),config=JSON.stringify([studies,interval]);
     const changed=config!==this.config;
     if(changed){
-      const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getHeight()]));
+      const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getStretchFactor()/(this.chart.panes()[0]?.getStretchFactor()||3.3)*3.3]));
       for(const row of this.rows){row.overlays?.dispose();if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
       for(const series of [...this.series].reverse())this.chart.removeSeries(series);this.series=[];this.rows=[];this.closeMenu();this.list.replaceChildren();this.paneLegends.clear();let pane=0;
       for(const study of studies){
@@ -61,7 +61,7 @@ export class StudyRenderer {
         row.element=element;row.output=element.querySelector('output');this.rows.push(row);
         if(!this.paneLegends.has(index)){const container=document.createElement('div');container.className='study-pane-legend';container.dataset.legendPane=index;this.list.append(container);this.paneLegends.set(index,container);}this.paneLegends.get(index).append(element);
       }
-      this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height/100:(row?.study.type==='VOLUME'?0.72:1.15));});
+      this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
       this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
     }
     const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.cycleValues=data.cycle?new Map(data.cycle.map(point=>[point.time,point])):null;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.caption||data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}

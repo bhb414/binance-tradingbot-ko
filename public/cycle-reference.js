@@ -28,15 +28,16 @@ export const cycleReferenceName=study=>study.params.reference==='theory'?'이론
 const number=value=>Number.isFinite(value)?value.toLocaleString('ko-KR',{maximumFractionDigits:2}):null;
 export const cycleBars=value=>number(value)===null?'미확인':number(value)+'봉';
 export function cycleReferenceMessage(study,meta){
- if(Number.isFinite(meta?.period))return '';
+ if(Number.isFinite(meta?.period)){if(study.params.reference!=='theory'&&meta?.candidateConfirmed===false){const candidate=meta.candidates?.find(c=>c.period===meta.period);return '참고 후보 · 반복성 약함'+(candidate?' · 파형 설명력 '+Math.round(candidate.explainedFraction*100)+'%':'');}return '';}
  if(study.params.reference==='theory')return THEORY_CYCLE_AVERAGES.includes(study.params.average)?'이론 주기 계산 불가':'이론 주기 미지원 · '+study.params.average+'는 가중치가 봉마다 바뀝니다. 실측 후보를 선택하세요.';
  return (meta?.available??0)<study.params.lookback?'실측 주기 미확인 · 분석 가능한 '+(meta?.available??0)+' / '+study.params.lookback+'봉':'실측 주기 미확인 · 반복성 기준 미충족';
 }
 export function cycleReadings(study,meta){
- return cycleReferenceName(study)+' 주기 '+cycleBars(meta?.period)+' · 1배 기준 '+cycleBars(meta?.basis)+(study.params.basis==='half'?' (선택 주기의 ½)':'')+' · 최근 돌파 간격 '+cycleBars(meta?.interval)+' · 경과 '+cycleBars(meta?.elapsed);
+ const candidates=study.params.reference!=='theory'&&meta?.candidates?.length?' · 후보 '+meta.candidates.map(c=>cycleBars(c.period)+'(설명력 '+Math.round(c.explainedFraction*100)+'%)').join(' / ')+' · 설명력은 예측 확률이 아닙니다.':'';
+ return cycleReferenceName(study)+(meta?.candidateConfirmed===false&&Number.isFinite(meta?.period)?' (참고)':'')+' 주기 '+cycleBars(meta?.period)+' · 1배 기준 '+cycleBars(meta?.basis)+(study.params.basis==='half'?' (선택 주기의 ½)':'')+' · 최근 돌파 간격 '+cycleBars(meta?.interval)+' · 경과 '+cycleBars(meta?.elapsed)+candidates;
 }
 export function cycleLegendValues(study,meta){
- const ratio=study.params.display==='ratio',base=ratio?meta?.basis:meta?.period,tag=cycleReferenceName(study)+(ratio&&study.params.basis==='half'?' ½':'');
+ const ratio=study.params.display==='ratio',base=ratio?meta?.basis:meta?.period,tag=cycleReferenceName(study)+(meta?.candidateConfirmed===false&&Number.isFinite(meta?.period)?'(참고)':'')+(ratio&&study.params.basis==='half'?' ½':'');
  const value=(key,label)=>{const raw=meta?.[key];if(!Number.isFinite(raw))return label+' 미확인';if(!ratio)return label+' '+cycleBars(raw);return Number.isFinite(meta?.basis)&&meta.basis>0?label+' '+number(raw/meta.basis)+'배':label+' '+cycleBars(raw)+' · 배수 대기';};
  return {period:tag+' '+(ratio?'1배 ':'')+cycleBars(base),interval:value('interval','간격'),elapsed:value('elapsed','경과')};
 }
