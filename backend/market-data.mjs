@@ -21,7 +21,7 @@ function normalizeTicker(market,data,instrument){
   return {...raw,symbol:instrument.symbol,lastPrice:last,highPrice:number(raw.highPrice??raw.high),lowPrice:number(raw.lowPrice??raw.low),priceChangePercent:market==='options'?(last!==null&&open>0?(last/open-1)*100:null):number(raw.priceChangePercent),quoteVolume:number(raw.quoteVolume??raw.amount),baseVolume:number(raw.baseVolume??raw.volume),quoteAsset:instrument.quoteAsset};
 }
 export class MarketData {
-  constructor({fetchImpl=fetch,now=Date.now}={}){this.fetch=fetchImpl;this.now=now;this.cache=new Map();this.sources=new Map();}
+  constructor({fetchImpl=fetch,now=Date.now}={}){this.fetch=fetchImpl;this.now=now;this.cache=new Map();this.sources=new Map();this.historyPages=new Map();}
   configureDataTransport(settings){this.transport=transportSettings(settings);this.cache.clear();for(const [market,source]of Object.entries(SOURCES)){const budget=sharedBudget(source.base,this.fetch,this.now);budget.pollIntervalMs=this.transport.restIntervalSeconds*1000;if(this.fetch===globalThis.fetch&&market!=='options')sharedStreams(budget,{market,now:this.now}).configure(this.transport);}}
   stream(market){return sharedBudget(this.source(market).base,this.fetch,this.now).streams;}
   close(){for(const source of Object.values(SOURCES))sharedBudget(source.base,this.fetch,this.now).streams?.close();}
@@ -47,6 +47,17 @@ export class MarketData {
     const result=await Promise.allSettled(Object.keys(SOURCES).map(async market=>{const [instruments,tickers]=await Promise.all([this.instruments(market),this.tickers(market).catch(()=>[])]),bySymbol=new Map(rows(tickers).map(t=>[t.symbol,t]));return instruments.map(instrument=>{const ticker=normalizeTicker(market,bySymbol.get(instrument.symbol),instrument);return {...instrument,price:ticker.lastPrice,change:ticker.priceChangePercent};});}));
     const markets=Object.keys(SOURCES),symbols=[],errors=[];result.forEach((item,index)=>{if(item.status==='fulfilled')symbols.push(...item.value);else errors.push({market:markets[index],error:item.reason.message});});if(!symbols.length)throw new Error(errors.map(e=>e.error).join(' / '));return {environment:'live',asOf:this.now(),symbols,errors};
   });}
+  async history(market,symbol,interval,before,limit=500){
+    this.source(market);
+    if(!CHART_INTERVALS.includes(interval)||typeof symbol!=='string'||!/^[A-Z0-9_-]{2,80}$/.test(symbol))throw Error('과거 봉의 종목·주기를 확인해 주세요.');
+    if(!Number.isSafeInteger(before)||before<=0||before>Math.ceil(this.now()/1000)+86400||!Number.isInteger(limit)||limit<1||limit>1000)throw Error('과거 봉 조회 시각·개수를 확인해 주세요.');
+    const key=[market,symbol,interval,before,limit].join(':'),old=this.historyPages.get(key);if(old?.expires>this.now())return old.promise;
+    const entry={expires:this.now()+3600000,promise:Promise.resolve().then(async()=>{
+      const instrument=(await this.instruments(market)).find(row=>row.symbol===symbol);if(!instrument)throw Error('이 시장에서 조회 가능한 종목이 아닙니다.');
+      const raw=normalizeCandles(await this.request(market,'/klines',{symbol,interval,endTime:before*1000-1,limit})),candles=[...new Map(raw.filter(c=>c.time<before).map(c=>[c.time,c])).values()].sort((a,b)=>a.time-b.time).slice(-limit);
+      return {market,symbol,interval,candles,before,nextBefore:candles[0]?.time??before,exhausted:candles.length===0,asOf:this.now()};
+    })};this.historyPages.set(key,entry);entry.promise.catch(()=>{if(this.historyPages.get(key)===entry)this.historyPages.delete(key);});if(this.historyPages.size>64)this.historyPages.delete(this.historyPages.keys().next().value);return entry.promise;
+  }
   async quote(market,symbol,interval='15m'){
     this.source(market);if(!CHART_INTERVALS.includes(interval))throw new Error('지원하지 않는 봉 주기입니다.');
     if(typeof symbol!=='string'||symbol.length>80)throw new Error('종목을 확인해 주세요.');

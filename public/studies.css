@@ -50,3 +50,5 @@
 .study-legend>.price-chart-legend{max-width:calc(100% - 165px)}.study-legend>.study-legend-toggle{font-size:9px;padding:2px 4px}
 
 .study-pane-legend .study-group-toggle{width:19px;height:var(--study-legend-row-height,22px);padding:2px;flex-shrink:0}.study-group-toggle .icon{width:12px;height:12px}
+
+.chart-footer{flex-wrap:wrap;gap:6px}.chart-footer>div{display:flex;flex-wrap:wrap;align-items:center;gap:3px}.chart-history-button{border:1px solid #dfe7dc;border-radius:4px;padding:4px 7px;min-height:25px;white-space:nowrap;font-size:10px;color:#71866f;background:#fafcf8}.chart-history-button:disabled{opacity:.5}.chart-history-button:not(:disabled):hover{background:#edf4e8}.modal-chart-footer{flex-wrap:wrap;gap:7px}.modal-chart-footer>.chart-history-button{flex-shrink:0}.modal-chart-footer>#modal-chart-status{flex:1;min-width:140px}

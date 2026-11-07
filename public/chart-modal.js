@@ -1,3 +1,4 @@
+import {ChartHistory,installChartHistoryButton} from './chart-history.js';
 import {installChartLabelMenu} from './chart-labels.js';
 import {api} from './api.js';
 import {ChartExecutions} from './chart-executions.js';
@@ -10,7 +11,7 @@ import {installChartTypePicker} from './chart-type-picker.js';
 import {StudyRenderer} from './study-renderer.js';
 import {openStudyLibrary,getStudies,subscribeStudies} from './study-ui.js';
 import {productLabel,instrumentName} from './markets.js';
-let selected=null,selectedType='standard',request=0,chart,series,priceLayer,studies,positionLines,currentPriceLine,inspector,executions,snapshot=null,lastKey=null,accountState=null;
+let selected=null,selectedType='standard',request=0,chart,series,priceLayer,studies,history,drawing=false,positionLines,currentPriceLine,inspector,executions,snapshot=null,lastKey=null,accountState=null;
 const $=selector=>document.querySelector(selector);
 const typePicker=installChartTypePicker($('#modal-candle-type'),{onSelect:type=>{selectedType=type;draw();}});
 installChartLabelMenu($('#modal-chart-label-menu'),{onError:message=>{$('#modal-chart-status').textContent=message;}});
@@ -23,9 +24,12 @@ function initialize(){
   studies=new StudyRenderer(chart,{legend:$('#modal-study-legend'),priceSeries:series,context:'modal',followCrosshair:false,onPaneCount:count=>$('.modal-chart-stage').style.setProperty('--study-min-height',(280+count*105)+'px')});
   fillTimeframeSelect($('#modal-interval'));
   currentPriceLine=new CurrentPriceLine(series);inspector=installCandleInspector($('#modal-chart-inspector'),{chart,studies,series,chartElement:$('#modal-chart')});executions=new ChartExecutions(series,{toggle:$('#modal-chart-executions-toggle'),inspector});
+  history=new ChartHistory({request:api,getRange:()=>chart.timeScale().getVisibleLogicalRange(),onChange:data=>{snapshot=data;draw();},setRange:range=>{drawing=true;chart.timeScale().setVisibleLogicalRange(range);drawing=false;}});
+  installChartHistoryButton($('#modal-chart-history-before'),history,{onError:message=>{$('#modal-chart-status').textContent=message;}});
+  chart.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!drawing&&snapshot&&$('#market-chart-dialog').open)history.viewChanged(range);});
 }
 function draw(reset=false){
-  if(!snapshot||!chart)return;const raw=snapshot.candles;
+  if(!snapshot||!chart)return;drawing=true;const raw=snapshot.candles;
   const tick=Number(selected.tickSize),last=snapshot.ticker.lastPrice==null?NaN:Number(snapshot.ticker.lastPrice),parts=String(tick).split('e'),precision=tick>0?Math.min(12,Math.max(0,(parts[0].split('.')[1]||'').length-Number(parts[1]||0))):last>0&&last<1?8:2;
   const data=priceLayer.render(selectedType,raw,{type:'price',precision,minMove:tick||10**-precision});
   positionLines.update(chartEntryLines(accountState,selected.market,selected.symbol));
@@ -34,12 +38,12 @@ function draw(reset=false){
   syncExecutions();
   $('#modal-chart-quote').textContent=Number.isFinite(last)?last.toLocaleString('en-US',{maximumFractionDigits:precision})+' '+selected.quoteAsset:'—';
   $('#modal-chart-status').textContent=raw.length?'실전 공개 시세 · '+$('#modal-interval').selectedOptions[0].text+' · '+chartTypeCaption(selectedType)+' · 설정 지표 '+getStudies().length+'개':'이 종목의 해당 주기에 표시할 봉이 없습니다.';
-  $('#modal-chart').setAttribute('aria-label',selected.symbol+' '+$('#modal-interval').value+' 가격 차트');if(reset&&raw.length)chart.timeScale().setVisibleLogicalRange({from:Math.max(0,raw.length-150),to:raw.length+6});if(reset)studies.revealFuture();
+  $('#modal-chart').setAttribute('aria-label',selected.symbol+' '+$('#modal-interval').value+' 가격 차트');if(reset&&raw.length)chart.timeScale().setVisibleLogicalRange({from:Math.max(0,raw.length-150),to:raw.length+6});if(reset)studies.revealFuture();drawing=false;
 }
 async function refresh(reset=false){
   if(!selected||!$('#market-chart-dialog').open)return;const version=++request,key=selected.market+':'+selected.symbol+':'+$('#modal-interval').value;
-  if(reset){executions?.clear();positionLines?.clear();currentPriceLine?.clear();inspector?.clear();snapshot=null;$('#modal-chart-status').textContent='시세를 불러오는 중…';priceLayer?.clear();studies?.clear();}
-  try{const data=await api('/market-data/quote?market='+encodeURIComponent(selected.market)+'&symbol='+encodeURIComponent(selected.symbol)+'&interval='+encodeURIComponent($('#modal-interval').value));if(version!==request||!$('#market-chart-dialog').open)return;snapshot=data;selected={...selected,...data.instrument};draw(reset||key!==lastKey);lastKey=key;}
+  history.select({market:selected.market,symbol:selected.symbol,interval:$('#modal-interval').value});if(reset){executions?.clear();positionLines?.clear();currentPriceLine?.clear();inspector?.clear();snapshot=null;$('#modal-chart-status').textContent='시세를 불러오는 중…';priceLayer?.clear();studies?.clear();}
+  try{const data=await api('/market-data/quote?market='+encodeURIComponent(selected.market)+'&symbol='+encodeURIComponent(selected.symbol)+'&interval='+encodeURIComponent($('#modal-interval').value));if(version!==request||!$('#market-chart-dialog').open)return;snapshot=history.update({market:selected.market,symbol:selected.symbol,interval:$('#modal-interval').value},data);selected={...selected,...data.instrument};draw(reset||key!==lastKey);lastKey=key;}
   catch(error){if(version===request)$('#modal-chart-status').textContent=error.message;}
 }
 function syncExecutions(){if(selected&&snapshot&&$('#market-chart-dialog').open)executions?.update({state:accountState,market:selected.market,symbol:selected.symbol,candles:snapshot.candles,interval:$('#modal-interval').value});else executions?.clear();}
@@ -50,5 +54,5 @@ export function openChartModal(instrument,options={}){
 }
 $('#modal-interval').addEventListener('change',()=>refresh(true));$('#modal-indicator-button').addEventListener('click',()=>openStudyLibrary({context:'modal'}));$('#modal-chart-fit').addEventListener('click',()=>chart?.timeScale().fitContent());
 $('#modal-chart-fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('#market-chart-dialog').requestFullscreen();}catch(error){$('#modal-chart-status').textContent=error.message;}});
-$('#market-chart-dialog').addEventListener('close',()=>{request++;snapshot=null;executions?.clear();positionLines?.clear();currentPriceLine?.clear();inspector?.clear();});setInterval(()=>refresh(),5000);
+$('#market-chart-dialog').addEventListener('close',()=>{request++;history?.deactivate();snapshot=null;executions?.clear();positionLines?.clear();currentPriceLine?.clear();inspector?.clear();});setInterval(()=>refresh(),5000);
 subscribeStudies(()=>{if(snapshot&&$('#market-chart-dialog').open)draw();});

@@ -1,3 +1,4 @@
+import {ChartHistory,installChartHistoryButton} from './chart-history.js';
 import {installChartLabelMenu} from './chart-labels.js';
 import {isWalletStep} from './wallet-step-budget.js';
 import {botNeedsStop,botStopPending} from './bot-controls.js';
@@ -94,7 +95,7 @@ for(const symbol of SYMBOLS){symbol.price=NaN;symbol.change=NaN;symbol.volume='�
 let chartStorage;try{chartStorage=localStorage;}catch{}
 const chartWorkspace=new ChartWorkspace(chartStorage,()=>toast('차트 설정을 브라우저에 저장하지 못했습니다.',true)),savedChart=chartWorkspace.selection;
 let currentMarket=savedChart.market,marketInstruments=[],marketCatalogErrors=[],marketCatalogReady=false,marketFilter='all',symbolResultLimit=100;
-let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, homePrice, positionPriceLines, currentPriceLine, candleInspector, chartExecutions, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
+let currentPage='home', currentSymbol=savedChart.symbol, currentInterval=savedChart.interval, homeTab='positions', botFilter='all', rosterTab='operating', draft=null, editorTab='basic', chart, candleSeries, homeStudies, homePrice, homeHistory, positionPriceLines, currentPriceLine, candleInspector, chartExecutions, candles=[], drawingMode=false, drawnLines=[], confirmCallback;
 let toastTimer, selectedRuleId, symbolPickerTarget='home';
 let leverageLimits=null,leverageRequest=0,signatureHelp,formulaDebounce;
 const SYMBOL_NAMES={BTCUSDT:'비트코인',ETHUSDT:'이더리움',SOLUSDT:'솔라나',BNBUSDT:'비엔비 바이낸스코인',XRPUSDT:'리플',DOGEUSDT:'도지코인'};
@@ -214,8 +215,10 @@ function initChart() {
   homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
   currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode,chartElement:$('#chart')});
   chartExecutions=new ChartExecutions(candleSeries,{toggle:$('#chart-executions-toggle'),inspector:candleInspector});
+  homeHistory=new ChartHistory({request:api,getRange:()=>chart.timeScale().getVisibleLogicalRange(),onChange:(snapshot,context)=>{marketSnapshot=snapshot;drawHomeChart(snapshot,context.market,context.symbol,context.interval,false);},setRange:range=>{chartRestoring=true;chart.timeScale().setVisibleLogicalRange(range);chartRestoring=false;persistChartView();}});
+  installChartHistoryButton($('#chart-history-before'),homeHistory,{onError:message=>toast(message,true)});
   chart.subscribeClick(param=> { if (!drawingMode || !param.point) return; const p=candleSeries.coordinateToPrice(param.point.y); if (!Number.isFinite(p)) return; addChartLine(p);persistChartView(); drawingMode=false; $$('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor')); toast('차트에 수평선을 추가했습니다.'); });
-  chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
+  chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;homeHistory.viewChanged(chart.timeScale().getVisibleLogicalRange());clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
   $('.chart-container').addEventListener('pointerup',()=>requestAnimationFrame(persistChartView));
   window.addEventListener('pagehide',persistChartView);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistChartView();});
@@ -223,10 +226,10 @@ function initChart() {
 }
 async function updateChart(resetRange=true) {
   if(!chart) return;
-  const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;
+  const request=++chartRequest,symbol=currentSymbol,market=currentMarket,interval=currentInterval;homeHistory.select({market,symbol,interval});
   if(chartRenderedKey!==chartViewKey(market,symbol,interval)){currentPriceLine?.clear();candleInspector?.clear();chartExecutions?.clear();homeStudies?.clear();homePrice?.clear();}
   let snapshot;
-  try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
+  try{snapshot=await api('/market-data/quote?market='+encodeURIComponent(market)+'&symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval));if(request!==chartRequest)return;snapshot=homeHistory.update({market,symbol,interval},snapshot);marketSnapshot=snapshot;marketError=null;const meta=marketInstruments.find(s=>s.market===market&&s.symbol===symbol)||currentInstrument();meta.price=snapshot.ticker.lastPrice;meta.change=snapshot.ticker.priceChangePercent;meta.volume=snapshot.ticker.quoteVolume;renderMarket();renderRuntimeBanner();}
   catch(error){if(request!==chartRequest)return;marketError=error.message;renderRuntimeBanner();return;}
   drawHomeChart(snapshot,market,symbol,interval,resetRange);
 }
