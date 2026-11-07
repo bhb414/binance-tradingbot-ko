@@ -1,5 +1,6 @@
 import {FORECAST_CANDIDATES,FORECAST_DEFAULTS,FORECAST_METHODS} from './ma-forecast.js';
 import {calculateForecastScenarios} from './ma-forecast-scenarios.js';
+import {cycleRemainingText} from './cycle-reference.js';
 
 export const CYCLE_FORECAST_DEFAULTS={predictionSource:'interval',forecastMethod:'fastest',forecastRangeBars:26,forecastSlopeBars:3,forecastSearchBars:120,...Object.fromEntries(FORECAST_CANDIDATES.map(([key])=>['forecast'+key[0].toUpperCase()+key.slice(1),true]))};
 export function migrateCycleForecast(value){
@@ -24,7 +25,7 @@ export function cycleForecastReadings(study,meta){
  const rate=study.params.display==='ratio',value=v=>!finite(v)?'미확인':rate?(meta.basis>0?num(v/meta.basis)+'배':num(v)+'봉 · 배수 대기'):num(v)+'봉';
  if(study.params.predictionSource==='previous')return '이전 완료 경과 '+value(meta.prediction)+' · 이전 교차 간격 − 1봉';
  if(!['current','remaining'].includes(study.params.predictionSource))return '';
- return (meta.forecastMethodLabel||'교차 예상')+(finite(meta.forecastAssumedClose)?' · 가정 종가 '+num(meta.forecastAssumedClose,8):'')+' · 현재 경과 '+value(meta.elapsed)+' + 예상 남은 '+value(meta.forecastRemaining)+' ≈ 예상 교차 경과 '+value(meta.forecastTarget)+(study.params.predictionSource==='current'?' · 종료 직전 경과 '+value(meta.forecastEnd):'')+(finite(meta.forecastContributors)?' · '+meta.forecastContributors+'/'+meta.forecastCandidates+'개 평균':'')+(meta.forecastStatus?' · '+meta.forecastStatus:'');
+ return (meta.forecastMethodLabel||'교차 예상')+(finite(meta.forecastAssumedClose)?' · 가정 종가 '+num(meta.forecastAssumedClose,8):'')+' · 현재 경과 '+value(meta.elapsed)+' + 예상 남은 '+cycleRemainingText(study,meta)+' ≈ 예상 교차 경과 '+value(meta.forecastTarget)+(study.params.predictionSource==='current'?' · 종료 직전 경과 '+value(meta.forecastEnd):'')+(finite(meta.forecastContributors)?' · '+meta.forecastContributors+'/'+meta.forecastCandidates+'개 평균':'')+(meta.forecastStatus?' · '+meta.forecastStatus:'');
 }
 
 // Cache only an unchanged causal prefix. Any past OHLC/volume/MA change

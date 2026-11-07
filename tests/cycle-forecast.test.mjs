@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStudy,studyData,studyPlots,validateStudy,decodeStudies} from '../public/chart-studies.js';
-import {cycleLegendValues,cycleReadings} from '../public/cycle-reference.js';
+import {cycleLegendValues,cycleReadings,cycleRemainingText} from '../public/cycle-reference.js';
 import {cycleForecastReadings} from '../public/cycle-forecast.js';
 const raw=Array.from({length:150},(_,i)=>({time:1700000000+i*60,open:100+Math.sin(i/7),high:102+Math.sin(i/7),low:98+Math.sin(i/7),close:100+Math.sin(i/7+.3)+Math.cos(i/19)*.2,volume:3+i%13}));
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7*Math.max(1,Math.abs(b)),a+' != '+b);
@@ -40,8 +40,16 @@ test('remaining mode plots elapsed plus remaining with no one-bar deduction for 
 
 test('the legend retains remaining length separately from the plotted target in both bars and multiples',()=>{
  const s=cycle('remaining','fastest'),meta={period:100,basis:100,elapsed:29,forecastRemaining:17,forecastTarget:46,prediction:46,forecastEnd:45};
- s.params.display='ratio';assert.equal(cycleLegendValues(s,meta).interval,'최단 예상경과 0.46배 · 남은 0.17배');assert.match(cycleForecastReadings(s,meta),/현재 경과 0.29배 \+ 예상 남은 0.17배 ≈ 예상 교차 경과 0.46배/);
+ s.params.display='ratio';assert.equal(cycleLegendValues(s,meta).interval,'최단 예상경과 0.46배 · 남은 0.17배 · 17봉');assert.match(cycleForecastReadings(s,meta),/현재 경과 0.29배 \+ 예상 남은 0.17배 · 17봉 ≈ 예상 교차 경과 0.46배/);
  s.params.display='bars';assert.equal(cycleLegendValues(s,meta).interval,'최단 예상경과 46봉 · 남은 17봉');assert.match(cycleReadings(s,meta),/예상 교차 경과 46봉 · 남은 17봉/);
+});
+
+test('remaining multiples keep actual bars across full and half bases, fractional averages and unavailable estimates',()=>{
+ const s=cycle('remaining','mean-bars');s.params.display='ratio';const meta={basis:20,forecastRemaining:1.75};
+ assert.equal(cycleRemainingText(s,meta),'0.09배 · 1.75봉');assert.equal(cycleRemainingText(s,{...meta,basis:10}),'0.18배 · 1.75봉');
+ assert.equal(cycleRemainingText(s,{...meta,basis:null}),'1.75봉 · 배수 대기');assert.equal(cycleRemainingText(s,{basis:20,forecastRemaining:null}),'미확인');assert.equal(cycleRemainingText(s,{basis:20,forecastRemaining:0}),'0배 · 0봉');
+ s.params.predictionSource='current';assert.match(cycleLegendValues(s,meta).interval,/남은 0.09배 · 1.75봉/);
+ s.params.display='bars';assert.equal(cycleRemainingText(s,meta),'1.75봉');assert.doesNotMatch(cycleLegendValues(s,meta).interval,/배/);
 });
 
 test('theory full and half scales convert the same predicted crossing time instead of changing its calculation',()=>{
