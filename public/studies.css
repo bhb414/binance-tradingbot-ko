@@ -62,3 +62,5 @@
 .study-forecast-candidate-options{grid-column:1/-1;border:0;padding:0;margin:10px 0;display:flex;flex-wrap:wrap;gap:10px 16px;min-width:0}.study-forecast-candidate-options[hidden]{display:none}.study-forecast-candidate-options legend{font-size:12px;color:#536e5d;margin-bottom:8px}.study-forecast-candidate-options label{display:flex;align-items:center;gap:5px;font-size:12px;color:#657c68}.study-forecast-candidate-options input{accent-color:#4f9e78;width:16px;height:16px;margin:0}
 
 .study-forecast-help{margin-top:12px;font-size:12px;color:#536e5d}.study-forecast-help summary{cursor:pointer;padding:8px 0}.study-forecast-preview .study-formula-status{white-space:normal;overflow-wrap:anywhere}.study-forecast-preview .study-formula-status,#study-cycle-reference-preview{display:block;margin:0 0 12px}.study-forecast-preview{margin:0 0 14px}
+.study-cycle-preview{flex-basis:100%;font-size:10px;line-height:1.6;color:#365843;pointer-events:none;white-space:normal}
+.study-cycle-preview[hidden]{display:none!important}

@@ -106,13 +106,11 @@ test('a changed quote with the same arrows never clears or redraws them, and a c
  s.params.showPositiveTargets=false;arrows.update({study:s,context:{referencePrice:100},solver:solver(2,4),path});assert.deepEqual(updates.at(-1),[],'explicit hide takes effect immediately');arrows.destroy();
 });
 
-test('moving from a forecast into its tooltip keeps the observation and clicking the box pins that observation without moving its anchor',()=>{
- const chart={subscribeCrosshairMove(){},subscribeClick(){},unsubscribeCrosshairMove(){},unsubscribeClick(){}},queue=[],views=[];let hovered=false,selections=0;
- const model=new CyclePriceInspection({chart,read:e=>e.time===160?{time:160,value:1}:null,onChange:v=>views.push(v),onSelect:()=>selections++,isTooltipHovered:()=>hovered,schedule:fn=>{queue.push(fn);return fn;},cancel(){}});
- const event={time:160,paneIndex:1,point:{x:250,y:100}};model.move(event);assert.equal(views.at(-1).pinned,false);
- model.move({});hovered=true;queue.shift()();assert.equal(views.at(-1).reading.time,160,'canvas leave cannot hide a hovered tooltip');
- model.pinCurrent();assert.equal(selections,1);assert.equal(views.at(-1).pinned,true);assert.equal(views.at(-1).selected,false,'preserve the existing tooltip anchor');assert.equal(views.at(-1).event,event);
- hovered=false;model.move({time:100,paneIndex:0});assert.equal(views.at(-1).reading.time,160);model.destroy();assert.equal(views.at(-1),null);
+test('crosshair observations remain unpinned until a click, and leaving the future area clears only the preview',()=>{
+ const chart={subscribeCrosshairMove(){},subscribeClick(){},unsubscribeCrosshairMove(){},unsubscribeClick(){}},views=[];let selected=0;
+ const model=new CyclePriceInspection({chart,read:e=>e.time>=160&&e.paneIndex===1?{time:e.time,value:1}:null,onChange:v=>views.push(v),onSelect:()=>selected++});
+ model.move({time:160,paneIndex:1});assert.equal(views.at(-1).pinned,false);model.move({time:220,paneIndex:1});assert.equal(views.at(-1).reading.time,220);assert.equal(selected,0);
+ model.move({time:100,paneIndex:0});assert.equal(views.at(-1),null);model.click({time:160,paneIndex:1});assert.equal(views.at(-1).pinned,true);assert.equal(selected,1);model.move({time:220,paneIndex:1});assert.equal(views.at(-1).reading.time,160);model.destroy();
 });
 
 test('rapid forecast pointer moves read only the last bar per frame, and same-bar moves skip reads while quote refresh still updates',()=>{

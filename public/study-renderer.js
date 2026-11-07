@@ -67,7 +67,7 @@ export class StudyRenderer {
         if(study.type==='MA_SET'){const label=studyLabel(study)+' 묶음 전체 '+(study.visible?'숨기기':'표시하기');groupToggle.setAttribute('aria-label',label);groupToggle.title=label+' · 각 기간 체크는 유지됩니다';}if(!study.visible)groupToggle.querySelector('svg').insertAdjacentHTML('beforeend','<path d="M3 3l18 18"/>');element.insertBefore(groupToggle,element.querySelector('[data-study-menu]'));
         row.heading=element.querySelector('.study-legend-heading');row.heading.hidden=!model.heading;row.legendList=element.querySelector('.study-legend-entries');
         row.legendEntries=model.entries.map(item=>{const button=document.createElement('button');button.type='button';button.className='study-legend-name';button.dataset.studyEdit=study.id;button.dataset.legendPlot=item.key;button.setAttribute('aria-label',item.fullLabel+' 설정 열기');button.style.color=item.color;button.innerHTML='<i style="background:'+item.color+'"></i>'+'<span>'+esc(item.label)+'</span>';row.legendList.append(button);return {key:item.key,button,fullLabel:item.fullLabel};});
-        row.element=element;row.output=element.querySelector('output');this.rows.push(row);
+        row.element=element;row.output=element.querySelector('output');if(study.type==='CYCLE'){row.preview=document.createElement('output');row.preview.className='study-cycle-preview';row.preview.hidden=true;row.preview.setAttribute('aria-label','십자선 위치 교차 필요가격');element.append(row.preview);}this.rows.push(row);
         if(!this.paneLegends.has(index)){const container=document.createElement('div');container.className='study-pane-legend';container.dataset.legendPane=index;this.list.append(container);this.paneLegends.set(index,container);}this.paneLegends.get(index).append(element);
       }
       this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
@@ -98,7 +98,10 @@ export class StudyRenderer {
     this.toggle.setAttribute('aria-label',label);this.toggle.setAttribute('aria-expanded',String(!labelsCollapsed));this.toggle.title=label+' · 지표 선은 그대로 표시합니다';
     this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+'<span>지표명 '+this.rows.length+'</span>';this.layout();
   }
-  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.cyclePriceContext=null;row.priceSolver=null;row.priceSignature='';row.priceArrows?.clear();row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots){plot.data=[];plot.segments?.update([],row.study.styles[plot.key]);}row.values.clear();row.output.textContent='—';for(const entry of row.legendEntries||[])entry.button.title=entry.fullLabel+' · —';}}
+  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.cyclePriceContext=null;row.priceSolver=null;row.priceSignature='';row.priceArrows?.clear();if(row.preview)row.preview.hidden=true;row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots){plot.data=[];plot.segments?.update([],row.study.styles[plot.key]);}row.values.clear();row.output.textContent='—';for(const entry of row.legendEntries||[])entry.button.title=entry.fullLabel+' · —';}}
+  setProjectionPreview(reading){
+    for(const row of this.rows){if(!row.preview)continue;const text=reading?.studyId===row.study.id?reading.summary:'';row.preview.hidden=!text;if(row.preview.textContent!==text)row.preview.textContent=text;if(text)row.preview.title=reading.notice+' · 클릭하면 상세 툴팁을 엽니다.';}
+  }
   projectionReading(event){
     if(!Number.isFinite(event?.time))return null;
     const row=this.rows.find(row=>row.study.type==='CYCLE'&&row.pane>0&&row.pane===event.paneIndex&&row.study.params.showPriceTarget&&row.cyclePriceContext&&studyActive(row.study,this.interval));
@@ -106,7 +109,7 @@ export class StudyRenderer {
     const path=row.plots.find(p=>p.projection&&p.data?.length)?.data||[],bars=path.findIndex(p=>p.time===event.time);
     if(bars<1)return null;
     row.priceSolver??=createCyclePriceSolver(row.cyclePriceContext);
-    return {...cyclePriceReading(row.study,row.cyclePriceContext,row.priceSolver,bars,row.cycleValues?.get(this.candles.at(-1)?.time)),label:row.study.params.average+' '+row.study.params.fast+' / '+row.study.params.slow,time:event.time};
+    return {...cyclePriceReading(row.study,row.cyclePriceContext,row.priceSolver,bars,row.cycleValues?.get(this.candles.at(-1)?.time)),studyId:row.study.id,label:row.study.params.average+' '+row.study.params.fast+' / '+row.study.params.slow,time:event.time};
   }
   readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time);return {label:studyLabel(row.study),value:cycleReadings(row.study,meta)};}const points=row.values.get(time??this.candles.at(-1)?.time),definition={...STUDIES[row.study.type],plots:studyPlots(row.study)},visible=(points||[]).filter(p=>row.study.styles[p.key].visible);return {label:studyLabel(row.study),value:row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(p.value)<.1?8:2)})+(definition.unit?' '+definition.unit:'')).join(' / '):'—'};});}
   valuesAt(time){
