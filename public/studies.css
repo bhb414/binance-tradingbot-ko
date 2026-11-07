@@ -52,3 +52,7 @@
 .study-pane-legend .study-group-toggle{width:19px;height:var(--study-legend-row-height,22px);padding:2px;flex-shrink:0}.study-group-toggle .icon{width:12px;height:12px}
 
 .chart-footer{flex-wrap:wrap;gap:6px}.chart-footer>div{display:flex;flex-wrap:wrap;align-items:center;gap:3px}.chart-history-button{border:1px solid #dfe7dc;border-radius:4px;padding:4px 7px;min-height:25px;white-space:nowrap;font-size:10px;color:#71866f;background:#fafcf8}.chart-history-button:disabled{opacity:.5}.chart-history-button:not(:disabled):hover{background:#edf4e8}.modal-chart-footer{flex-wrap:wrap;gap:7px}.modal-chart-footer>.chart-history-button{flex-shrink:0}.modal-chart-footer>#modal-chart-status{flex:1;min-width:140px}
+
+.study-ma-forecast-row{grid-template-columns:minmax(90px,1fr) minmax(120px,1.2fr) minmax(70px,.8fr) 40px}
+.study-ma-forecast-row select{width:100%;min-width:0;padding:8px;border:1px solid #dfe7d9;border-radius:5px;font-size:13px;color:#4f6656;background:#fff}
+@media(max-width:540px){.study-ma-forecast-row{grid-template-columns:minmax(64px,1fr) minmax(86px,1.2fr) minmax(62px,.8fr) 36px;gap:6px}.study-ma-forecast-row select,.study-ma-forecast-row input[type=number]{font-size:12px;padding:7px 5px}.study-ma-forecast-row .study-ma-toggle{font-size:11px;gap:5px}}

@@ -4,7 +4,7 @@
 
 [KAMA·Hull MA와 교차 주기 분석 사용법](docs/INDICATORS.md)
 
-**[Windows 다운로드 · v0.4.82](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.82/binance-tradingbot-ko-v0.4.82-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.83](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.83/binance-tradingbot-ko-v0.4.83-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
@@ -46,7 +46,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.82](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.82/binance-tradingbot-ko-v0.4.82-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.83](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.83/binance-tradingbot-ko-v0.4.83-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -103,7 +103,7 @@ SMA·표준편차·볼린저밴드는 같은 봉의 계산 결과를 재사용�
 
 ## 일목·미래 예상선·간단 스크립트
 
-홈 → 지표에서 **일목균형표**와 **이평 돌파 예상**을 추가합니다. 일목은 기본 9·26·52봉, 선행·후행 표시는 26봉입니다. 이평 예상은 하이킨 종가의 VWMA 6과 SMA 55를 기본으로 사용하고, 최근 3봉 기울기를 직전 완성봉에서 3봉 뒤까지 연장합니다. 예상 범위에서 두 선이 만나는 시점을 표시하며 돌파 확률이나 실제 미래 가격은 아닙니다. 진행봉 기준도 선택할 수 있습니다.
+홈 → 지표에서 **일목균형표**와 **이평 예상**을 추가합니다. 일목은 기본 9·26·52봉, 선행·후행 표시는 26봉입니다. 이평 예상은 기본 5·20·60·120·220선 중 표시할 선을 체크하고, 각 선의 종류(SMA·EMA·VWMA·KAMA·Hull MA)·기간·색상을 정합니다. 최근 비교 봉 수의 기울기를 차트 오른쪽으로 연장하며, 예상 봉 수·기준봉은 함께 적용합니다. 기본은 하이킨 종가·직전 완성봉·최근 3봉 비교·3봉 뒤 예상입니다. 실선은 이평, 점선은 예상 경로이며 실제 미래 가격이나 돌파 확률이 아닙니다. 기존 두 이평 설정은 종류·기간·스타일을 유지하고 추가 세 선은 꺼진 상태로 옮깁니다.
 
 기존 한 줄 수식 지표는 그대로 사용합니다. **지표 → ＋ 새 스크립트**를 열면 다음처럼 변수와 여러 선을 작성할 수 있습니다. 예제 선택으로 시작하고 숫자만 바꿔도 됩니다.
 
@@ -327,7 +327,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.82 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.83 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
