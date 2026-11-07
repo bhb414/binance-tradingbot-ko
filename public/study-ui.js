@@ -72,7 +72,7 @@ function syncForecastInputs(){
 function syncCycleInputs(){
  if(editing?.type!=='CYCLE')return;const p=editing.params,theory=p.reference==='theory',forecast=['current','remaining'].includes(p.predictionSource);
  syncForecastOptions('forecast',p.forecastMethod,forecast);
- const projectionInput=document.querySelector('[data-study-field="projectionBars"]');if(projectionInput)projectionInput.closest('label').hidden=!p.showProjection;
+ for(const key of ['projectionBars','showPriceTarget','priceTargetMultiplier','showPositiveTargets']){const input=document.querySelector('[data-study-field="'+key+'"]');if(input)input.closest('label').hidden=!p.showProjection||(['priceTargetMultiplier','showPositiveTargets'].includes(key)&&!p.showPriceTarget);}
  const display=document.querySelector('[data-study-field="display"]');if(display)for(const item of display.options)item.textContent=(item.value==='bars'?'봉 수':'배수')+' · 기준 / '+(p.predictionSource==='interval'?'간격':'예상')+' / 경과';
  for(const key of ['forecastMethod','forecastRangeBars','forecastSlopeBars','forecastSearchBars']){const input=document.querySelector('[data-study-field="'+key+'"]');if(!input)continue;input.closest('label').hidden=!forecast||(key==='forecastRangeBars'&&!['low','high','fastest','fastest-range','mean-price','mean-bars'].includes(p.forecastMethod))||(key==='forecastSlopeBars'&&!['slope','fastest','mean-bars'].includes(p.forecastMethod));}
  for(const key of ['lookback','minimum','maximum']){const input=document.querySelector('[data-study-field="'+key+'"]');if(input){input.disabled=theory;input.title=theory?'실측 후보 기준에서 사용하는 설정입니다.':'';}}

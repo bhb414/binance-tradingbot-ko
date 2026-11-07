@@ -9,7 +9,7 @@ const sourceValue=(c,source)=>source==='hl2'?(c.high+c.low)/2:source==='hlc3'?(c
 
 // One frozen assumed close for every virtual raw OHLC candle. Recalculate HA
 // open/high/low causally when needed; do not turn a future real candle into input.
-function assumedValues(price,candles,index,source,kind,horizon){
+export function assumedForecastValues(price,candles,index,source,kind,horizon){
  let previous=candles[index];const result=[];
  for(let h=1;h<=horizon;h++){
   const open=kind==='heikin'?(previous.open+previous.close)/2:price;
@@ -104,7 +104,7 @@ export function calculateForecastScenarios({values,candles,volumes,lines,index,s
  };
  const fixed=(line,price)=>{
   const key=line.key+':'+price;if(cache.has(key))return cache.get(key);
-  const future=assumedValues(price,candles,index,source,kind,count),result=extendForecastAverage(line,values,volumes,index,future,volume);cache.set(key,result);return result;
+  const future=assumedForecastValues(price,candles,index,source,kind,count),result=extendForecastAverage(line,values,volumes,index,future,volume);cache.set(key,result);return result;
  };
  const aggregate=['fastest','fastest-range','mean-price','mean-bars'].includes(p.method),included=id=>FORECAST_CANDIDATES.some(([key,method])=>method===id&&p[key]!==false);
  for(const c of candidates){

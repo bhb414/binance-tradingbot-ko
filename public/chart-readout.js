@@ -2,6 +2,7 @@ import {chartLabelPreferences} from './chart-labels.js';
 import {primaryChartHit,studyChartHit,nearestChartTime} from './chart-hit.js';
 import {installChartTooltip} from './chart-tooltip.js';
 import {chartTypeCaption} from './chart-types.js';
+import {installCyclePriceInspection} from './cycle-price-inspection.js';
 // Display-only KST formatting: candle timestamps stay in UTC for all calculations.
 const pad=n=>String(n).padStart(2,'0');
 export function chartSeconds(time){
@@ -44,7 +45,7 @@ export class CandleInspection{
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value;};
 export function installCandleInspector(host,{chart,studies,series,isDrawing,chartElement}){
- let tooltip;
+ let tooltip,cycleInspection;
  host.innerHTML='<div class="chart-readout-heading"><time data-readout="time">—</time><span data-readout="kind"></span><button type="button" data-readout="release" aria-label="봉 정보 닫기" title="봉 정보 닫기">×</button></div><div class="chart-tooltip-body"><div class="chart-readout-prices">'+[['open','시가'],['high','고가'],['low','저가'],['close','종가'],['actual','실제 종가'],['volume','거래량']].map(([key,label])=>'<span data-readout-field="'+key+'">'+label+' <output data-readout="'+key+'">—</output></span>').join('')+'</div><details class="chart-readout-studies" data-readout="studies" hidden><summary>선택 봉 지표 값 <span data-readout="count"></span></summary><div data-readout="values"></div></details><details class="chart-readout-executions" data-readout="executions" hidden><summary>선택 봉 체결 <span data-readout="execution-count"></span></summary><ol data-readout="execution-list"></ol><small>앱에 기록된 체결 · B 매수 / S 매도 · 한국시간</small></details></div>';
  const el=Object.fromEntries([...host.querySelectorAll('[data-readout]')].map(n=>[n.dataset.readout,n])),format=v=>v==null||!Number.isFinite(Number(v))?'—':series.priceFormatter().format(Number(v));
  const inspector=new CandleInspection({chart,studies,isDrawing,hitTest:p=>{return chartLabelPreferences.value.price!==false&&(primaryChartHit(chart,series,inspector.displayed,inspector.chartType,{...p,time:chartSeconds(p.time)})||(p.paneIndex??0)===0&&(p.hoveredInfo?.series===series||p.hoveredSeries===series))||studyChartHit(chart,studies.rows,{...p,time:chartSeconds(p.time)});},onChange:view=>{
@@ -55,9 +56,10 @@ export function installCandleInspector(host,{chart,studies,series,isDrawing,char
   const tradesHTML=trades.map(row=>'<li><b class="'+(row.side==='BUY'?'execution-buy':'execution-sell')+'">'+(row.side==='BUY'?'B 매수':'S 매도')+'</b><span>'+esc(row.label)+' · '+esc(koreanTickMark(row.at/1000,4))+(row.timeEstimated?' (기록시각)':'')+'</span><span>'+esc(Number(row.quantity).toLocaleString('en-US',{maximumFractionDigits:8}))+' @ '+esc(format(row.price))+'</span><small>'+esc(row.botNames?.join(' · ')||'')+'</small></li>').join('');
   if(el['execution-list'].innerHTML!==tradesHTML)el['execution-list'].innerHTML=tradesHTML;if(view.pinned&&trades.length&&(view.selected||wasHidden))el.executions.open=true;if(!view.pinned)el.executions.open=false;
   const rows=view.indicators;el.studies.hidden=!view.pinned||!rows.length;setText(el.count,'('+rows.length+')');const html=rows.map(r=>'<span><b>'+esc(r.label)+'</b> <output>'+esc(r.value)+'</output></span>').join('');if(el.values.innerHTML!==html)el.values.innerHTML=html;if(view.selected)el.studies.open=true;if(!view.pinned)el.studies.open=false;
-  tooltip?.update(view);
+  tooltip?.update(view);cycleInspection?.refresh();
  }});
  tooltip=installChartTooltip(host,{chart,series,chartElement,onDismiss:()=>inspector.release()});
- inspector.setSeries=next=>{series=next;tooltip.setSeries(next);inspector.publish();};
- el.release.addEventListener('click',()=>inspector.release());const publish=()=>inspector.publish();studies.onValuesChanged=publish;const destroy=inspector.destroy.bind(inspector);inspector.destroy=()=>{tooltip.destroy();if(studies.onValuesChanged===publish)studies.onValuesChanged=null;destroy();};return inspector;
+ cycleInspection=installCyclePriceInspection({chart,studies,chartElement,series,isDrawing,isCandlePinned:()=>inspector.pin!==null,onSelect:()=>inspector.release(),formatTime:koreanChartTime});
+ inspector.setSeries=next=>{series=next;tooltip.setSeries(next);cycleInspection.setSeries(next);inspector.publish();};
+ el.release.addEventListener('click',()=>inspector.release());const publish=()=>inspector.publish();studies.onValuesChanged=publish;const destroy=inspector.destroy.bind(inspector);inspector.destroy=()=>{cycleInspection.destroy();tooltip.destroy();if(studies.onValuesChanged===publish)studies.onValuesChanged=null;destroy();};return inspector;
 }

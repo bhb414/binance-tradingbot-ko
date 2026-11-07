@@ -2,14 +2,14 @@ import {FORECAST_CANDIDATES,FORECAST_DEFAULTS,FORECAST_METHODS} from './ma-forec
 import {calculateForecastScenarios} from './ma-forecast-scenarios.js';
 import {cycleRemainingText} from './cycle-reference.js';
 
-export const CYCLE_FORECAST_DEFAULTS={showProjection:true,projectionBars:26,predictionSource:'interval',forecastMethod:'fastest',forecastRangeBars:26,forecastSlopeBars:3,forecastSearchBars:120,...Object.fromEntries(FORECAST_CANDIDATES.map(([key])=>['forecast'+key[0].toUpperCase()+key.slice(1),true]))};
+export const CYCLE_FORECAST_DEFAULTS={showProjection:true,projectionBars:26,showPriceTarget:true,priceTargetMultiplier:1,showPositiveTargets:true,predictionSource:'interval',forecastMethod:'fastest',forecastRangeBars:26,forecastSlopeBars:3,forecastSearchBars:120,...Object.fromEntries(FORECAST_CANDIDATES.map(([key])=>['forecast'+key[0].toUpperCase()+key.slice(1),true]))};
 export function migrateCycleForecast(value){
  if(value?.type!=='CYCLE')return value;
  return {...value,params:{...CYCLE_FORECAST_DEFAULTS,...value.params}};
 }
 export function cycleForecastFields(){
  const choice=(key,label,value,options)=>({key,label,value,options}),length=(key,label,value,max)=>({key,label,value,min:1,max,step:1});
- return [{...choice('showProjection','오른쪽 예상선 표시',true,[[true,'표시'],[false,'숨김']]),type:'checkbox'},length('projectionBars','예상선 표시 봉수',26,300),choice('predictionSource','예상 봉수·배수 기준','interval',[['previous','이전 완료 경과'],['current','현재 시나리오 · 종료 직전 경과'],['remaining','현재 경과 + 예상 남은 봉수'],['interval','기존 교차 간격']]),choice('forecastMethod','교차 예상 계산 방식','fastest',FORECAST_METHODS),length('forecastRangeBars','예상 고가·저가 범위 N봉',26,300),length('forecastSlopeBars','예상 기울기 비교 봉 수',3,300),length('forecastSearchBars','예상 교차 검색 최대 봉 수',120,500),...FORECAST_CANDIDATES.map(([key,,label])=>({...choice('forecast'+key[0].toUpperCase()+key.slice(1),'예상 후보 · '+label,true,[[true,'포함'],[false,'제외']]),type:'checkbox'}))];
+ return [{...choice('showProjection','오른쪽 예상선 표시',true,[[true,'표시'],[false,'숨김']]),type:'checkbox'},length('projectionBars','예상선 표시 봉수',26,300),{...choice('showPriceTarget','교차 필요가격 툴팁',true,[[true,'표시'],[false,'숨김']]),type:'checkbox'},{key:'priceTargetMultiplier',label:'변동률 표시 배수 (레버리지)',value:1,min:1,max:1000,step:.1},{...choice('showPositiveTargets','최초 플러스 예상 화살표',true,[[true,'표시'],[false,'숨김']]),type:'checkbox'},choice('predictionSource','예상 봉수·배수 기준','interval',[['previous','이전 완료 경과'],['current','현재 시나리오 · 종료 직전 경과'],['remaining','현재 경과 + 예상 남은 봉수'],['interval','기존 교차 간격']]),choice('forecastMethod','교차 예상 계산 방식','fastest',FORECAST_METHODS),length('forecastRangeBars','예상 고가·저가 범위 N봉',26,300),length('forecastSlopeBars','예상 기울기 비교 봉 수',3,300),length('forecastSearchBars','예상 교차 검색 최대 봉 수',120,500),...FORECAST_CANDIDATES.map(([key,,label])=>({...choice('forecast'+key[0].toUpperCase()+key.slice(1),'예상 후보 · '+label,true,[[true,'포함'],[false,'제외']]),type:'checkbox'}))];
 }
 export function cyclePredictionLabel(study){
  const source=study.params.predictionSource;

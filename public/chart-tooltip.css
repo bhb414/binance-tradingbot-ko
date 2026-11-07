@@ -19,4 +19,10 @@
 .chart-candle-tooltip .chart-readout-executions ol{max-height:none}
 .chart-candle-tooltip .chart-readout-executions li{border-bottom:1px solid #f0f4f0}
 .modal-chart-stage{position:relative}
+.chart-cycle-price-tooltip [data-cycle-price-summary]{display:block;font-size:13px;color:#365843;line-height:1.6;overflow-wrap:anywhere}
+.chart-cycle-price-tooltip [data-cycle-price-elapsed],.chart-cycle-price-tooltip small{font-size:10px;color:#8c9e91;line-height:1.6}
+.chart-cycle-price-tooltip p{margin:7px 0;font-size:10px;line-height:1.65;overflow-wrap:anywhere}
+.chart-cycle-price-tooltip details{border-top:1px solid #e9efe9;padding-top:7px;margin-top:8px;font-size:10px}
+.chart-cycle-price-tooltip summary{cursor:pointer;color:#6b8975}
+.chart-cycle-price-tooltip[data-pinned="false"]{pointer-events:none}
 @media(max-width:540px){.chart-candle-tooltip .chart-readout-heading{padding:9px 10px}.chart-candle-tooltip .chart-tooltip-body{padding:9px 10px}.chart-candle-tooltip .chart-readout-prices{gap:6px 10px}}

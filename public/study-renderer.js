@@ -1,5 +1,7 @@
 import {restorePaneRatios} from './chart-pane-layout.js';
 import {CycleSegments,cycleSegmentData} from './cycle-segments.js';
+import {createCyclePriceSolver,cyclePriceReading} from './cycle-price-target.js';
+import {CyclePriceArrows} from './cycle-price-arrows.js';
 import {projectionVisibleRange} from './cycle-projection.js';
 import {CYCLE_PROJECTION_PLOTS} from './cycle-projection.js';
 import {CycleRatioGrid} from './cycle-ratio-grid.js';
@@ -42,7 +44,7 @@ export class StudyRenderer {
     const changed=config!==this.config;
     if(changed){
       const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getStretchFactor()/(this.chart.panes()[0]?.getStretchFactor()||3.3)*3.3]));
-      for(const row of this.rows){if(row.ratioGrid)row.ratioGridOwner.detachPrimitive(row.ratioGrid);row.overlays?.dispose();for(const plot of row.plots)if(plot.segments)plot.series.detachPrimitive(plot.segments);if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
+      for(const row of this.rows){if(row.ratioGrid)row.ratioGridOwner.detachPrimitive(row.ratioGrid);row.overlays?.dispose();row.priceArrows?.destroy();for(const plot of row.plots)if(plot.segments)plot.series.detachPrimitive(plot.segments);if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
       for(const series of [...this.series].reverse())this.chart.removeSeries(series);this.series=[];this.rows=[];this.closeMenu();this.list.replaceChildren();this.paneLegends.clear();let pane=0;
       for(const study of studies){
         const active=studyActive(study,interval),definition={...STUDIES[study.type],plots:studyPlots(study)},index=active&&studyPane(study)&&(definition.plots.some(p=>!p.signal&&!p.background&&study.styles[p.key].visible)||hasPaneOverlays(study,definition.plots))?++pane:0;
@@ -54,7 +56,7 @@ export class StudyRenderer {
               const series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:'transparent',lineVisible:false,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)},index);row.plots.push({key,series,fillOnly:true,anchorOnly:true});this.series.push(series);return series;};
             row.overlays=new StudyPaneOverlays(study,definition.plots,resolveSeries);
           }
-          if(study.type==='CYCLE'&&study.params.showProjection&&index>0)for(const plot of CYCLE_PROJECTION_PLOTS){if(!study.styles[plot.parent].visible)continue;const style=study.styles[plot.parent],series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:style.color,lineWidth:style.width,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)},index);row.plots.push({key:plot.key,series,projection:true,axisTitle:studyLabel(study)+' '+plot.label});this.series.push(series);}
+          if(study.type==='CYCLE'&&study.params.showProjection&&index>0)for(const plot of CYCLE_PROJECTION_PLOTS){if(!study.styles[plot.parent].visible)continue;const style=study.styles[plot.parent],series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:style.color,lineWidth:style.width,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)},index);row.plots.push({key:plot.key,series,projection:true,axisTitle:studyLabel(study)+' '+plot.label});if(plot.parent==='elapsed')row.priceArrows=new CyclePriceArrows(series);this.series.push(series);}
           if(study.type==='CYCLE'&&study.params.display==='ratio'&&index>0&&row.plots.length){row.ratioGrid=new CycleRatioGrid();row.ratioGridOwner=row.plots[0].series;row.ratioGridOwner.attachPrimitive(row.ratioGrid);}
           if(index>0)this.chart.panes()[index].priceScale('right').applyOptions({scaleMargins:{top:study.type==='DMI'?.38:.26,bottom:.12}});
         }
@@ -71,9 +73,10 @@ export class StudyRenderer {
       this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
       restorePaneRatios(this.chart,this.rows,this.paneLayout?.read());this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
     }
-    const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.cycleValues=data.cycle?new Map(data.cycle.map(point=>[point.time,point])):null;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.caption||data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}
+    const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.cyclePriceContext=data.cyclePriceContext;const priceSignature=data.cyclePriceContext?JSON.stringify([row.study.params.average,row.study.params.fast,row.study.params.slow,row.study.source,data.cyclePriceContext.kind,data.cyclePriceContext.referencePrice,data.cyclePriceContext.candles,data.cyclePriceContext.volumes]):'';if(priceSignature!==row.priceSignature){row.priceSignature=priceSignature;row.priceSolver=data.cyclePriceContext?createCyclePriceSolver(data.cyclePriceContext):null;}row.cycleValues=data.cycle?new Map(data.cycle.map(point=>[point.time,point])):null;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.caption||data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}
       if(row.study.type==='CYCLE')for(const plot of row.plots)if(plot.segments){plot.data=cycleSegmentData(plot.data||[],data.cycle||[]);plot.segments.update(plot.data,row.study.styles[plot.key]);}
       for(const plot of data.cycleProjection?.plots||[]){const item=row.plots.find(item=>item.key===plot.key);if(item){item.data=plot.data;item.series.setData(plot.data);}}
+      row.priceArrows?.update({study:row.study,context:row.cyclePriceContext,solver:row.priceSolver,path:row.plots.find(p=>p.key==='cycleElapsedProjection')?.data||[]});
       for(const plot of row.plots)if(plot.key==='__overlay_zero'){plot.data=candles.map(c=>({time:c.time,value:0}));plot.series.setData(plot.data);}
       row.overlays?.update(data,studyActive(row.study,interval));
       if(row.fill)row.fill.update(bandRows(data.plots),row.study.fill);
@@ -95,7 +98,16 @@ export class StudyRenderer {
     this.toggle.setAttribute('aria-label',label);this.toggle.setAttribute('aria-expanded',String(!labelsCollapsed));this.toggle.title=label+' · 지표 선은 그대로 표시합니다';
     this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+'<span>지표명 '+this.rows.length+'</span>';this.layout();
   }
-  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots){plot.data=[];plot.segments?.update([],row.study.styles[plot.key]);}row.values.clear();row.output.textContent='—';for(const entry of row.legendEntries||[])entry.button.title=entry.fullLabel+' · —';}}
+  clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.cyclePriceContext=null;row.priceSolver=null;row.priceSignature='';row.priceArrows?.clear();row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots){plot.data=[];plot.segments?.update([],row.study.styles[plot.key]);}row.values.clear();row.output.textContent='—';for(const entry of row.legendEntries||[])entry.button.title=entry.fullLabel+' · —';}}
+  projectionReading(event){
+    if(!Number.isFinite(event?.time))return null;
+    const row=this.rows.find(row=>row.study.type==='CYCLE'&&row.pane>0&&row.pane===event.paneIndex&&row.study.params.showPriceTarget&&row.cyclePriceContext&&studyActive(row.study,this.interval));
+    if(!row)return null;
+    const path=row.plots.find(p=>p.projection&&p.data?.length)?.data||[],bars=path.findIndex(p=>p.time===event.time);
+    if(bars<1)return null;
+    row.priceSolver??=createCyclePriceSolver(row.cyclePriceContext);
+    return {...cyclePriceReading(row.study,row.cyclePriceContext,row.priceSolver,bars,row.cycleValues?.get(this.candles.at(-1)?.time)),label:row.study.params.average+' '+row.study.params.fast+' / '+row.study.params.slow,time:event.time};
+  }
   readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time);return {label:studyLabel(row.study),value:cycleReadings(row.study,meta)};}const points=row.values.get(time??this.candles.at(-1)?.time),definition={...STUDIES[row.study.type],plots:studyPlots(row.study)},visible=(points||[]).filter(p=>row.study.styles[p.key].visible);return {label:studyLabel(row.study),value:row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(p.value)<.1?8:2)})+(definition.unit?' '+definition.unit:'')).join(' / '):'—'};});}
   valuesAt(time){
     this.valueTime=time;

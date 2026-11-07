@@ -4,13 +4,13 @@ export function installChartTooltip(host,{chart,series,chartElement,onDismiss}){
  host.classList.add('chart-candle-tooltip');host.hidden=true;host.setAttribute('role','region');
  const set=(key,value)=>{if(host.style[key]!==value)host.style[key]=value;};
  function position(){
-  frame=0;if(!view?.pinned||!view.candle){host.hidden=true;return;}
+  frame=0;if(!(view?.pinned||view?.projection&&view.hovered)||!(view.candle||view.projection)){host.hidden=true;return;}
   const box=area.getBoundingClientRect(),canvas=chartElement.getBoundingClientRect(),viewport=window.visualViewport;
   const screenLeft=viewport?.offsetLeft||0,screenTop=viewport?.offsetTop||0,screenRight=screenLeft+(viewport?.width||window.innerWidth),screenBottom=screenTop+(viewport?.height||window.innerHeight);
   const bounds={left:Math.max(8,canvas.left-box.left+8,screenLeft-box.left+8),right:Math.min(box.width-8,canvas.right-box.left-8,screenRight-box.left-8),top:Math.max(8,canvas.top-box.top+8,screenTop-box.top+8),bottom:Math.min(box.height-8,canvas.bottom-box.top-8,screenBottom-box.top-16)};
   const x=chart.timeScale().timeToCoordinate(view.time);
   if(!box.width||!box.height||x===null||x<0||x>canvas.width||bounds.right-bounds.left<140||bounds.bottom-bounds.top<70){host.hidden=true;return;}
-  const y=Number.isFinite(view.point?.y)?view.point.y:series.priceToCoordinate(view.candle.close)??canvas.height/2,anchor={x:canvas.left-box.left+x,y:canvas.top-box.top+y};
+  const y=Number.isFinite(view.point?.y)?view.point.y:(view.candle?series.priceToCoordinate(view.candle.close):null)??canvas.height/2,anchor={x:canvas.left-box.left+x,y:canvas.top-box.top+y};
   set('width',Math.min(310,bounds.right-bounds.left)+'px');set('maxHeight',Math.min(360,bounds.bottom-bounds.top)+'px');host.hidden=false;
   const width=host.offsetWidth,height=host.offsetHeight,gap=16;
   let left=anchor.x+gap;if(left+width>bounds.right)left=anchor.x-width-gap;
@@ -27,5 +27,5 @@ export function installChartTooltip(host,{chart,series,chartElement,onDismiss}){
  window.visualViewport?.addEventListener('resize',schedule);window.visualViewport?.addEventListener('scroll',schedule);
  const observer=new ResizeObserver(schedule);observer.observe(area);observer.observe(host);
  chart.timeScale().subscribeVisibleLogicalRangeChange(schedule);
- return {setSeries(next){series=next;schedule();},update(next){if(next.selected)anchorPoint=pointer||next.point;if(!next.pinned)anchorPoint=null;view={...next,point:anchorPoint||next.point};if(!view.pinned||!view.candle)host.hidden=true;else schedule();},destroy(){cancelAnimationFrame(frame);observer.disconnect();chartElement.removeEventListener('pointerdown',remember,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('scroll',schedule);chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);host.hidden=true;}};
+ return {setSeries(next){series=next;schedule();},update(next){if(next.selected)anchorPoint=pointer||next.point;if(!next.pinned)anchorPoint=null;view={...next,point:anchorPoint||next.point};if(!(view.pinned||view.projection&&view.hovered)||!(view.candle||view.projection))host.hidden=true;else schedule();},destroy(){cancelAnimationFrame(frame);observer.disconnect();chartElement.removeEventListener('pointerdown',remember,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('scroll',schedule);chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedule);host.hidden=true;}};
 }

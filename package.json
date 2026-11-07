@@ -1,6 +1,6 @@
 {
   "name": "binance-tradingbot-ko",
-  "version": "0.4.90",
+  "version": "0.4.91",
   "private": true,
   "type": "module",
   "description": "Standalone local Binance USDT futures bot workspace with a condition and order runtime",
