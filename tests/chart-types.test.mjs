@@ -1,3 +1,4 @@
+import {ChartLabelPreferences} from '../public/chart-labels.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {CHART_TYPES,CHART_TYPE_IDS} from '../public/chart-types.js';
@@ -14,3 +15,21 @@ test('line, marker and step styles reuse the same series and reset markers and s
 test('baseline tracks the visible closing-price midpoint through refresh and panning, and clears its own reference',()=>{const h=harness(),p=new PriceChart(h.chart,{library:h.L});p.render('baseline',raw,{precision:2});assert.equal(p.series.config.baseValue.price,112);p.render('baseline',raw,{precision:2});assert.equal(p.series.config.baseValue.price,112);h.setRange({from:1,to:2});assert.equal(p.series.config.baseValue.price,115);assert.equal(p.series.lines.at(-1).config.title,'기준선');const baseline=p.baseline;p.clear();assert.ok(p.series.removedLines.includes(baseline));assert.deepEqual(p.series.data,[]);p.destroy();assert.equal(h.callbacks.size,0);});
 test('all eight style selections survive reload alongside unchanged per-symbol views and drawings',()=>{const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)},a=new ChartWorkspace(storage);a.remember('usdm','BTCUSDT','15m',{range:{from:1,to:20},count:30,lines:[101],panes:{price:1}});assert.equal(CHART_TYPES.length,8);for(const candleType of CHART_TYPE_IDS){a.select({candleType});const b=new ChartWorkspace(storage);assert.equal(b.selection.candleType,candleType);assert.deepEqual(b.lines('usdm','BTCUSDT'),[101]);assert.deepEqual(b.view('usdm','BTCUSDT','15m').offset,{from:-29,to:-10});}});
 test('execution markers detach from the old series and reattach unchanged without reloading the journal',async()=>{const plugins=[],inspector={setExecutions(rows){this.rows=rows;}},e=new ChartExecutions({id:1},{inspector,createMarkers:series=>{const p={series,rows:[],detached:false,setMarkers:r=>p.rows=r,detach:()=>p.detached=true};plugins.push(p);return p;},load:async()=>({connectionId:'a',rows:[{at:100000,quantity:1,price:106,side:'BUY',labels:['롱 진입']}]})});await e.update({state:{connected:true,connectionId:'a',fillsRevision:1},market:'usdm',symbol:'BTCUSDT',interval:'1m',candles:raw});e.setSeries({id:2});assert.equal(plugins[0].detached,true);assert.equal(plugins[1].series.id,2);assert.deepEqual(plugins[1].rows,plugins[0].rows);assert.equal(inspector.rows[0].label,'롱 진입');});
+
+test('price graph hides all eight styles while retaining candles, guides, indicator owners and viewport',()=>{
+ const prefs=new ChartLabelPreferences(),h=harness(),p=new PriceChart(h.chart,{library:h.L,preferences:prefs}),overlay=h.chart.addSeries('study',{});
+ for(const type of CHART_TYPE_IDS){
+  p.render(type,raw,{type:'price',precision:2,minMove:.01});const series=p.series,data=structuredClone(series.data),guide=series.createPriceLine({price:105,title:'진입 평단'}),range=h.chart.timeScale().getVisibleLogicalRange();
+  prefs.apply({price:false});assert.equal(p.visible,false);assert.equal(p.series,series);assert.deepEqual(series.data,data);assert.ok(series.lines.includes(guide));assert.ok(!h.removed.includes(overlay));assert.notEqual(series.config.visible,false);assert.deepEqual(h.chart.timeScale().getVisibleLogicalRange(),range);
+  if(['standard','heikin','bar'].includes(type))assert.equal(series.config.upColor,'transparent');else{assert.equal(series.config.lineVisible,false);assert.equal(series.config.crosshairMarkerVisible,false);assert.equal(series.config.pointMarkersVisible,false);}
+  p.render(type,raw,{precision:2});assert.equal(p.visible,false);if(type==='baseline'){const midpoint=p.baselinePrice;assert.equal(p.baseline.config.lineVisible,false);prefs.apply({price:true});assert.equal(series.config.baseValue.price,midpoint);assert.equal(p.baseline.config.lineVisible,true);}else prefs.apply({price:true});
+  if(['standard','heikin','bar'].includes(type))assert.equal(series.config.upColor,'#35b98c');else assert.equal(series.config.lineVisible,true);
+  if(type==='line-markers')assert.equal(series.config.pointMarkersVisible,true);
+ }
+ p.destroy();assert.equal(prefs.listeners.size,0);
+});
+test('hidden price graph stays hidden through series replacement, clearing and a fresh preference load',()=>{
+ const prefs=new ChartLabelPreferences();prefs.apply({price:false});const h=harness(),p=new PriceChart(h.chart,{library:h.L,preferences:prefs});assert.equal(p.series.config.upColor,'transparent');
+ for(const type of CHART_TYPE_IDS){p.render(type,raw,{precision:2});p.clear();p.render(type,raw.slice(1),{precision:3});assert.equal(p.visible,false);assert.equal(p.series.data.length,2);if(['standard','heikin','bar'].includes(type))assert.equal(p.series.config.upColor,'transparent');else assert.equal(p.series.config.lineVisible,false);}
+ p.destroy();
+});

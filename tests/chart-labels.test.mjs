@@ -40,3 +40,12 @@ test('hiding study axis titles leaves data untouched and never reveals transpare
  applyStudyAxisLabels(rows,false);assert.equal(line.options.title,'');assert.deepEqual(line.data,[1,2,3]);
  applyStudyAxisLabels(rows,true);assert.equal(line.options.title,'BB 40 상단선');assert.equal(helper.options.title,'');assert.equal(helper.options.lastValueVisible,false);
 });
+
+test('price graph visibility is optional for old documents and syncs with existing labels across devices',async()=>{
+ const store=new ChartSettingsStore(null),a=client(store),b=client(store);await a.load();const bb=createStudy('BB');await a.save([bb],{studies:false,current:true,positions:true});
+ const prefs=new ChartLabelPreferences();prefs.apply(a.document.labels);prefs.configure(labels=>a.save(a.document.studies,labels));await prefs.set('price',false);
+ await b.load();assert.deepEqual(b.document.labels,{studies:false,current:true,positions:true,price:false});assert.deepEqual(b.document.studies,[bb]);
+ await b.save([bb,createStudy('SMA')]);await a.load();assert.equal(a.document.labels.price,false);assert.equal(a.document.labels.studies,false);
+ for(const price of [null,'false',0,[],{}])assert.throws(()=>normalizeChartLabels({price}));
+ prefs.configure(()=>Promise.reject(Error('offline')));await assert.rejects(()=>prefs.set('price',true),/offline/);assert.equal(prefs.value.price,false);assert.equal(prefs.busy,false);
+});

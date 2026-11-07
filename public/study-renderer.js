@@ -1,3 +1,4 @@
+import {PriceChartLegend} from './price-chart-legend.js';
 import {movingAverageLegend} from './moving-average-legend.js';
 import {chartLabelPreferences,applyStudyAxisLabels} from './chart-labels.js';
 import {overlayRows,hasPaneOverlays,StudyPaneOverlays} from './study-overlay-targets.js';
@@ -14,11 +15,11 @@ let labelsCollapsed=false;try{labelsCollapsed=localStorage.getItem(legendPrefere
 export class StudyRenderer {
   constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{},followCrosshair=true}){
     this.chart=chart;this.legend=legend;this.onPaneCount=onPaneCount;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
-    this.context=context;legend.dataset.studyContext=context;legend.classList.add('study-legend');legend.setAttribute('aria-label','차트 지표 목록');legend.replaceChildren();
+    this.context=context;legend.dataset.studyContext=context;legend.classList.add('study-legend');legend.setAttribute('aria-label','가격 그래프·지표 목록');legend.replaceChildren();
     this.list=document.createElement('div');this.list.id=legend.id+'-rows';this.list.className='study-legend-rows';
     this.toggle=document.createElement('button');this.toggle.type='button';this.toggle.className='study-legend-toggle';this.toggle.setAttribute('aria-controls',this.list.id);
     this.toggle.addEventListener('click',()=>{labelsCollapsed=!labelsCollapsed;try{localStorage.setItem(legendPreference,labelsCollapsed?'1':'0');}catch{}for(const renderer of renderers)renderer.syncLabels();});
-    legend.append(this.list,this.toggle);renderers.add(this);this.syncLabels();
+    this.priceLegend=new PriceChartLegend();legend.append(this.priceLegend.element,this.list,this.toggle);renderers.add(this);this.syncLabels();
     this.priceSeries=priceSeries;this.signals=new StudySignals(priceSeries);this.backgrounds=new StudyBackgrounds(priceSeries);this.unsubscribe=subscribeStudies(()=>this.update(this.candles,this.interval,this.candleType));this.unsubscribeAxisLabels=chartLabelPreferences.subscribe(value=>applyStudyAxisLabels(this.rows,value.studies));
     this.observer=new ResizeObserver(()=>this.layout());this.observer.observe(legend.parentElement);
     this.pointerHandler=()=>requestAnimationFrame(()=>this.layout());legend.parentElement.addEventListener('pointerup',this.pointerHandler);
@@ -27,7 +28,7 @@ export class StudyRenderer {
   set priceSeries(series){this._priceSeries=series;this.signals?.setSeries(series);this.backgrounds?.setSeries(series);}
   get priceSeries(){return this._priceSeries;}
   update(candles,interval='15m',candleType='standard'){
-    this.candles=candles;this.interval=interval;this.candleType=candleType;setStudyPreviewData(this.context,candles,interval);const studies=getStudies(),config=JSON.stringify([studies,interval]);
+    this.candles=candles;this.interval=interval;this.candleType=candleType;this.priceLegend.update(candleType);setStudyPreviewData(this.context,candles,interval);const studies=getStudies(),config=JSON.stringify([studies,interval]);
     const changed=config!==this.config;
     if(changed){
       const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getHeight()]));
@@ -77,8 +78,8 @@ export class StudyRenderer {
   valuesAt(time){this.valueTime=time;for(const row of this.rows){if(row.forecast&&!row.error&&(time==null||time===this.candles.at(-1)?.time)){row.output.textContent=row.forecast.caption;continue;}const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time);if(row.legendEntries){const shown=active&&!row.error;row.legendList.hidden=!shown;row.output.hidden=shown;row.output.textContent=row.error?'계산 확인 필요':row.study.visible?(row.study.timeframes.includes(this.interval)?'선 모두 숨김':'이 주기 숨김'):'숨김';const readings=new Map(movingAverageLegend(row.study,points).map(item=>[item.key,item.text]));for(const entry of row.legendEntries){const text=readings.get(entry.key)||'—';if(entry.output.textContent!==text)entry.output.textContent=text;}row.legendUnits=shown?1+row.legendEntries.length:2;continue;}if(row.study.type==='DMI'&&active&&!row.error&&points?.length){const definition=STUDIES.DMI;row.output.innerHTML=points.filter(p=>row.study.styles[p.key].visible).map(p=>'<span style="color:'+row.study.styles[p.key].color+'">'+esc(definition.plots.find(plot=>plot.key===p.key).label)+' '+p.value.toLocaleString('en-US',{maximumFractionDigits:2})+'</span>').join(' / ');continue;}row.output.textContent=row.error?'계산 확인 필요':!active?(row.study.type==='MA_SET'&&row.study.visible&&row.study.timeframes.includes(this.interval)?'선 모두 숨김':row.study.visible?'이 주기 숨김':'숨김'):points?.length?points.filter(point=>row.study.styles[point.key].visible).map(point=>point.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(point.value)<.1?8:2)})+(STUDIES[row.study.type].unit?' '+STUDIES[row.study.type].unit:'')).join(' / '):'—';}}
   layout(){
     const panes=this.chart.panes(),tops=[];let y=0;for(const pane of panes){tops.push(y);y+=pane.getHeight()+1;}
-    const offsets=new Map(),rowHeight=matchMedia('(max-width:540px)').matches?26:22;this.legend.style.setProperty('--study-legend-row-height',rowHeight+'px');for(const row of this.rows){const offset=offsets.get(row.pane)||0;row.element.style.top=((tops[row.pane]||0)+(row.pane?5:33)+offset*rowHeight)+'px';const units=row.legendUnits||1;if(row.legendEntries)row.element.style.height=(units*rowHeight)+'px';offsets.set(row.pane,offset+units);}
+    const offsets=new Map([[0,1]]),rowHeight=matchMedia('(max-width:540px)').matches?26:22;this.priceLegend.element.style.top='33px';this.legend.style.setProperty('--study-legend-row-height',rowHeight+'px');this.list.style.setProperty('--legend-list-top',(38+rowHeight*2)+'px');for(const row of this.rows){const offset=offsets.get(row.pane)||0;row.element.style.top=((tops[row.pane]||0)+(row.pane?5:33)+offset*rowHeight)+'px';const units=row.legendUnits||1;if(row.legendEntries)row.element.style.height=(units*rowHeight)+'px';offsets.set(row.pane,offset+units);}
     const scrolling=[...offsets].some(([index,count])=>count>Math.max(3,Math.floor(((panes[index]?.getHeight()||300)-70)/rowHeight)));this.list.classList.toggle('is-scrollable',scrolling);this.list.style.setProperty('--legend-list-height',Math.min(240,Math.max(100,(panes[0]?.getHeight()||300)-70))+'px');
-    this.toggle.style.top=(scrolling||labelsCollapsed?33:Math.min(33+(offsets.get(0)||0)*rowHeight,Math.max(33,(panes[0]?.getHeight()||300)-28)))+'px';
+    this.toggle.style.top=(scrolling||labelsCollapsed?33+rowHeight:Math.min(33+(offsets.get(0)||0)*rowHeight,Math.max(33,(panes[0]?.getHeight()||300)-28)))+'px';
   }
 }

@@ -1,9 +1,10 @@
-// Chart display preferences only; no order or indicator calculations are changed.
+// Shared chart display preferences; price is optional for legacy document compatibility.
 export const defaultChartLabels=()=>({studies:true,current:true,positions:true});
 export function normalizeChartLabels(value){
  const result=defaultChartLabels();if(value===undefined)return result;
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('차트 우측 라벨 설정을 확인해 주세요.');
  for(const key of Object.keys(result))if(value[key]!==undefined){if(typeof value[key]!=='boolean')throw Error('차트 우측 라벨 설정을 확인해 주세요.');result[key]=value[key];}
+ if(value.price!==undefined){if(typeof value.price!=='boolean')throw Error('가격 그래프 표시 설정을 확인해 주세요.');result.price=value.price;}
  return result;
 }
 export class ChartLabelPreferences{
@@ -14,7 +15,7 @@ export class ChartLabelPreferences{
  apply(value){this.value=normalizeChartLabels(value);this.publish();}
  configure(writer){this.writer=writer;this.publish();}
  async set(key,visible){
-  if(!Object.hasOwn(this.value,key)||typeof visible!=='boolean')throw Error('차트 우측 라벨 설정을 확인해 주세요.');
+  if((key!=='price'&&!Object.hasOwn(this.value,key))||typeof visible!=='boolean')throw Error('차트 우측 라벨 설정을 확인해 주세요.');
   if(!this.ready)throw Error('지표 설정을 먼저 불러와 주세요.');if(this.busy)throw Error('차트 라벨을 저장 중입니다.');
   this.busy=true;this.publish();
   try{const next={...this.value,[key]:visible};await this.writer(next);this.apply(next);}finally{this.busy=false;this.publish();}
