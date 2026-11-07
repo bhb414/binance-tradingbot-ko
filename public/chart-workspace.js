@@ -1,3 +1,4 @@
+import {mergePaneRatios} from './chart-pane-layout.js';
 import {MAX_STUDIES} from './study-limits.js';
 import {CHART_TYPE_IDS} from './chart-types.js';
 import {CHART_INTERVALS,chartIntervalSeconds} from './chart-timeframes.js';
@@ -54,7 +55,7 @@ export class ChartWorkspace{
   remember(market,symbol,interval,{range,count,panes,lines,price}){
     const key=chartViewKey(market,symbol,interval),offset=rangeOffset(range,count);
     if(!validView(key)||!offset)return;
-    delete this.value.views[key];this.value.views[key]={offset,panes,price};
+    const savedPanes=mergePaneRatios(this.value.views[key]?.panes,panes);delete this.value.views[key];this.value.views[key]={offset,panes:savedPanes,price};
     if(lines){const instrument=instrumentKey(market,symbol);delete this.value.lines[instrument];this.value.lines[instrument]=lines;}
     this.value=normalizeChartWorkspace(this.value);this.save();
   }

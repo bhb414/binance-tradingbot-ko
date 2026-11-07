@@ -10,6 +10,8 @@ import { api } from './api.js';
 import {fillActionMarkup} from './fill-action.js';
 import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
+import {capturePaneRatios,restorePaneRatios,installPaneResizePersistence} from './chart-pane-layout.js';
+import {installChartFullscreen} from './chart-fullscreen.js';
 import {chartEntryLines,PositionPriceLines} from './chart-positions.js';
 import {koreanTimeOptions,CurrentPriceLine,installCandleInspector} from './chart-readout.js';
 import {botPerformance} from './performance.js';
@@ -39,7 +41,7 @@ import {renderOfficeRoster} from './office-roster.js';
 import {installBotActions} from './bot-actions.js';
 import {installPositionImportUI} from './position-import-ui.js';
 import { formulaEditorMarkup, formulaExamples } from './formula-editor.js';
-import {openChartModal,syncChartModalAccount} from './chart-modal.js';
+import {syncChartModalAccount} from './chart-modal.js';
 import {StudyRenderer} from './study-renderer.js';
 import {installStudyUI,openStudyLibrary} from './study-ui.js';
 import {MARKET_FILTERS,productLabel,instrumentName,matchesMarket,isTradfi} from './markets.js';
@@ -171,8 +173,7 @@ function syncPositionPriceLines(){
 function selectSymbol(symbol,market='usdm') {if(!marketInstruments.some(s=>s.market===market&&s.symbol===symbol)&&!(market==='usdm'&&SYMBOLS.some(s=>s.symbol===symbol)))return;persistChartView();currentMarket=market;currentSymbol=symbol;chartWorkspace.select({market,symbol});syncPositionPriceLines();renderMarket();updateChart();closeMarket();}
 function persistChartView(){
   if(!chart||currentPage!=='home'||chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval)||!candles.length)return;
-  clearTimeout(chartSaveTimer);const paneList=chart.panes(),total=paneList.reduce((sum,p)=>sum+p.getHeight(),0)||1,panes={};
-  paneList.forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(id)panes[id]=pane.getHeight()/total;});
+  clearTimeout(chartSaveTimer);const panes=capturePaneRatios(chart,homeStudies.rows);
   chartWorkspace.remember(currentMarket,currentSymbol,currentInterval,{range:chart.timeScale().getVisibleLogicalRange(),count:candles.length,panes,price:{autoScale:candleSeries.priceScale().options().autoScale,...(candleSeries.priceScale().getVisibleRange()||{})},lines:drawnLines.map(line=>line.options().price)});
 }
 function restoreChartLines(){
@@ -212,14 +213,14 @@ function initChart() {
   chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
   homePrice=new PriceChart(chart,{type:candleType,onReplace:replaceHomePrice});candleSeries=homePrice.series;
   positionPriceLines=new PositionPriceLines(candleSeries,{lineStyle:L.LineStyle.Dashed,summary:$('#chart-entry-summary')});
-  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
+  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,paneLayout:{read:()=>chartWorkspace.view(currentMarket,currentSymbol,currentInterval).panes},onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
   currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode,chartElement:$('#chart')});
   chartExecutions=new ChartExecutions(candleSeries,{toggle:$('#chart-executions-toggle'),inspector:candleInspector});
   homeHistory=new ChartHistory({request:api,getRange:()=>chart.timeScale().getVisibleLogicalRange(),onChange:(snapshot,context)=>{marketSnapshot=snapshot;drawHomeChart(snapshot,context.market,context.symbol,context.interval,false);},setRange:range=>{chartRestoring=true;chart.timeScale().setVisibleLogicalRange(range);chartRestoring=false;persistChartView();}});
   installChartHistoryButton($('#chart-history-before'),homeHistory,{onError:message=>toast(message,true)});
   chart.subscribeClick(param=> { if (!drawingMode || !param.point) return; const p=candleSeries.coordinateToPrice(param.point.y); if (!Number.isFinite(p)) return; addChartLine(p);persistChartView(); drawingMode=false; $$('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor')); toast('차트에 수평선을 추가했습니다.'); });
   chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(chartRestoring||chartRenderedKey!==chartViewKey(currentMarket,currentSymbol,currentInterval))return;homeHistory.viewChanged(chart.timeScale().getVisibleLogicalRange());clearTimeout(chartSaveTimer);chartSaveTimer=setTimeout(persistChartView,120);});
-  $('.chart-container').addEventListener('pointerup',()=>requestAnimationFrame(persistChartView));
+  installPaneResizePersistence($('.chart-container'),persistChartView);
   window.addEventListener('pagehide',persistChartView);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistChartView();});
   updateChart();
@@ -245,7 +246,7 @@ function drawHomeChart(snapshot,market,symbol,interval,resetRange=false){
     const saved=chartWorkspace.view(market,symbol,interval),range=restoredRange(saved.offset,candles.length)||presetRange(candles.length,interval,chartWorkspace.selection.range);
     chart.timeScale().setVisibleLogicalRange(range);restoreChartLines();
     candleSeries.priceScale().applyOptions({autoScale:saved.price?.autoScale!==false});if(saved.price?.autoScale===false&&Number.isFinite(saved.price.from)&&Number.isFinite(saved.price.to))candleSeries.priceScale().setVisibleRange({from:saved.price.from,to:saved.price.to});
-    chart.panes().forEach((pane,index)=>{const id=index===0?'price':homeStudies.rows.find(row=>row.pane===index)?.study.id;if(saved.panes?.[id])pane.setStretchFactor(saved.panes[id]);});
+    restorePaneRatios(chart,homeStudies.rows,saved.panes);
   }else if(previousRange)chart.timeScale().setVisibleLogicalRange(previousRange);
   if(changed||resetRange)homeStudies.revealFuture();chartRenderedKey=nextKey;chartRestoring=false;syncChartButtons();syncPositionPriceLines();syncChartExecutions();
   $('.chart-caption>.muted').textContent=time(snapshot.asOf)+' 수신';
@@ -577,7 +578,7 @@ document.addEventListener('keydown',event=>{
   if(event.target.id==='formula-source'&&event.key==='Tab'){event.preventDefault();const textarea=event.target;textarea.setRangeText('  ',textarea.selectionStart,textarea.selectionEnd,'end');currentRule().formula=textarea.value;updateFormulaFeedback();}
 });
 $('#fit-chart').addEventListener('click',()=>applyChartRange('all'));
-$('#fullscreen-chart').addEventListener('click',()=>{try{openChartModal(currentInstrument(),{interval:currentInterval,candleType});}catch(error){toast(error.message,true);}});
+installChartFullscreen($('.chart-panel'),$('#fullscreen-chart'),{onChange:()=>requestAnimationFrame(()=>homeStudies?.layout())});
 $('#clear-lines').addEventListener('click',()=>{drawnLines.forEach(l=>candleSeries.removePriceLine(l));drawnLines=[];persistChartView();toast('추가한 수평선을 지웠습니다.');});
 $('#mobile-market-button').addEventListener('click',openMarket);
 $('#close-market').addEventListener('click',closeMarket);

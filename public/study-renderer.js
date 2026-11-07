@@ -1,3 +1,5 @@
+import {restorePaneRatios} from './chart-pane-layout.js';
+import {CycleRatioGrid} from './cycle-ratio-grid.js';
 import {cycleReferenceMessage,cycleReadings,cycleLegendValues,cycleElapsedColor} from './cycle-reference.js';
 import {PriceChartLegend} from './price-chart-legend.js';
 import {compactStudyLegend} from './compact-study-legend.js';
@@ -14,8 +16,8 @@ const legendPreference='fw-study-legend-collapsed-v1',renderers=new Set();
 let labelsCollapsed=false;try{labelsCollapsed=localStorage.getItem(legendPreference)==='1';}catch{}
 
 export class StudyRenderer {
-  constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{},followCrosshair=true}){
-    this.chart=chart;this.legend=legend;this.onPaneCount=onPaneCount;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
+  constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{},followCrosshair=true,paneLayout=null}){
+    this.chart=chart;this.legend=legend;this.paneLayout=paneLayout;this.onPaneCount=onPaneCount;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
     this.context=context;legend.dataset.studyContext=context;legend.classList.add('study-legend');legend.setAttribute('aria-label','가격 그래프·지표 목록');legend.replaceChildren();
     this.list=document.createElement('div');this.list.id=legend.id+'-rows';this.list.className='study-legend-rows';this.paneLegends=new Map();
     this.toggle=document.createElement('button');this.toggle.type='button';this.toggle.className='study-legend-toggle';this.toggle.setAttribute('aria-controls',this.list.id);
@@ -37,7 +39,7 @@ export class StudyRenderer {
     const changed=config!==this.config;
     if(changed){
       const range=this.chart.timeScale().getVisibleLogicalRange(),heights=new Map(this.rows.filter(row=>row.pane>0).map(row=>[row.study.id,this.chart.panes()[row.pane]?.getStretchFactor()/(this.chart.panes()[0]?.getStretchFactor()||3.3)*3.3]));
-      for(const row of this.rows){row.overlays?.dispose();if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
+      for(const row of this.rows){if(row.ratioGrid)row.ratioGridOwner.detachPrimitive(row.ratioGrid);row.overlays?.dispose();if(row.fill)row.fillOwner.detachPrimitive(row.fill);}
       for(const series of [...this.series].reverse())this.chart.removeSeries(series);this.series=[];this.rows=[];this.closeMenu();this.list.replaceChildren();this.paneLegends.clear();let pane=0;
       for(const study of studies){
         const active=studyActive(study,interval),definition={...STUDIES[study.type],plots:studyPlots(study)},index=active&&studyPane(study)&&(definition.plots.some(p=>!p.signal&&!p.background&&study.styles[p.key].visible)||hasPaneOverlays(study,definition.plots))?++pane:0;
@@ -49,6 +51,7 @@ export class StudyRenderer {
               const series=this.chart.addSeries(window.LightweightCharts.LineSeries,{color:'transparent',lineVisible:false,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceFormat:studyPriceFormat(study,this.priceSeries?.options().priceFormat)},index);row.plots.push({key,series,fillOnly:true,anchorOnly:true});this.series.push(series);return series;};
             row.overlays=new StudyPaneOverlays(study,definition.plots,resolveSeries);
           }
+          if(study.type==='CYCLE'&&study.params.display==='ratio'&&index>0&&row.plots.length){row.ratioGrid=new CycleRatioGrid();row.ratioGridOwner=row.plots[0].series;row.ratioGridOwner.attachPrimitive(row.ratioGrid);}
           if(index>0)this.chart.panes()[index].priceScale('right').applyOptions({scaleMargins:{top:study.type==='DMI'?.38:.26,bottom:.12}});
         }
         const element=document.createElement('div');element.className='study-chart-legend'+(!active?' is-muted':'');element.dataset.studyId=study.id;element.dataset.studyType=study.type;
@@ -62,13 +65,13 @@ export class StudyRenderer {
         if(!this.paneLegends.has(index)){const container=document.createElement('div');container.className='study-pane-legend';container.dataset.legendPane=index;this.list.append(container);this.paneLegends.set(index,container);}this.paneLegends.get(index).append(element);
       }
       this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
-      this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
+      restorePaneRatios(this.chart,this.rows,this.paneLayout?.read());this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
     }
     const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.cycleValues=data.cycle?new Map(data.cycle.map(point=>[point.time,point])):null;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.caption||data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}
       for(const plot of row.plots)if(plot.key==='__overlay_zero'){plot.data=candles.map(c=>({time:c.time,value:0}));plot.series.setData(plot.data);}
       row.overlays?.update(data,studyActive(row.study,interval));
       if(row.fill)row.fill.update(bandRows(data.plots),row.study.fill);
-      const first=row.plots[0]?.series;if(first){for(const line of row.levels||[])first.removePriceLine(line);row.levels=data.levels.map(price=>first.createPriceLine({price,color:'#c5c6cc',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''}));}
+      const first=row.plots[0]?.series;if(first){for(const line of row.levels||[])first.removePriceLine(line);row.levels=(row.ratioGrid?[]:data.levels).map(price=>first.createPriceLine({price,color:'#c5c6cc',lineWidth:1,lineStyle:2,axisLabelVisible:false,title:''}));}
     }
     const priceOverlays=overlayRows(signalRows,'price');this.signals.update(priceOverlays);this.backgrounds.update(priceOverlays);
     this.futureBars=Math.max(0,...this.rows.flatMap(r=>r.plots.flatMap(p=>(p.data||[]).filter(x=>x.time>candles.at(-1)?.time).map(x=>1))));this.futureTime=Math.max(candles.at(-1)?.time||0,...this.rows.flatMap(r=>r.plots.flatMap(p=>(p.data||[]).map(x=>x.time))));if(changed)this.revealFuture();this.valuesAt(this.valueTime);this.onValuesChanged?.();this.syncLabels();requestAnimationFrame(()=>this.layout());
