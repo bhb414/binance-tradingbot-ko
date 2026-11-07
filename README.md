@@ -2,13 +2,15 @@
 
 바이낸스 상품 조회와 USDT 선물 조건식 자동매매 앱입니다.
 
-**[Windows 다운로드 · v0.4.73](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.73/binance-tradingbot-ko-v0.4.73-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.74](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.74/binance-tradingbot-ko-v0.4.74-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 
 차트의 **라벨** 메뉴에서 우측 지표 이름·현재가·진입 평단 표시를 각각 켜고 끕니다. 선과 계산은 유지하고 라벨만 숨기며, 서버에 저장해 다른 기기와 접속 주소에서도 복원합니다.
 
 사용자 지표는 `막대("이름", 수식, 색기준식)`으로 막대를 표시합니다. 색기준식 생략은 0이며 수식·앞에서 정의한 변수를 사용할 수 있습니다. 스타일의 **기준 이상 색상 / 기준 미만 색상**을 선택하세요. 같은 값은 기준 이상 색상, 기준식이 미수집인 봉은 빈 값입니다. 막대 높이는 0부터 원값까지이고 색기준식은 색 판단에만 사용합니다. 막대 입력 시 별도 패널로 자동 배치합니다.
+
+**지표 → 이동평균선 묶음**은 기본 5·20·60·120·220선 다섯 개입니다. 설정의 입력 탭에서 선마다 체크박스·기간·색상을 정하고 묶음 전체를 SMA·EMA·VWMA 중 선택합니다. 차트에는 지표 1개로 계산되며 기존 단일 이평도 유지합니다.
 
 ## 실행
 
@@ -42,7 +44,7 @@ Windows용입니다. 별도 npm 설치는 필요 없습니다. 주소는 http://
 
 ## 파일 누락·실행 오류 복구
 
-**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.73](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.73/binance-tradingbot-ko-v0.4.73-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
+**Cannot find module**처럼 프로그램 파일이 없다는 오류가 계속 나오면 [전체 파일 복구 ZIP · v0.4.74](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.74/binance-tradingbot-ko-v0.4.74-repair.zip)을 받으세요. 프로그램을 종료하고, ZIP의 **repair.cmd와 repair.ps1 두 파일을 run.cmd 옆에 넣은 뒤 repair.cmd를 실행**합니다. Git은 필요 없습니다.
 
 복구 도구는 문제가 난 앱 모듈을 사용하지 않고 공식 배포본을 별도로 받아 검증합니다. 누락·변경된 프로그램 파일 전체를 복구하고 적용 전에 원본 소스를 .runtime/backups에 백업합니다. API 키·봇·매매 기록·차트·즐겨찾기 등 저장 데이터와 개인 추가 파일은 보존합니다. 완료 후 run.cmd로 실행하세요. 정상 설치에서도 repair.cmd로 전체 프로그램 파일을 검사·복구할 수 있습니다.
 
@@ -323,7 +325,7 @@ Post-only 지정가가 메이커 조건 때문에 확실히 거절되면 봇을 
 
 설정의 **업데이트 확인**, **npm run update:check**, **update.cmd** 모두 Git 설치 없이 사용할 수 있습니다. 프로그램을 종료하고 **update.cmd**를 실행하면 공식 릴리즈 ZIP과 체크섬을 내려받아 검증한 뒤 적용합니다. 실패하면 기존 파일을 복구하며, 키·봇 설정·매매 기록·차트·즐겨찾기는 보존합니다. 완료 후 **run.cmd**로 다시 시작하세요.
 
-구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.73 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
+구버전 update.cmd에서 Git 설치를 요구한다면 v0.4.74 이상 Windows ZIP을 한 번 내려받아, 프로그램을 종료한 상태로 기존 폴더에 덮어쓰세요. **.runtime 폴더는 지우지 마세요.** 이후에는 update.cmd만 실행하면 됩니다. 직접 소스를 수정했다면 덮어쓰지 않고 중단합니다. 개발자가 Git 기반 main 브랜치 업데이트를 원할 때만 `node tools/update.mjs --source`를 사용합니다.
 
 과거 버전에서 `tests/app-update.test.mjs`의 `package.json ENOENT`로 업데이트 검증이 중단됐다면, 프로그램 실행 창을 종료하고 **기존 폴더의 update.cmd를 다시 실행**하세요. 0.4.30에서 해당 검증 오류를 수정했습니다. 키·설정·기록은 기존 `.runtime`에 유지됩니다.
 
