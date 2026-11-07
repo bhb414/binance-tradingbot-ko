@@ -1,4 +1,4 @@
-import {cycleReferenceMessage,cycleReadings,cycleLegendValues} from './cycle-reference.js';
+import {cycleReferenceMessage,cycleReadings,cycleLegendValues,cycleElapsedColor} from './cycle-reference.js';
 import {PriceChartLegend} from './price-chart-legend.js';
 import {compactStudyLegend} from './compact-study-legend.js';
 import {chartLabelPreferences,applyStudyAxisLabels} from './chart-labels.js';
@@ -93,7 +93,7 @@ export class StudyRenderer {
     for(const row of this.rows){
       const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time),model=compactStudyLegend(row.study,points),status=row.error?'계산 확인 필요':!active?(row.study.visible?(row.study.timeframes.includes(this.interval)?'선 모두 숨김':'이 주기 숨김'):'숨김'):'';
       row.legendList.hidden=!!status;row.heading.hidden=!status&&!model.heading;row.output.hidden=!status;row.output.textContent=status;if(!status&&row.study.type==='CYCLE'){const message=cycleReferenceMessage(row.study,row.cycleValues?.get(time??this.candles.at(-1)?.time));row.output.hidden=!message;row.output.textContent=message;}
-      const readings=new Map(model.entries.map(item=>[item.key,item.text]));for(const entry of row.legendEntries){const value=readings.get(entry.key)||'—',title=entry.fullLabel+' · '+value;if(entry.button.title!==title){entry.button.title=title;entry.button.setAttribute('aria-description',value);}if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time),texts=cycleLegendValues(row.study,meta),text=texts[entry.key];entry.button.querySelector('span').textContent=text;entry.button.title=cycleReadings(row.study,meta);entry.button.setAttribute('aria-description',text);}}
+      const readings=new Map(model.entries.map(item=>[item.key,item.text]));for(const entry of row.legendEntries){const value=readings.get(entry.key)||'—',title=entry.fullLabel+' · '+value;if(entry.button.title!==title){entry.button.title=title;entry.button.setAttribute('aria-description',value);}if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time),texts=cycleLegendValues(row.study,meta),text=texts[entry.key];entry.button.querySelector('span').textContent=text;entry.button.title=cycleReadings(row.study,meta);entry.button.setAttribute('aria-description',text);if(entry.key==='elapsed'){const color=cycleElapsedColor(row.study,meta);entry.button.style.color=color;entry.button.querySelector('i').style.background=color;}}}
       const forecastReading=!status&&row.study.params.showCrossing&&row.forecast?.comparison&&(time==null||time===this.candles.at(-1)?.time);row.output.classList.toggle('study-forecast-reading',!!forecastReading);if(forecastReading){row.output.hidden=false;row.output.textContent=row.forecast.comparison.message;}
       if(row.forecast&&!row.error&&(time==null||time===this.candles.at(-1)?.time))row.element.title=row.forecast.caption;
     }

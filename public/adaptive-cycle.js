@@ -30,7 +30,7 @@ export function createBarsSince(){
 }
 export function createCrossTracker(){
  let at=-1,previous=null,direction=null,last=null,gap=null;
- return {get elapsed(){return last===null?null:at-last;},push(a,b){
+ return {get elapsed(){return last===null?null:at-last;},get direction(){return direction;},push(a,b){
   at++;if(!finite(a)||!finite(b)){previous=null;direction=null;last=null;gap=null;return null;}
   const difference=a-b,event=previous===null?0:previous<=0&&difference>0?1:previous>=0&&difference<0?-1:0;previous=difference;
   if(event&&event!==direction){if(last!==null)gap=at-last;last=at;direction=event;}return gap;
