@@ -28,12 +28,19 @@ export function createBarsSince(){
  let at=-1,last=null;
  return {push(value){at++;if(!finite(value)){last=null;return null;}if(value!==0)last=at;return last===null?null:at-last;}};
 }
+// Ignore arithmetic roundoff, not displayed price precision or a price tick.
+// Relative scaling also preserves genuine differences in very small prices.
+export function crossSide(a,b){
+ if(!finite(a)||!finite(b))return null;
+ const difference=a-b,tolerance=64*Number.EPSILON*Math.max(Math.abs(a),Math.abs(b));
+ return Math.abs(difference)<=tolerance?0:Math.sign(difference);
+}
 export function createCrossTracker(){
- let at=-1,previous=null,direction=null,last=null,gap=null;
+ let at=-1,previous=0,direction=null,last=null,gap=null;
  return {get elapsed(){return last===null?null:at-last;},get direction(){return direction;},push(a,b){
-  at++;if(!finite(a)||!finite(b)){previous=null;direction=null;last=null;gap=null;return null;}
-  const difference=a-b,event=previous===null?0:previous<=0&&difference>0?1:previous>=0&&difference<0?-1:0;previous=difference;
-  if(event&&event!==direction){if(last!==null)gap=at-last;last=at;direction=event;}return gap;
+  at++;const side=crossSide(a,b);if(side===null){previous=0;direction=null;last=null;gap=null;return null;}
+  // Equality keeps the last known side; only an actual change of side crosses.
+  if(side){if(previous&&side!==previous){if(last!==null)gap=at-last;last=at;direction=side;}previous=side;}return gap;
  }};
 }
 function spectrumState(period,window){

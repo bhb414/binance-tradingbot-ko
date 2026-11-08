@@ -1,4 +1,4 @@
-import {createHMA} from './adaptive-cycle.js';
+import {createHMA,createCrossTracker,crossSide} from './adaptive-cycle.js';
 import {theoreticalCyclePeriod} from './cycle-reference.js';
 import {FORECAST_METHODS,FORECAST_CANDIDATES} from './ma-forecast.js';
 
@@ -68,15 +68,12 @@ export function forecastCrossings(first,second,referenceSide,limit){
 }
 
 function crossingHistory(first,second,index){
- let previous=null,last=null,direction=null,side=0;
+ const tracker=createCrossTracker();let side=0;
  for(let i=0;i<=index;i++){
-  if(!finite(first[i])||!finite(second[i])){previous=null;direction=null;last=null;side=0;continue;}
-  const d=first[i]-second[i],event=previous===null?0:previous<=0&&d>0?1:previous>=0&&d<0?-1:0;
-  if(d!==0)side=Math.sign(d);
-  if(event&&event!==direction){last=i;direction=event;}
-  previous=d;
+  tracker.push(first[i],second[i]);const current=crossSide(first[i],second[i]);
+  if(current===null)side=0;else if(current)side=current;
  }
- return {last,side};
+ return {last:tracker.elapsed===null?null:index-tracker.elapsed,side};
 }
 
 export function calculateForecastScenarios({values,candles,volumes,lines,index,source='close',kind='standard',params:p,historyInfo=null,metricsOnly=false}){

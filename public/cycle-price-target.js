@@ -1,4 +1,5 @@
 import {assumedForecastValues,extendForecastAverage,forecastCrossings} from './ma-forecast-scenarios.js';
+import {crossSide} from './adaptive-cycle.js';
 const finite=Number.isFinite;
 const formats=new Map(),percentFormat=new Intl.NumberFormat('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:4});
 const number=(n,d=8)=>{if(!finite(n))return '미확인';if(!formats.has(d))formats.set(d,new Intl.NumberFormat('ko-KR',{maximumFractionDigits:d}));return formats.get(d).format(n);};
@@ -22,8 +23,8 @@ function solve(c,bars){
  const {values,candles,volumes,lines,index,kind,source,referencePrice}=c;
  if(index<0||!lines.every(l=>finite(l.values[index]))||!finite(referencePrice)||referencePrice<=0)return empty('이평 계산에 필요한 기준 봉이 부족합니다.');
  const base=referencePrice,tolerance=Math.max(1e-14,base*1e-10),volume=finite(volumes[index])&&volumes[index]>=0?volumes[index]:0;
- let side=Math.sign(lines[0].values[index]-lines[1].values[index]);
- if(!side)for(let i=index-1;i>=0;i--){if(!lines.every(l=>finite(l.values[i])))break;side=Math.sign(lines[0].values[i]-lines[1].values[i]);if(side)break;}
+ let side=crossSide(lines[0].values[index],lines[1].values[index]);
+ if(!side)for(let i=index-1;i>=0;i--){if(!lines.every(l=>finite(l.values[i])))break;side=crossSide(lines[0].values[i],lines[1].values[i]);if(side)break;}
  const evaluate=price=>{
   const future=assumedForecastValues(price,candles,index,source,kind,bars),paths=lines.map(l=>extendForecastAverage(l,values,volumes,index,future,volume));
   return {gap:paths[0][bars]-paths[1][bars],paths};

@@ -4,7 +4,7 @@
 
 [KAMA·Hull MA와 교차 주기 분석 사용법](docs/INDICATORS.md)
 
-**[Windows 다운로드 · v0.4.83](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.83/binance-tradingbot-ko-v0.4.83-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
+**[Windows 다운로드 · v0.4.96](https://github.com/bhb414/binance-tradingbot-ko/releases/download/v0.4.96/binance-tradingbot-ko-v0.4.96-windows.zip)** · [최신 릴리즈](https://github.com/bhb414/binance-tradingbot-ko/releases/latest)
 
 [소스 코드 ZIP](https://github.com/bhb414/binance-tradingbot-ko/archive/refs/heads/main.zip)
 

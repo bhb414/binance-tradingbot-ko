@@ -1,6 +1,7 @@
 import {FORECAST_CANDIDATES,FORECAST_DEFAULTS,FORECAST_METHODS} from './ma-forecast.js';
 import {calculateForecastScenarios} from './ma-forecast-scenarios.js';
 import {cycleRemainingText} from './cycle-reference.js';
+import {crossSide} from './adaptive-cycle.js';
 
 export const CYCLE_FORECAST_DEFAULTS={showProjection:true,projectionBars:26,showPriceTarget:true,priceTargetMultiplier:1,showPositiveTargets:true,predictionSource:'interval',forecastMethod:'fastest',forecastRangeBars:26,forecastSlopeBars:3,forecastSearchBars:120,...Object.fromEntries(FORECAST_CANDIDATES.map(([key])=>['forecast'+key[0].toUpperCase()+key.slice(1),true]))};
 export function migrateCycleForecast(value){
@@ -40,7 +41,7 @@ export function cycleForecastSeries({values,candles,volumes,fast,slow,elapsed,so
  let same=!!previous,side=0;
  for(let i=0;i<candles.length;i++){
   const c=candles[i],signature=[c.time,values[i],c.open,c.high,c.low,c.close,volumes[i],fast[i],slow[i]].join('|');signatures.push(signature);
-  if(finite(fast[i])&&finite(slow[i])&&fast[i]!==slow[i])side=Math.sign(fast[i]-slow[i]);
+  const currentSide=crossSide(fast[i],slow[i]);if(currentSide===null)side=0;else if(currentSide)side=currentSide;
   if(same&&previous.signatures[i]===signature){data.push(previous.data[i]);continue;}
   same=false;
   if(!finite(fast[i])||!finite(slow[i])){data.push({forecastEnd:null,forecastTarget:null,forecastRemaining:null});continue;}
