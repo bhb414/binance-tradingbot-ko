@@ -1,6 +1,6 @@
 import {randomId} from './id.js';
 import { compileFormula, DEFAULT_FORMULA, formulaTimeframes, FORMULA_TIMEFRAMES } from './formula.js';
-import { ACTIONS, isEntry, isStop } from './actions.js';
+import { ACTIONS, isEntry, isSwitch, isStop } from './actions.js';
 import { BUDGET_MODES,effectiveBudget,budgetIncluded,allocatedAmount,budgetSettingsErrors,resolveBudgets,unallocatedPercentError } from './budget.js';
 import {MAX_LEVERAGE} from './leverage.js';
 import {protectionEnabled,hasProtection,protectionBasis,protectionPricePercent} from './protection.js';
@@ -61,7 +61,7 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,availableBalan
   if(!['price','leveraged'].includes(protectionBasis(bot.exit)))errors.push('TP·SL 계산 기준을 확인해 주세요.');
   const entries=Array.isArray(bot.actionRules)?bot.actionRules.filter(r=>r?.enabled&&isEntry(r.action)):[{action:'ENTER_'+bot.direction,leverage:bot.leverage}];
   if(hasProtection(bot.exit)&&['price','leveraged'].includes(protectionBasis(bot.exit)))for(const entry of entries){try{const leverage=bot.runtime?.quantity>0?bot.leverage:entry.leverage??bot.leverage;
-    if(entry.action==='ENTER_LONG'&&protectionEnabled(bot.exit,'stopLoss')&&protectionPricePercent(bot.exit,'stopLoss',leverage)>=100||entry.action==='ENTER_SHORT'&&protectionEnabled(bot.exit,'takeProfit')&&protectionPricePercent(bot.exit,'takeProfit',leverage)>=100)errors.push('청산 목표 가격이 0 이하가 되지 않도록 비율을 설정해 주세요.');
+    if(entry.action.endsWith('_LONG')&&protectionEnabled(bot.exit,'stopLoss')&&protectionPricePercent(bot.exit,'stopLoss',leverage)>=100||entry.action.endsWith('_SHORT')&&protectionEnabled(bot.exit,'takeProfit')&&protectionPricePercent(bot.exit,'takeProfit',leverage)>=100)errors.push('청산 목표 가격이 0 이하가 되지 않도록 비율을 설정해 주세요.');
   }catch(error){errors.push(error.message);}}
   if (hasProtection(bot.exit)&&!['MARK_PRICE','CONTRACT_PRICE'].includes(bot.exit?.price)) errors.push('청산 조건 가격 기준을 확인해 주세요.');
   let count = 0;
@@ -91,6 +91,7 @@ export function validateBot(bot, bots = [], {balance=DEMO_BALANCE,availableBalan
         if(typeof r.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(r.id)||ids.has(r.id))errors.push(prefix+'고유 식별자가 필요합니다.');ids.add(r.id);
         if(typeof r.enabled!=='boolean'||!Object.hasOwn(ACTIONS,r.action))errors.push(prefix+'실행 행동을 확인해 주세요.');
         if(r.closeScope!==undefined&&!['bot','account'].includes(r.closeScope))errors.push(prefix+'정리 대상을 확인해 주세요.');
+        if(isSwitch(r.action)&&r.closeScope==='account')errors.push(prefix+'스위칭은 이 봇 보유분을 전량 정리한 뒤 진입합니다. 정리 대상을 이 봇 보유분으로 선택해 주세요.');
         if(r.formulaVersion!==2)errors.push(prefix+'이전 조건을 새 봉 주기 문법으로 변환해 주세요.');
         if(isEntry(r.action)&&(!Number.isInteger(r.leverage)||r.leverage<1||r.leverage>(r.enabled?maxLeverage:MAX_LEVERAGE)))errors.push(prefix+`진입 레버리지는 1~${r.enabled?maxLeverage:MAX_LEVERAGE}배로 설정해 주세요.`);
         if(!isStop(r.action)&&(!finite(r.sizePercent)||r.sizePercent<=0||r.sizePercent>100))errors.push(prefix+'주문 비율은 0보다 크고 100% 이하여야 합니다.');

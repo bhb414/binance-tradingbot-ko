@@ -1,6 +1,7 @@
 import {randomId} from './id.js';
-export const ACTIONS = Object.freeze({ENTER_LONG:'롱 진입',ENTER_SHORT:'숏 진입',EXIT_LONG:'롱 정리',EXIT_SHORT:'숏 정리',CLOSE_ALL:'전체 정리',STOP_BOT:'봇 정지'});
-export const isEntry = action => action==='ENTER_LONG'||action==='ENTER_SHORT';
+export const ACTIONS = Object.freeze({ENTER_LONG:'롱 진입',ENTER_SHORT:'숏 진입',SWITCH_LONG:'롱으로 전환',SWITCH_SHORT:'숏으로 전환',EXIT_LONG:'롱 정리',EXIT_SHORT:'숏 정리',CLOSE_ALL:'전체 정리',STOP_BOT:'봇 정지'});
+export const isSwitch = action => action==='SWITCH_LONG'||action==='SWITCH_SHORT';
+export const isEntry = action => action==='ENTER_LONG'||action==='ENTER_SHORT'||isSwitch(action);
 export const isStop = action => action==='STOP_BOT';
 export const actionDirection = action => action.endsWith('_LONG')?'LONG':action.endsWith('_SHORT')?'SHORT':null;
 export const defaultOrder = () => ({type:'LIMIT',price:'bid',ticks:0,timeout:15,remainder:'cancel',postOnly:true});

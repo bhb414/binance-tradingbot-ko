@@ -29,6 +29,15 @@ async function harness(){
  return {e,x,client,trade,store};
 }
 async function twoBots(){const h=await harness();for(const id of ['a','b'])await h.e.saveBot(makeBot({id,name:id,symbol:'BTCUSDT',budget:100,maxEntries:1,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));for(const id of ['a','b'])await h.e.startBot(id);await h.e.tick();return {...h,a:h.e.bot('a'),b:h.e.bot('b')};}
+
+test('a shared-position switch confirms its owned close before one opposite entry without repeating the signal',async()=>{
+ const h=await harness();await h.e.saveBot(makeBot({id:'switch',name:'switch',budget:100,maxEntries:1,leverage:2,margin:'CROSSED',exit:off,actionRules:[rule()]}));await h.e.startBot('switch');await h.e.tick();const b=h.e.bot('switch'),q=b.runtime.quantity;
+ b.actionRules=[rule('SWITCH_SHORT')];await h.e.tick();assert.equal(h.x.calls.length,3);assert.equal(h.x.calls[1].reduceOnly,'true');assert.equal(Number(h.x.calls[1].quantity),q);assert.equal(h.x.calls[2].side,'SELL');assert.equal(b.runtime.direction,'SHORT');assert.ok(b.runtime.quantity>0);assert.equal(b.runtime.error,null);assert.equal(b.runtime.switchPending,undefined);await h.e.tick();assert.equal(h.x.calls.length,3);
+});
+
+test('a shared switch closes only the requesting bots holding before the ordinary opposite-entry netting rules apply',async()=>{
+ const h=await twoBots(),q=h.a.runtime.quantity;h.a.actionRules=[rule('SWITCH_SHORT')];await h.e.tick();assert.equal(h.x.calls[2].reduceOnly,'true');assert.equal(Number(h.x.calls[2].quantity),q);assert.equal(h.x.calls.length,4);assert.equal(h.a.runtime.switchPending,undefined);assert.equal(h.a.runtime.error,null);assert.equal(h.b.runtime.error,null);await h.e.tick();assert.equal(h.x.calls.length,4);
+});
 test('two bots may enter the same symbol and each uses its own budget and virtual quantity',async()=>{
  const h=await twoBots();assert.equal(h.a.runtime.runEnabled,true);assert.equal(h.b.runtime.runEnabled,true);assert.ok(h.a.runtime.quantity>0);assert.equal(h.a.runtime.quantity,h.b.runtime.quantity);assert.ok(Math.abs(h.x.quantity-h.a.runtime.quantity-h.b.runtime.quantity)<1e-8);
  assert.equal(h.a.runtime.error,null);assert.equal(h.b.runtime.error,null);assert.ok(h.e.decorate(h.a).used<=100);assert.ok(h.e.decorate(h.b).used<=100);assert.equal(h.x.calls.length,2);assert.equal(h.e.shared.book('BTCUSDT').pending,false);

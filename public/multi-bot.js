@@ -5,7 +5,7 @@ import {makeActionRule,isEntry,isStop} from './actions.js';
 import {formulaSymbols,formulaTimeframes} from './formula.js';
 import {MAX_LEVERAGE} from './leverage.js';
 export const MULTI_ACTIONS={MULTI:'종목별 매매',STOP_BOT:'봇 정지'};
-export const TARGET_ACTIONS={ENTER_LONG:'롱 진입',ENTER_SHORT:'숏 진입',EXIT_LONG:'롱 정리',EXIT_SHORT:'숏 정리',CLOSE_ALL:'해당 종목 전량 정리'};
+export const TARGET_ACTIONS={ENTER_LONG:'롱 진입',ENTER_SHORT:'숏 진입',SWITCH_LONG:'롱으로 전환',SWITCH_SHORT:'숏으로 전환',EXIT_LONG:'롱 정리',EXIT_SHORT:'숏 정리',CLOSE_ALL:'해당 종목 전량 정리'};
 export const multiOrder=()=>({type:'MARKET',price:'bid',ticks:0,timeout:15,remainder:'cancel',postOnly:false});
 export function multiTarget(alias,extra={}){return {alias,enabled:true,action:'ENTER_LONG',closeScope:'bot',sizePercent:25,leverage:3,order:multiOrder(),...extra};}
 export function multiRule(legs,extra={}){return {...makeActionRule({action:'MULTI',formula:'FALSE@1h',reentry:{mode:'rearm',cooldown:0,afterExitCooldown:0}}),targets:legs.map(leg=>multiTarget(leg.alias)),...extra};}

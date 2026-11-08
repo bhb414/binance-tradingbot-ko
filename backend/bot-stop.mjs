@@ -7,7 +7,7 @@ export const automationEnabled=r=>Boolean(r?.runEnabled||r?.managementEnabled);
 // canceled, and unconfirmed cancellations remain durable across restarts.
 export class BotStop{
  constructor(engine){this.e=engine;}
- mark(b){const r=b.runtime;r.stopRequestId=randomUUID();r.runEnabled=false;r.managementEnabled=false;r.entryBlocked=null;delete r.entryMarginRetry;r.orderRetries={};r.guardKey=null;delete r.closePending;delete r.closeRecovery;delete r.guardWaiting;
+ mark(b){const r=b.runtime;r.stopRequestId=randomUUID();r.runEnabled=false;r.managementEnabled=false;r.entryBlocked=null;delete r.entryMarginRetry;r.orderRetries={};r.guardKey=null;delete r.switchPending;delete r.closePending;delete r.closeRecovery;delete r.guardWaiting;
   for(const o of this.e.ownOrders(b))if(o.kind==='standard'&&o.parameters.type==='LIMIT')o.fallbackDone=true;
   r.stopPending=this.e.ownOrders(b).some(active)?{at:this.e.now(),retryAt:0}:null;r.waiting=null;if(r.stopPending)this.wait(b);
  }
