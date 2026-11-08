@@ -29,6 +29,6 @@ export function crossExplanationMarkup(ast){
   visit(ast);if(!calls.length)return '';
   return '<div class="cross-explanation-heading">돌파 함수, 이렇게 읽으세요</div>'+calls.map(node=>{
     const up=['상향돌파','crossup'].includes(normalize(node.name)),a=esc(operand(node.args[0])),b=esc(operand(node.args[1]));
-    return '<div class="cross-explanation-item"><div class="cross-function-name">'+(up?'상향돌파':'하향돌파')+'(<span>A</span>, <span>B</span>)</div><dl class="cross-operands"><div><dt>A · 돌파하는 값</dt><dd>'+a+'</dd></div><div><dt>B · 기준이 되는 값</dt><dd>'+b+'</dd></div></dl><p><strong>“'+a+'” 값이 “'+b+'” 기준을 '+(up?'아래에서 위로':'위에서 아래로')+' 돌파하는 순간</strong></p><small>이전 봉 A '+(up?'≤':'≥')+' B → 현재 봉 A '+(up?'&gt;':'&lt;')+' B</small></div>';
+    return '<div class="cross-explanation-item"><div class="cross-function-name">'+(up?'상향돌파':'하향돌파')+'(<span>A</span>, <span>B</span>)</div><dl class="cross-operands"><div><dt>A · 돌파하는 값</dt><dd>'+a+'</dd></div><div><dt>B · 기준이 되는 값</dt><dd>'+b+'</dd></div></dl><p><strong>“'+a+'” 값이 “'+b+'” 기준을 '+(up?'아래에서 위로':'위에서 아래로')+' 돌파하는 순간</strong></p><small>마지막 확인 A '+(up?'&lt;':'&gt;')+' B → 현재 봉 A '+(up?'&gt;':'&lt;')+' B · 같은 값·계산 오차는 이전 쪽 유지 · 같은 쪽 재접촉 제외</small></div>';
   }).join('')+'<p class="cross-explanation-note">수식 안의 각 돌파 함수에 대한 설명입니다. AND·OR·NOT과 [N봉 전]은 입력한 수식대로 적용됩니다.</p>';
 }

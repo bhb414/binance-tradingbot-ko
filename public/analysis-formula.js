@@ -1,4 +1,4 @@
-import {createKAMA,createHMA,createCycleEstimator,createBarsSince,createCrossTracker} from './adaptive-cycle.js';
+import {createKAMA,createHMA,createCycleEstimator,createBarsSince,createCrossTracker,crossSide} from './adaptive-cycle.js';
 // Adapted from the user's 2026-10-27 analysis formula engine.
 // Deliberately parses expressions; never executes JavaScript from input.
 (function (root, factory) {
@@ -704,12 +704,22 @@ import {createKAMA,createHMA,createCycleEstimator,createBarsSince,createCrossTra
     }
     if (name === 'crossUp' || name === 'crossDown') {
       if (index < 1) return null;
-      const currentA = evaluateNode(node.args[0], context, index), currentB = evaluateNode(node.args[1], context, index);
-      const previousA = evaluateNode(node.args[0], context, index - 1), previousB = evaluateNode(node.args[1], context, index - 1);
-      if (![currentA, currentB, previousA, previousB].every(finite)) return null;
-      return name === 'crossUp'
-        ? Number(previousA) <= Number(previousB) && Number(currentA) > Number(currentB) ? 1 : 0
-        : Number(previousA) >= Number(previousB) && Number(currentA) < Number(currentB) ? 1 : 0;
+      const key='cross:'+expressionKey(node,context);
+      if(!context.indicatorCache.has(key))context.indicatorCache.set(key,new Map());
+      const cache=context.indicatorCache.get(key);if(cache.has(index))return cache.get(index);
+      const sideAt=i=>crossSide(historicalValue(node.args[0],context,i),historicalValue(node.args[1],context,i));
+      const current=sideAt(index),previous=sideAt(index-1),wanted=name==='crossUp'?1:-1;let value=null;
+      if(current!==null&&previous!==null){
+        value=0;
+        if(current===wanted){
+          // Match the cycle tracker: equality retains the last confirmed side.
+          // Scan only a neutral plateau, not the entire history on every tick.
+          let before=previous;
+          for(let i=index-2;before===0&&i>=0;i--){if(++context.steps>context.maxSteps)throw new FormulaError('조건식 계산량이 너무 큽니다');before=sideAt(i);}
+          if(before===-wanted)value=1;
+        }
+      }
+      cache.set(index,value);return value;
     }
     if (name === 'between') {
       const values = node.args.map(arg => evaluateNode(arg, context, index));

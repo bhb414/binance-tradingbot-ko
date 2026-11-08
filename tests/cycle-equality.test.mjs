@@ -71,9 +71,9 @@ test('forecast history retains the real prior cross when current averages touch 
  assert.equal(result.comparison.elapsedBars,1);
 });
 
-test('cross interval formulas share the corrected equality handling without changing generic cross functions',()=>{
+test('cross interval and generic cross formulas both ignore a return to the same side after equality',()=>{
  const close=[1,2,1,1,2,1,2,1,-1],result=compileFormula('교차간격(종가, 1)').evaluateSeries({close});
  assert.equal(result.ok,true);assert.deepEqual(result.values,[null,null,null,null,null,null,null,null,null]);
  const ordinary=compileFormula('상향돌파(종가, 1)').evaluateSeries({close:[2,1,2]});
- assert.deepEqual(ordinary.values,[null,0,1]);
+ assert.deepEqual(ordinary.values,[null,0,0]);
 });
