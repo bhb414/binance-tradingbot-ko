@@ -12,6 +12,7 @@ import {connectionView} from './connection-state.js';
 import {ChartWorkspace,chartViewKey,restoredRange,presetRange} from './chart-workspace.js';
 import {capturePaneRatios,restorePaneRatios,installPaneResizePersistence} from './chart-pane-layout.js';
 import {installChartFullscreen} from './chart-fullscreen.js';
+import {installChartHeight} from './chart-height.js';
 import {chartEntryLines,PositionPriceLines} from './chart-positions.js';
 import {koreanTimeOptions,CurrentPriceLine,installCandleInspector} from './chart-readout.js';
 import {botPerformance} from './performance.js';
@@ -213,7 +214,7 @@ function initChart() {
   chart=L.createChart($('#chart'),{autoSize:true,layout:{background:{type:'solid',color:'#ffffff'},textColor:'#7e8b96',fontFamily:'Segoe UI, sans-serif',fontSize:10,attributionLogo:true,panes:{separatorColor:'#e9eef1',separatorHoverColor:'#d5e0df',enableResize:true}},grid:{vertLines:{color:'#edf1f4'},horzLines:{color:'#edf1f4'}},crosshair:{mode:L.CrosshairMode.Normal,vertLine:{color:'#586c83',labelBackgroundColor:'#344456'},horzLine:{color:'#586c83',labelBackgroundColor:'#344456'}},rightPriceScale:{borderColor:'#e2e8ec',scaleMargins:{top:.17,bottom:.10}},timeScale:{borderColor:'#e2e8ec',timeVisible:true,secondsVisible:false,rightOffset:8,barSpacing:7,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
   homePrice=new PriceChart(chart,{type:candleType,onReplace:replaceHomePrice});candleSeries=homePrice.series;
   positionPriceLines=new PositionPriceLines(candleSeries,{lineStyle:L.LineStyle.Dashed,summary:$('#chart-entry-summary')});
-  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,paneLayout:{read:()=>chartWorkspace.view(currentMarket,currentSymbol,currentInterval).panes},onPaneCount:count=>$('.chart-body').style.setProperty('--study-extra-height',Math.max(0,count-1)*110+'px')});
+  homeStudies=new StudyRenderer(chart,{legend:$('#indicator-legend'),priceSeries:candleSeries,followCrosshair:false,paneLayout:{read:()=>chartWorkspace.view(currentMarket,currentSymbol,currentInterval).panes}});
   currentPriceLine=new CurrentPriceLine(candleSeries);candleInspector=installCandleInspector($('#chart-inspector'),{chart,studies:homeStudies,series:candleSeries,isDrawing:()=>drawingMode,chartElement:$('#chart')});
   chartExecutions=new ChartExecutions(candleSeries,{toggle:$('#chart-executions-toggle'),inspector:candleInspector});
   homeHistory=new ChartHistory({request:api,getRange:()=>chart.timeScale().getVisibleLogicalRange(),onChange:(snapshot,context)=>{marketSnapshot=snapshot;drawHomeChart(snapshot,context.market,context.symbol,context.interval,false);},setRange:range=>{chartRestoring=true;chart.timeScale().setVisibleLogicalRange(range);chartRestoring=false;persistChartView();}});
@@ -579,7 +580,8 @@ document.addEventListener('keydown',event=>{
   if(event.target.id==='formula-source'&&event.key==='Tab'){event.preventDefault();const textarea=event.target;textarea.setRangeText('  ',textarea.selectionStart,textarea.selectionEnd,'end');currentRule().formula=textarea.value;updateFormulaFeedback();}
 });
 $('#fit-chart').addEventListener('click',()=>applyChartRange('all'));
-installChartFullscreen($('.chart-panel'),$('#fullscreen-chart'),{onChange:()=>requestAnimationFrame(()=>homeStudies?.layout())});
+const chartHeight=installChartHeight($('.chart-panel'),$('#chart-height-resize'));
+installChartFullscreen($('.chart-panel'),$('#fullscreen-chart'),{onChange:()=>{chartHeight.refresh();requestAnimationFrame(()=>homeStudies?.layout());}});
 $('#clear-lines').addEventListener('click',()=>{drawnLines.forEach(l=>candleSeries.removePriceLine(l));drawnLines=[];persistChartView();toast('추가한 수평선을 지웠습니다.');});
 $('#mobile-market-button').addEventListener('click',openMarket);
 $('#close-market').addEventListener('click',closeMarket);

@@ -4,7 +4,15 @@ import {koreanChartTime,koreanTickMark,koreanTimeOptions,CurrentPriceLine,Candle
 import {accountView,withAccountEquity} from '../backend/account-view.mjs';
 import {TradingEngine} from '../backend/engine.mjs';
 import {emptyState} from '../backend/store.mjs';
+import {candleLegendValues} from '../public/price-chart-legend.js';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,a+' != '+b);
+
+test('price legend formats the selected displayed OHLC using the current instrument precision',()=>{
+ const raw={open:.000123,high:.000129,low:.000121,close:.000125},heikin={open:.000124,high:.000129,low:.000121,close:.0001245},format=value=>value.toFixed(7);
+ assert.deepEqual(candleLegendValues(raw,format).map(v=>v.label+' '+v.text),['O 0.0001230','H 0.0001290','L 0.0001210','C 0.0001250']);
+ assert.equal(candleLegendValues(heikin,format).at(-1).text,'0.0001245');assert.equal(candleLegendValues(raw,value=>value.toFixed(2))[0].text,'0.00');
+ assert.deepEqual(candleLegendValues(undefined).map(v=>v.text),['—','—','—','—']);assert.equal(candleLegendValues({open:0,high:Infinity,low:null,close:NaN})[0].text,'0');assert.equal(candleLegendValues({high:Infinity})[1].text,'—');
+});
 test('axis ticks and crosshair use KST across midnight and year boundaries without shifting candle timestamps',()=>{
  const t=Date.parse('2026-11-04T15:30:45Z')/1000;
  assert.equal(koreanTickMark(t,3),'00:30');assert.equal(koreanTickMark(t,4),'00:30:45');assert.equal(koreanTickMark(t,2),'11/5');assert.equal(koreanChartTime(t),'2026.11.05 00:30 KST');

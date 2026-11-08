@@ -1,5 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {createStudy,studyPlots} from '../public/chart-studies.js';import {compactStudyLegend} from '../public/compact-study-legend.js';
+import {createStudy,studyPlots} from '../public/chart-studies.js';import {compactStudyLegend,studyLegendHeading,studyLegendEntryText} from '../public/compact-study-legend.js';
+
+test('inline readings keep MA periods and script output names, use price tick precision, and preserve pane units',()=>{
+ const bb=createStudy('BB'),format=value=>value.toFixed(5),model=compactStudyLegend(bb,[{key:'upper',value:.12345}],format);assert.equal(studyLegendHeading(bb,model),'BB 20 SMA close 2');assert.equal(studyLegendEntryText(bb,model.entries[0]),'0.12345');
+ const ma=createStudy('MA_SET'),m=compactStudyLegend(ma,[{key:'ma0',value:1.23456}],format);assert.equal(studyLegendEntryText(ma,m.entries[0]),'5 1.23456');
+ const script=createStudy('SCRIPT'),s=compactStudyLegend(script,[{key:'line0',value:1}]);assert.match(studyLegendEntryText(script,s.entries[0]),/ 1$/);
+ const slope=createStudy('NW_SLOPE'),p=compactStudyLegend(slope,[{key:'main',value:0}],format);assert.equal(p.entries[0].text,'0 %/봉');assert(studyLegendHeading(slope,p));
+});
 test('moving averages share a heading and keep edited periods, colors and keyed tooltip values',()=>{
  const s=createStudy('MA_SET');s.params.average='VWMA';s.params.period0=6;s.styles.ma1.visible=false;s.styles.ma0.color='#123456';const before=structuredClone(s),r=compactStudyLegend(s,[{key:'ma4',value:220},{key:'ma0',value:0},{key:'ma2',value:60.25}]);
  assert.equal(r.heading,'VWMA');assert.deepEqual(r.entries.map(e=>e.label),['6','60','120','220']);assert.equal(r.entries[0].fullLabel,'VWMA 6선');assert.equal(r.entries[0].color,'#123456');assert.deepEqual(r.entries.map(e=>e.text),['0','60.25','—','220']);assert.deepEqual(s,before);

@@ -21,7 +21,7 @@ function initialize(){
   chart=L.createChart($('#modal-chart'),{autoSize:true,layout:{background:{type:'solid',color:'#fff'},textColor:'#7a887d',fontFamily:'Segoe UI, sans-serif',fontSize:11,attributionLogo:true,panes:{separatorColor:'#edf0eb',enableResize:true}},grid:{vertLines:{color:'#eef2eb'},horzLines:{color:'#eef2eb'}},rightPriceScale:{borderColor:'#e5ebdf'},timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#e5ebdf',rightOffset:6,...koreanTimeOptions().timeScale},localization:koreanTimeOptions().localization});
   priceLayer=new PriceChart(chart,{onReplace:replacePrice});series=priceLayer.series;
   positionLines=new PositionPriceLines(series,{lineStyle:L.LineStyle.Dashed});
-  studies=new StudyRenderer(chart,{legend:$('#modal-study-legend'),priceSeries:series,context:'modal',followCrosshair:false,onPaneCount:count=>$('.modal-chart-stage').style.setProperty('--study-min-height',(280+count*105)+'px')});
+  studies=new StudyRenderer(chart,{legend:$('#modal-study-legend'),priceSeries:series,context:'modal',followCrosshair:false});
   fillTimeframeSelect($('#modal-interval'));
   currentPriceLine=new CurrentPriceLine(series);inspector=installCandleInspector($('#modal-chart-inspector'),{chart,studies,series,chartElement:$('#modal-chart')});executions=new ChartExecutions(series,{toggle:$('#modal-chart-executions-toggle'),inspector});
   history=new ChartHistory({request:api,getRange:()=>chart.timeScale().getVisibleLogicalRange(),onChange:data=>{snapshot=data;draw();},setRange:range=>{drawing=true;chart.timeScale().setVisibleLogicalRange(range);drawing=false;}});

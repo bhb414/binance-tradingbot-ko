@@ -7,7 +7,7 @@ import {CYCLE_PROJECTION_PLOTS} from './cycle-projection.js';
 import {CycleRatioGrid} from './cycle-ratio-grid.js';
 import {cycleReferenceMessage,cycleReadings,cycleLegendValues,cycleElapsedColor} from './cycle-reference.js';
 import {PriceChartLegend} from './price-chart-legend.js';
-import {compactStudyLegend} from './compact-study-legend.js';
+import {compactStudyLegend,studyLegendHeading,studyLegendEntryText} from './compact-study-legend.js';
 import {chartLabelPreferences,applyStudyAxisLabels,applyStudyCrosshairDots} from './chart-labels.js';
 import {overlayRows,hasPaneOverlays,StudyPaneOverlays} from './study-overlay-targets.js';
 import {StudyBackgrounds} from './study-backgrounds.js';
@@ -21,19 +21,19 @@ const legendPreference='fw-study-legend-collapsed-v1',renderers=new Set();
 let labelsCollapsed=false;try{labelsCollapsed=localStorage.getItem(legendPreference)==='1';}catch{}
 
 export class StudyRenderer {
-  constructor(chart,{legend,priceSeries,context='home',onPaneCount=()=>{},followCrosshair=true,paneLayout=null}){
-    this.chart=chart;this.legend=legend;this.paneLayout=paneLayout;this.onPaneCount=onPaneCount;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
+  constructor(chart,{legend,priceSeries,context='home',followCrosshair=true,paneLayout=null}){
+    this.chart=chart;this.legend=legend;this.paneLayout=paneLayout;this.series=[];this.rows=[];this.candles=[];this.interval='15m';this.candleType='standard';this.config='';
     this.context=context;legend.dataset.studyContext=context;legend.classList.add('study-legend');legend.setAttribute('aria-label','가격 그래프·지표 목록');legend.replaceChildren();
     this.list=document.createElement('div');this.list.id=legend.id+'-rows';this.list.className='study-legend-rows';this.paneLegends=new Map();
     this.toggle=document.createElement('button');this.toggle.type='button';this.toggle.className='study-legend-toggle';this.toggle.setAttribute('aria-controls',this.list.id);
     this.toggle.addEventListener('click',()=>{labelsCollapsed=!labelsCollapsed;try{localStorage.setItem(legendPreference,labelsCollapsed?'1':'0');}catch{}for(const renderer of renderers)renderer.syncLabels();});
     this.menu=document.createElement('div');this.menu.className='study-legend-menu';this.menu.hidden=true;this.menu.setAttribute('role','group');this.menu.id=legend.id+'-menu';
     this.priceLegend=new PriceChartLegend();legend.append(this.priceLegend.element,this.list,this.toggle,this.menu);
-    legend.addEventListener('click',event=>{const button=event.target.closest('[data-study-menu]');if(button){const row=this.rows.find(row=>row.study.id===button.dataset.studyMenu);if(row)this.openMenu(row,button);}else if(event.target.closest('[data-study-edit],[data-study-toggle],[data-study-remove]'))this.closeMenu();});
-    document.addEventListener('click',event=>{if(!this.menu.contains(event.target)&&!event.target.closest('[data-study-menu]'))this.closeMenu();});
+    legend.addEventListener('click',event=>{const element=event.target.closest('.study-chart-legend.is-compact');if(element&&!event.target.closest('.study-legend-actions')&&matchMedia('(hover:none), (pointer:coarse), (max-width:540px)').matches&&!element.classList.contains('is-selected')&&event.detail!==0){for(const row of this.rows)row.element.classList.remove('is-selected');element.classList.add('is-selected');event.preventDefault();event.stopPropagation();return;}const button=event.target.closest('[data-study-menu]');if(button){const row=this.rows.find(row=>row.study.id===button.dataset.studyMenu);if(row)this.openMenu(row,button);}else if(event.target.closest('[data-study-edit],[data-study-toggle],[data-study-remove]'))this.closeMenu();});
+    document.addEventListener('click',event=>{if(!this.menu.contains(event.target)&&!event.target.closest('[data-study-menu]'))this.closeMenu();if(!this.legend.contains(event.target))for(const row of this.rows)row.element.classList.remove('is-selected');});
     legend.addEventListener('keydown',event=>{if(event.key==='Escape'&&!this.menu.hidden){event.stopPropagation();const button=this.menuButton;this.closeMenu();button?.focus();}});renderers.add(this);this.syncLabels();
     this.priceSeries=priceSeries;this.signals=new StudySignals(priceSeries);this.backgrounds=new StudyBackgrounds(priceSeries);this.unsubscribe=subscribeStudies(()=>this.update(this.candles,this.interval,this.candleType));this.unsubscribeAxisLabels=chartLabelPreferences.subscribe(value=>{applyStudyAxisLabels(this.rows,value.studies);applyStudyCrosshairDots(this.rows,value.studyCrosshairDots!==false);});
-    this.observer=new ResizeObserver(()=>{this.layout();const width=legend.parentElement.clientWidth;if(width!==this.containerWidth){this.containerWidth=width;this.revealFuture();}});this.observer.observe(legend.parentElement);
+    this.observer=new ResizeObserver(()=>{this.layout();const width=legend.parentElement.clientWidth;if(width!==this.containerWidth){this.containerWidth=width;this.revealFuture();}});this.observer.observe(legend.parentElement);this.observer.observe(this.priceLegend.element);
     this.pointerHandler=()=>requestAnimationFrame(()=>this.layout());legend.parentElement.addEventListener('pointerup',this.pointerHandler);
     if(followCrosshair)chart.subscribeCrosshairMove(param=>this.valuesAt(param.time));
   }
@@ -64,13 +64,13 @@ export class StudyRenderer {
         const model=compactStudyLegend(study),label=esc(studyLabel(study));element.classList.add('is-compact');
         element.innerHTML='<button type="button" class="study-legend-heading" data-study-edit="'+study.id+'" aria-label="'+label+' 설정 열기">'+esc(model.heading||studyLabel(study))+'</button><span class="study-legend-entries"></span><output class="study-legend-status" hidden></output><button type="button" class="study-icon-button study-legend-menu-button" data-study-menu="'+study.id+'" aria-label="'+label+' 메뉴" aria-expanded="false" aria-controls="'+this.menu.id+'" title="지표 설정·삭제">⋯</button>';
         const controls=document.createElement('span');controls.innerHTML=studyControls(study);const groupToggle=controls.querySelector('[data-study-toggle]');groupToggle.classList.add('study-group-toggle');groupToggle.setAttribute('aria-pressed',String(study.visible));
-        if(study.type==='MA_SET'){const label=studyLabel(study)+' 묶음 전체 '+(study.visible?'숨기기':'표시하기');groupToggle.setAttribute('aria-label',label);groupToggle.title=label+' · 각 기간 체크는 유지됩니다';}if(!study.visible)groupToggle.querySelector('svg').insertAdjacentHTML('beforeend','<path d="M3 3l18 18"/>');element.insertBefore(groupToggle,element.querySelector('[data-study-menu]'));
+        if(study.type==='MA_SET'){const label=studyLabel(study)+' 묶음 전체 '+(study.visible?'숨기기':'표시하기');groupToggle.setAttribute('aria-label',label);groupToggle.title=label+' · 각 기간 체크는 유지됩니다';}if(!study.visible)groupToggle.querySelector('svg').insertAdjacentHTML('beforeend','<path d="M3 3l18 18"/>');const actions=document.createElement('span');actions.className='study-legend-actions';actions.append(groupToggle,controls.querySelector('[data-study-edit]'),controls.querySelector('[data-study-remove]'),element.querySelector('[data-study-menu]'));element.append(actions);
         row.heading=element.querySelector('.study-legend-heading');row.heading.hidden=!model.heading;row.legendList=element.querySelector('.study-legend-entries');
         row.legendEntries=model.entries.map(item=>{const button=document.createElement('button');button.type='button';button.className='study-legend-name';button.dataset.studyEdit=study.id;button.dataset.legendPlot=item.key;button.setAttribute('aria-label',item.fullLabel+' 설정 열기');button.style.color=item.color;button.innerHTML='<i style="background:'+item.color+'"></i>'+'<span>'+esc(item.label)+'</span>';row.legendList.append(button);return {key:item.key,button,fullLabel:item.fullLabel};});
         row.element=element;row.output=element.querySelector('output');if(study.type==='CYCLE'){row.preview=document.createElement('output');row.preview.className='study-cycle-preview';row.preview.hidden=true;row.preview.setAttribute('aria-label','십자선 위치 교차 필요가격');element.append(row.preview);}this.rows.push(row);
         if(!this.paneLegends.has(index)){const container=document.createElement('div');container.className='study-pane-legend';container.dataset.legendPane=index;this.list.append(container);this.paneLegends.set(index,container);}this.paneLegends.get(index).append(element);
       }
-      this.onPaneCount(pane);this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
+      this.chart.panes().forEach((item,index)=>{if(!index){item.setStretchFactor(3.3);return;}const row=this.rows.find(row=>row.pane===index),height=heights.get(row?.study.id);item.setStretchFactor(height?height:(row?.study.type==='VOLUME'?0.72:row?.study.type==='CYCLE'?2.2:1.15));});
       restorePaneRatios(this.chart,this.rows,this.paneLayout?.read());this.config=config;if(range)this.chart.timeScale().setVisibleLogicalRange(range);
     }
     const signalRows=[];for(const row of this.rows){const data=studyData(row.study,candles,candleType,interval);signalRows.push({study:row.study,data,active:studyActive(row.study,interval)});row.error=data.error;row.forecast=data.forecast;row.cyclePriceContext=data.cyclePriceContext;const priceSignature=data.cyclePriceContext?JSON.stringify([row.study.params.average,row.study.params.fast,row.study.params.slow,row.study.source,data.cyclePriceContext.kind,data.cyclePriceContext.referencePrice,data.cyclePriceContext.candles,data.cyclePriceContext.volumes]):'';if(priceSignature!==row.priceSignature){row.priceSignature=priceSignature;row.priceSolver=data.cyclePriceContext?createCyclePriceSolver(data.cyclePriceContext):null;}row.cycleValues=data.cycle?new Map(data.cycle.map(point=>[point.time,point])):null;row.element.title=data.error||(row.study.type==='SCRIPT'?row.study.params.script:row.study.type==='FORMULA'?row.study.params.formula:data.caption||data.forecast?.caption||'');row.values.clear();for(const plot of data.plots){for(const point of plot.data){if(!Number.isFinite(point.value))continue;if(!row.values.has(point.time))row.values.set(point.time,[]);row.values.get(point.time).push({key:plot.key,value:point.value});}const item=row.plots.find(item=>item.key===plot.key);if(item){const priceFormat=studyPriceFormat(row.study,this.priceSeries?.options().priceFormat);if(priceFormat)item.series.applyOptions({priceFormat});item.data=plot.data;item.histogram=!!plot.histogram;item.series.setData(plot.data);}}
@@ -89,14 +89,14 @@ export class StudyRenderer {
   closeMenu(){if(!this.menu)return;this.menu.hidden=true;this.menuButton?.setAttribute('aria-expanded','false');this.menuButton=null;}
   openMenu(row,button){
     const alreadyOpen=this.menuButton===button&&!this.menu.hidden;this.closeMenu();if(alreadyOpen)return;
-    this.menuButton=button;this.menu.innerHTML=studyControls(row.study);this.menu.querySelector('[data-study-toggle]').remove();this.menu.setAttribute('aria-label',studyLabel(row.study)+' 관리');this.menu.hidden=false;button.setAttribute('aria-expanded','true');
+    this.menuButton=button;this.menu.innerHTML=studyControls(row.study);this.menu.setAttribute('aria-label',studyLabel(row.study)+' 관리');this.menu.hidden=false;button.setAttribute('aria-expanded','true');
     const parent=this.legend.getBoundingClientRect(),anchor=button.getBoundingClientRect();this.menu.style.left=Math.max(4,Math.min(anchor.left-parent.left,parent.width-this.menu.offsetWidth-4))+'px';this.menu.style.top=Math.max(4,Math.min(anchor.bottom-parent.top,parent.height-this.menu.offsetHeight-4))+'px';
   }
   syncLabels(){
-    if(labelsCollapsed)this.closeMenu();this.list.hidden=labelsCollapsed;this.toggle.hidden=this.rows.length===0;
+    if(labelsCollapsed)this.closeMenu();this.list.hidden=labelsCollapsed;this.legend.classList.toggle('is-collapsed',labelsCollapsed);this.toggle.hidden=this.rows.length===0;
     const label=labelsCollapsed?'지표 이름 펼치기':'지표 이름 접기';
     this.toggle.setAttribute('aria-label',label);this.toggle.setAttribute('aria-expanded',String(!labelsCollapsed));this.toggle.title=label+' · 지표 선은 그대로 표시합니다';
-    this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+'<span>지표명 '+this.rows.length+'</span>';this.layout();
+    this.toggle.innerHTML=studyIcon(labelsCollapsed?'down':'up')+(labelsCollapsed?'<span>'+this.rows.length+'</span>':'');this.layout();
   }
   clear(){this.signals.clear();this.backgrounds.clear();this.valueTime=undefined;this.candles=[];for(const series of this.series)series.setData([]);for(const row of this.rows){row.cyclePriceContext=null;row.priceSolver=null;row.priceSignature='';row.priceArrows?.clear();if(row.preview)row.preview.hidden=true;row.overlays?.clear();row.fill?.update([],row.study.fill);for(const plot of row.plots){plot.data=[];plot.segments?.update([],row.study.styles[plot.key]);}row.values.clear();row.output.textContent='—';for(const entry of row.legendEntries||[])entry.button.title=entry.fullLabel+' · —';}}
   setProjectionPreview(reading){
@@ -111,25 +111,30 @@ export class StudyRenderer {
     row.priceSolver??=createCyclePriceSolver(row.cyclePriceContext);
     return {...cyclePriceReading(row.study,row.cyclePriceContext,row.priceSolver,bars,row.cycleValues?.get(this.candles.at(-1)?.time)),studyId:row.study.id,label:row.study.params.average+' '+row.study.params.fast+' / '+row.study.params.slow,time:event.time};
   }
-  readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time);return {label:studyLabel(row.study),value:cycleReadings(row.study,meta)};}const points=row.values.get(time??this.candles.at(-1)?.time),definition={...STUDIES[row.study.type],plots:studyPlots(row.study)},visible=(points||[]).filter(p=>row.study.styles[p.key].visible);return {label:studyLabel(row.study),value:row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(p.value)<.1?8:2)})+(definition.unit?' '+definition.unit:'')).join(' / '):'—'};});}
+  readingsAt(time){return this.rows.filter(row=>studyActive(row.study,this.interval)).map(row=>{
+    if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time);return {label:studyLabel(row.study),value:cycleReadings(row.study,meta)};}
+    const points=row.values.get(time??this.candles.at(-1)?.time),definition={...STUDIES[row.study.type],plots:studyPlots(row.study)},visible=(points||[]).filter(p=>row.study.styles[p.key].visible);
+    let value=row.error?'계산 확인 필요':visible.length?visible.map(p=>(definition.plots.length>1?(definition.plots.find(plot=>plot.key===p.key)?.label||p.key)+' ':'')+p.value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[row.study.type].precision??(row.study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(row.study.type)?8:Math.abs(p.value)<.1?8:2)})+(definition.unit?' '+definition.unit:'')).join(' / '):'—';
+    if(!row.error&&row.study.params.showCrossing&&row.forecast?.comparison&&(time==null||time===this.candles.at(-1)?.time))value+=' · '+row.forecast.comparison.message;
+    return {label:studyLabel(row.study),value};
+  });}
   valuesAt(time){
     this.valueTime=time;
     for(const row of this.rows){
-      const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time),model=compactStudyLegend(row.study,points),status=row.error?'계산 확인 필요':!active?(row.study.visible?(row.study.timeframes.includes(this.interval)?'선 모두 숨김':'이 주기 숨김'):'숨김'):'';
-      row.legendList.hidden=!!status;row.heading.hidden=!status&&!model.heading;row.output.hidden=!status;row.output.textContent=status;if(!status&&row.study.type==='CYCLE'){const message=cycleReferenceMessage(row.study,row.cycleValues?.get(time??this.candles.at(-1)?.time));row.output.hidden=!message;row.output.textContent=message;}
-      const readings=new Map(model.entries.map(item=>[item.key,item.text]));for(const entry of row.legendEntries){const value=readings.get(entry.key)||'—',title=entry.fullLabel+' · '+value;if(entry.button.title!==title){entry.button.title=title;entry.button.setAttribute('aria-description',value);}if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time),texts=cycleLegendValues(row.study,meta),text=texts[entry.key];entry.button.querySelector('span').textContent=text;entry.button.title=cycleReadings(row.study,meta);entry.button.setAttribute('aria-description',text);if(entry.key==='elapsed'){const color=cycleElapsedColor(row.study,meta);entry.button.style.color=color;entry.button.querySelector('i').style.background=color;}}}
-      const forecastReading=!status&&row.study.params.showCrossing&&row.forecast?.comparison&&(time==null||time===this.candles.at(-1)?.time);row.output.classList.toggle('study-forecast-reading',!!forecastReading);if(forecastReading){row.output.hidden=false;row.output.textContent=row.forecast.comparison.message;}
+      const active=studyActive(row.study,this.interval),points=row.values.get(time??this.candles.at(-1)?.time),model=compactStudyLegend(row.study,points,value=>this.priceSeries.priceFormatter().format(value)),status=row.error?'계산 확인 필요':!active?(row.study.visible?(row.study.timeframes.includes(this.interval)?'선 모두 숨김':'이 주기 숨김'):'숨김'):'';
+      row.legendList.hidden=!!status;row.heading.hidden=false;row.heading.textContent=studyLegendHeading(row.study,model);row.output.hidden=!status;row.output.textContent=status;if(!status&&row.study.type==='CYCLE'){const message=cycleReferenceMessage(row.study,row.cycleValues?.get(time??this.candles.at(-1)?.time));row.output.hidden=!message;row.output.textContent=message;}
+      const readings=new Map(model.entries.map(item=>[item.key,item]));for(const entry of row.legendEntries){const reading=readings.get(entry.key),value=reading?.text||'—',title=entry.fullLabel+' · '+value;const label=reading?studyLegendEntryText(row.study,reading):'—';const span=entry.button.querySelector('span');if(span.textContent!==label)span.textContent=label;if(entry.button.title!==title){entry.button.title=title;entry.button.setAttribute('aria-description',value);}if(row.study.type==='CYCLE'){const meta=row.cycleValues?.get(time??this.candles.at(-1)?.time),texts=cycleLegendValues(row.study,meta),text=texts[entry.key];entry.button.querySelector('span').textContent=text;entry.button.title=cycleReadings(row.study,meta);entry.button.setAttribute('aria-description',text);if(entry.key==='elapsed'){const color=cycleElapsedColor(row.study,meta);entry.button.style.color=color;entry.button.querySelector('i').style.background=color;}}}
       if(row.forecast&&!row.error&&(time==null||time===this.candles.at(-1)?.time))row.element.title=row.forecast.caption;
     }
   }
   layout(){
     const panes=this.chart.panes(),tops=[];let y=0;for(const pane of panes){tops.push(y);y+=pane.getHeight()+1;}
-    const rowHeight=matchMedia('(max-width:540px)').matches?26:22;this.priceLegend.element.style.top='33px';this.legend.style.setProperty('--study-legend-row-height',rowHeight+'px');
+    const rowHeight=matchMedia('(max-width:540px)').matches?26:22,priceHeight=Math.max(rowHeight,this.priceLegend.element.getBoundingClientRect().height+2);this.priceLegend.element.style.top='9px';this.legend.style.setProperty('--study-legend-row-height',rowHeight+'px');
 
     for(const [index,container]of this.paneLegends){
-      const top=(tops[index]||0)+(index?5:33+rowHeight),height=panes[index]?.getHeight()||300;container.style.top=top+'px';container.style.maxHeight=Math.max(rowHeight,Math.min(150,height-(index?10:33+rowHeight)-5))+'px';
+      const top=(tops[index]||0)+(index?5:9+priceHeight+3),height=panes[index]?.getHeight()||300;container.style.top=top+'px';container.style.maxHeight=Math.max(rowHeight,Math.min(150,height-(index?10:9+priceHeight+3)-5))+'px';
       container.classList.toggle('is-scrollable',container.scrollHeight>container.clientHeight+1);
     }
-    this.toggle.style.top='33px';this.toggle.style.left='auto';this.toggle.style.right=matchMedia('(max-width:540px)').matches?'65px':'78px';
+    const priceRows=this.paneLegends.get(0),bottom=9+priceHeight+3+(labelsCollapsed?0:priceRows?.getBoundingClientRect().height||0);this.toggle.style.top=Math.min(Math.max(9,bottom+3),Math.max(9,(panes[0]?.getHeight()||300)-28))+'px';this.toggle.style.left=matchMedia('(max-width:540px)').matches?'8px':'12px';this.toggle.style.right='auto';
   }
 }

@@ -26,10 +26,39 @@
 .chart-market-summary .market-stats span{font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .chart-market-summary .mobile-market-toggle{flex:none;width:26px;height:26px}
 .chart-panel.is-chart-fullscreen>.chart-market-summary{flex-shrink:0}
+/* Adding/removing panes redistributes this one height instead of growing it. */
+.chart-panel:not(.is-chart-fullscreen)>.chart-body{height:var(--chart-body-height,clamp(260px,65dvh,1000px));min-height:0;max-height:none;flex:none;overflow:hidden}
+.chart-container{min-height:0;overflow:hidden}
+.chart-height-resizer{display:flex;align-items:center;justify-content:center;gap:7px;height:18px;flex:none;cursor:ns-resize;touch-action:none;user-select:none;border-top:1px solid #e7eee8;background:#fafcf9;color:#87988c;font-size:9px}
+.chart-height-resizer:before,.chart-height-resizer:after{content:"";width:24px;border-top:2px solid #c2cfc5;border-bottom:1px solid #c2cfc5;height:4px}
+.chart-height-resizer:hover,.chart-height-resizer:focus-visible{background:#edf5ef;color:#50775e}
+.chart-height-dragging,.chart-height-dragging *{cursor:ns-resize!important;user-select:none!important}
+.chart-panel.is-chart-fullscreen>.chart-height-resizer{display:none}
+.modal-chart-scroll{overflow:hidden}
+.modal-chart-stage,.modal-chart-stage .modal-chart-canvas{height:100%;min-height:0}
+.chart-caption{display:none}
+.study-legend>.price-chart-legend{height:auto;min-height:var(--study-legend-row-height,22px);max-width:calc(100% - 80px);flex-wrap:wrap;row-gap:1px}
+.price-legend-name{font-size:12px;color:#33483e}
+.price-legend-ohlc{display:inline-flex;flex-wrap:wrap;column-gap:7px;row-gap:1px;max-width:100%;font-variant-numeric:tabular-nums;font-size:11px}
+.price-legend-ohlc>span{white-space:nowrap}
+.price-legend-ohlc output{display:inline;font:inherit;color:var(--candle-color)}
+.price-legend-change{font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.price-legend-toggle{opacity:0;transition:opacity .1s}
+.price-chart-legend:hover .price-legend-toggle,.price-chart-legend:focus-within .price-legend-toggle,.price-chart-legend.is-muted .price-legend-toggle{opacity:1}
 /* Stack complete indicator rows from the same left edge in every pane. */
 .study-pane-legend{flex-direction:column;flex-wrap:nowrap;align-items:flex-start;row-gap:1px;column-gap:0}
 .study-pane-legend .study-chart-legend.is-compact{flex:none;width:fit-content;min-height:var(--study-legend-row-height,22px);align-content:center}
 .study-pane-legend .study-chart-legend:hover,.study-pane-legend .study-chart-legend:focus-within{background:#ffffffc9}
+.study-pane-legend .study-legend-heading{color:#344b3f;font-size:12px}
+.study-pane-legend .study-legend-name{font-size:12px;font-variant-numeric:tabular-nums}
+.study-pane-legend .study-legend-name i{display:none}
+.study-legend-actions{display:none;position:absolute;right:0;top:0;z-index:3;align-items:center;gap:0;border:1px solid #dce5de;border-radius:4px;background:#fff;box-shadow:0 1px 4px #24453312}
+.study-chart-legend:hover>.study-legend-actions,.study-chart-legend:focus-within>.study-legend-actions,.study-chart-legend.is-selected>.study-legend-actions{display:inline-flex}
+.study-pane-legend .study-legend-actions .study-icon-button{width:25px;height:var(--study-legend-row-height,22px);padding:3px}
+.study-pane-legend .study-legend-actions .icon{width:14px;height:14px}
+.study-legend-menu{z-index:7}
+.study-legend>.study-legend-toggle{background:#ffffffd9;min-width:25px;justify-content:center}
+@media(max-width:540px){.study-pane-legend .study-legend-actions .study-icon-button{width:30px;height:28px}.price-legend-toggle{opacity:1}}
 /* Keep the chart's existing studies visible while browsing the catalog. */
 .study-browser-dialog{width:min(1080px,calc(100vw - 24px))}
 .study-browser-dialog .study-browser-body{display:grid;grid-template-columns:135px minmax(0,1fr) 280px;grid-template-areas:"categories catalog current";min-height:0}
