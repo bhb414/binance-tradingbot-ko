@@ -52,7 +52,7 @@
 .study-pane-legend .study-legend-heading{color:#344b3f;font-size:12px}
 .study-pane-legend .study-legend-name{font-size:12px;font-variant-numeric:tabular-nums}
 .study-pane-legend .study-legend-name i{display:none}
-.study-legend-actions{display:none;position:absolute;right:0;top:0;z-index:3;align-items:center;gap:0;border:1px solid #dce5de;border-radius:4px;background:#fff;box-shadow:0 1px 4px #24453312}
+.study-legend-actions{display:none;position:static;flex:none;align-items:center;gap:0;border:0;border-radius:3px;background:transparent;box-shadow:none;opacity:1}
 .study-chart-legend:hover>.study-legend-actions,.study-chart-legend:focus-within>.study-legend-actions,.study-chart-legend.is-selected>.study-legend-actions{display:inline-flex}
 .study-pane-legend .study-legend-actions .study-icon-button{width:25px;height:var(--study-legend-row-height,22px);padding:3px}
 .study-pane-legend .study-legend-actions .icon{width:14px;height:14px}
@@ -61,13 +61,18 @@
 .study-legend-parameter+.study-legend-reading:before{content:" ";white-space:pre}
 /* TradingView-style single rows; long legends scroll instead of growing. */
 .study-pane-legend{scrollbar-width:none}
+.study-pane-legend.is-scrollable{background:transparent}
 .study-legend>.price-chart-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:calc(100% - 65px)}
 .price-chart-legend>*{flex:none}
 .price-legend-kind{order:0}.price-legend-name{order:1}.price-legend-toggle{order:2}.price-legend-status{order:3}.price-legend-ohlc{order:4}.price-legend-change{order:5}
 .price-legend-ohlc{flex-wrap:nowrap;max-width:none}
-.study-pane-legend .study-chart-legend.is-compact{width:100%;max-width:100%;flex-wrap:nowrap;white-space:nowrap;column-gap:7px}
+.study-pane-legend .study-chart-legend.is-compact{width:max-content;max-width:100%;flex-wrap:nowrap;white-space:nowrap;column-gap:7px}
 .study-pane-legend .study-legend-heading,.study-pane-legend .study-legend-name,.study-pane-legend .study-legend-status{flex:none;max-width:none}
 .study-pane-legend .study-legend-name{column-gap:0;overflow:visible}
+/* Hover takes precedence over retained touch selection or keyboard focus. */
+.study-legend:has(.study-chart-legend.is-compact:hover) .study-chart-legend.is-compact:not(:hover){background:transparent}
+.study-legend:has(.study-chart-legend.is-compact:hover) .study-chart-legend.is-compact:not(:hover)>.study-legend-actions{display:none}
+.study-legend:not(:has(.study-chart-legend.is-compact:hover)):has(.study-chart-legend.is-compact:focus-within) .study-chart-legend.is-compact:not(:focus-within)>.study-legend-actions{display:none}
 @media(max-width:540px){.study-pane-legend .study-legend-actions .study-icon-button{width:30px;height:28px}.price-legend-toggle{opacity:1}}
 /* Keep the chart's existing studies visible while browsing the catalog. */
 .study-browser-dialog{width:min(1080px,calc(100vw - 24px))}
