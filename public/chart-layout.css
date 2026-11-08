@@ -1,0 +1,80 @@
+/* One ordered strip shared by normal and fullscreen home charts. */
+.chart-panel>.chart-toolbar{display:block;height:auto;min-height:48px;padding:0;white-space:nowrap}
+.chart-toolbar-scroll{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:48px;padding:6px 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;overscroll-behavior-x:contain}
+.chart-toolbar-scroll>*{flex:none}
+.chart-toolbar-scroll>.chart-instrument{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:210px;padding:3px 2px;color:#2c4943}
+.chart-instrument .coin-icon{width:22px;height:22px;font-size:16px}
+.chart-instrument strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chart-instrument small{display:none}
+.chart-instrument>.icon{width:12px;height:12px;margin-left:1px}
+.chart-toolbar-scroll>.chart-current-quote{display:flex;flex-direction:row;align-items:baseline;gap:7px;padding-right:10px;border-right:1px solid #e5ece7}
+.chart-current-quote strong{font-size:19px;letter-spacing:-.4px;line-height:1.2}
+.chart-current-quote>span{font-size:10px}
+.chart-toolbar-scroll .toolbar-button{display:inline-flex;align-items:center;gap:5px;width:auto;min-height:32px;padding:5px 7px;font-size:11px;white-space:nowrap}
+.chart-toolbar-scroll .toolbar-button .icon{width:16px;height:16px}
+.chart-toolbar-scroll>.icon-button{width:30px;height:32px;margin:0}
+.chart-toolbar-scroll .chart-trades-toggle{margin:0 3px;min-height:32px;font-size:11px}
+.chart-timeframe-button{display:inline-flex;align-items:center;gap:10px;min-height:32px;padding:5px 10px;border:1px solid #e5ece7;border-radius:5px;background:#fff;color:#597365;white-space:nowrap;font-size:11px}
+.chart-timeframe-button i{font-size:12px;font-style:normal;color:#94a497}
+.chart-timeframe-picker .interval-more-menu{width:min(330px,calc(100vw - 16px));right:auto;z-index:1200}
+.interval-more-menu button[aria-checked=true]{background:#e4f3e9;color:#258358;font-weight:600}
+.chart-type-menu,.chart-label-panel{z-index:1200}
+.chart-market-summary{display:flex;align-items:center;gap:10px;padding:5px 12px;border-bottom:1px solid #edf1eb;min-width:0;background:#fff}
+.chart-market-summary>.market-stats{display:flex;align-items:center;gap:20px;min-width:0;overflow-x:auto;scrollbar-width:thin;flex:1}
+.chart-market-summary>.market-stats>div:nth-child(n){display:flex;flex-direction:row;align-items:baseline;gap:6px;flex:none}
+.chart-market-summary .market-stats small{font-size:9px;white-space:nowrap;color:#8e9b95}
+.chart-market-summary .market-stats span{font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chart-market-summary .mobile-market-toggle{flex:none;width:26px;height:26px}
+.chart-panel.is-chart-fullscreen>.chart-market-summary{flex-shrink:0}
+/* Stack complete indicator rows from the same left edge in every pane. */
+.study-pane-legend{flex-direction:column;flex-wrap:nowrap;align-items:flex-start;row-gap:1px;column-gap:0}
+.study-pane-legend .study-chart-legend.is-compact{flex:none;width:fit-content;min-height:var(--study-legend-row-height,22px);align-content:center}
+.study-pane-legend .study-chart-legend:hover,.study-pane-legend .study-chart-legend:focus-within{background:#ffffffc9}
+/* Keep the chart's existing studies visible while browsing the catalog. */
+.study-browser-dialog{width:min(1080px,calc(100vw - 24px))}
+.study-browser-dialog .study-browser-body{display:grid;grid-template-columns:135px minmax(0,1fr) 280px;grid-template-areas:"categories catalog current";min-height:0}
+.study-categories{grid-area:categories}
+.study-catalog{grid-area:catalog;min-height:0}
+.study-current-panel{grid-area:current;border-left:1px solid #edf0ea;display:flex;flex-direction:column;min-height:0;min-width:0;background:#fafcf9}
+.study-current-panel[hidden]{display:none}
+.study-current-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:16px 12px 10px;flex:none}
+.study-current-heading h3{font-size:12px;font-weight:600;margin:0;color:#4d6757}
+.study-current-heading b{font-size:11px;color:#77917d;margin-left:5px}
+.study-current-heading>small{font-size:9px;color:#92a091}
+.study-current-list{min-height:0;overflow:auto;padding:0 8px 8px;overscroll-behavior:contain}
+.study-current-row{display:flex;align-items:center;gap:6px;min-height:54px;padding:7px 3px;border-bottom:1px solid #eaf0e8}
+.study-current-swatch{width:6px;height:6px;flex:none;border-radius:1px}
+.study-current-name{flex:1;min-width:0}
+.study-current-name>button{display:block;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:0;color:#4f6959}
+.study-current-name>small{display:block;font-size:9px;color:#95a08f;margin-top:4px}
+.study-current-actions{display:flex;flex:none;gap:0}
+.study-current-actions .study-icon-button{width:25px;height:30px}
+.study-current-actions .icon{width:13px;height:13px}
+.study-current-row.is-muted .study-current-name,.study-current-row.is-muted>.study-current-swatch{opacity:.5}
+.study-browser-dialog .study-browser-body[data-category=added]{grid-template-columns:135px minmax(0,1fr);grid-template-areas:"categories catalog"}
+@media(max-width:800px){
+ .study-browser-dialog .study-browser-body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"current" "categories" "catalog"}
+ .study-current-panel{border-left:0;border-bottom:1px solid #e5ece2;max-height:175px}
+ .study-current-heading{padding:9px 14px 5px}
+ .study-current-list{padding:0 12px 5px}
+ .study-current-row{min-height:42px;padding:4px 0}
+ .study-current-name>small{margin-top:2px;font-size:8px}
+ .study-current-actions .study-icon-button{width:30px;height:32px}
+ .study-browser-dialog .study-categories{flex-direction:row;overflow:auto;flex-wrap:nowrap;padding:7px 10px;border-right:0;border-bottom:1px solid #edf0ea}
+ .study-browser-dialog .study-categories button{margin-top:0;padding:8px;font-size:10px}
+ .study-browser-dialog .study-browser-body[data-category=added]{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"categories" "catalog"}
+}
+@media(max-width:540px){
+ .chart-toolbar-scroll{gap:6px;padding:5px 8px;min-height:43px}
+ .chart-panel>.chart-toolbar{min-height:43px}
+ .chart-toolbar-scroll>.chart-instrument{gap:5px;max-width:160px}
+ .chart-instrument .coin-icon{width:18px;height:18px;font-size:13px}
+ .chart-instrument strong{font-size:12px}
+ .chart-current-quote strong{font-size:16px}
+ .chart-current-quote>span{font-size:9px}
+ .chart-toolbar-scroll>.chart-current-quote{gap:5px;padding-right:6px}
+ .chart-toolbar-scroll .toolbar-button{font-size:11px;padding:4px 6px}
+ .chart-toolbar-scroll .chart-type-button,.chart-timeframe-button{font-size:11px;min-height:31px}
+ .chart-market-summary{padding:4px 8px;gap:5px}
+ .chart-market-summary>.market-stats{gap:14px}
+}

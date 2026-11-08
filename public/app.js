@@ -156,7 +156,7 @@ function renderMarket(){
   const last=snapshot?.ticker.lastPrice??symbol.price,change=snapshot?.ticker.priceChangePercent??symbol.change;
   $('#main-symbol').textContent=symbol.symbol;$('#main-price').textContent=price(last);$('#main-change').textContent=change!=null&&Number.isFinite(Number(change))?signed(change)+'%':'—';$('#main-change').className=change>=0?'positive':'negative';
   $('#main-coin').textContent=coinGlyph(symbol.symbol);$('#main-coin').style.color=symbol.color||'#8aa497';$('#main-coin').style.background=(symbol.color||'#8aa497')+'20';
-  $('#main-symbol').parentElement.querySelector('small').textContent=productLabel(symbol)+' · BINANCE 실전 공개 시세';
+  $('#main-symbol').parentElement.querySelector('small').textContent=productLabel(symbol)+' · BINANCE 실전 공개 시세';$('#symbol-picker').title=instrumentName(symbol)+' · '+productLabel(symbol)+' · 종목 검색';
   $('#stat-high').textContent=price(snapshot?.ticker.highPrice);$('#stat-low').textContent=price(snapshot?.ticker.lowPrice);
   $('#stat-volume').textContent=snapshot?fmt(snapshot.ticker.quoteVolume??snapshot.ticker.baseVolume,0)+' '+(snapshot.ticker.quoteVolume!=null?symbol.quoteAsset:symbol.baseAsset):'—';
   const funding=snapshot?.premium?.lastFundingRate,stat=$('.market-stats>div:last-child');stat.querySelector('small').textContent=funding!=null?'펀딩비율':'상품 유형';stat.querySelector('span').textContent=funding!=null?fmt(funding*100,4)+'%':productLabel(symbol);stat.querySelector('span').className=funding!=null?(funding>=0?'positive':'negative'):'';$('#book-price').textContent=price(last);
