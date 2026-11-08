@@ -2,8 +2,18 @@ import {STUDIES,studyLabel,studyPlots} from './chart-studies.js';
 import {movingAverageLegend} from './moving-average-legend.js';
 function formatValue(study,value){return Number.isFinite(value)?value.toLocaleString('en-US',{maximumFractionDigits:STUDIES[study.type].precision??(study.type==='VOLUME'?0:['FORMULA','SCRIPT'].includes(study.type)?8:Math.abs(value)<.1?8:2)})+(study.type==='CYCLE'?(study.params.display==='bars'?'봉':'배'):STUDIES[study.type].unit?' '+STUDIES[study.type].unit:''):'—';}
 const priceStudies=new Set(['SMA','EMA','VWMA','KAMA','HMA','MA_SET','MA_FORECAST','BB','NW','ICHIMOKU','VWAP']);
-export function studyLegendHeading(study,model){return study.type==='BB'?'BB '+study.params.period+' '+study.params.basis+' '+study.source+' '+study.params.multiplier:model.heading||studyLabel(study);}
-export function studyLegendEntryText(study,entry){return ['MA_SET','MA_FORECAST','SCRIPT'].includes(study.type)?entry.label+' '+entry.text:entry.text;}
+const forecastKinds=study=>new Set(studyPlots(study).filter(p=>!p.projection).map(p=>study.params['type'+p.key.slice(2)]));
+export const studyLegendDetails=study=>study.type==='BB'?'BB '+study.params.period+' '+study.params.basis+' '+study.source+' '+study.params.multiplier:studyLabel(study);
+export function studyLegendHeading(study,model){
+ if(study.type==='BB')return 'BB '+study.params.period+'·'+study.params.multiplier;
+ if(study.type==='MA_FORECAST'){const kinds=forecastKinds(study);return (kinds.size===1?[...kinds][0]+' 예상':'이평 예상')+' '+study.params.horizon+'봉';}
+ return model.heading||studyLabel(study);
+}
+export function studyLegendEntryParts(study,entry){
+ const label=study.type==='MA_FORECAST'&&forecastKinds(study).size===1?entry.label.replace(/^\S+\s+/, ''):entry.label;
+ return {parameter:['MA_SET','MA_FORECAST'].includes(study.type)?label:'',reading:entry.text};
+}
+export function studyLegendEntryText(study,entry){const {parameter,reading}=studyLegendEntryParts(study,entry);return [parameter,reading].filter(Boolean).join(' ');}
 // Keep keyed values beside the settings, using the instrument precision for price studies.
 export function compactStudyLegend(study,points=[],priceFormatter){
  const format=value=>priceStudies.has(study.type)&&priceFormatter&&Number.isFinite(value)?priceFormatter(value):formatValue(study,value);

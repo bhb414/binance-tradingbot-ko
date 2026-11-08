@@ -1,10 +1,24 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {createStudy,studyPlots} from '../public/chart-studies.js';import {compactStudyLegend,studyLegendHeading,studyLegendEntryText} from '../public/compact-study-legend.js';
+import {createStudy,studyPlots} from '../public/chart-studies.js';import {compactStudyLegend,studyLegendHeading,studyLegendEntryText,studyLegendDetails} from '../public/compact-study-legend.js';
+import {compactCycleLegendValues,cycleReadings} from '../public/cycle-reference.js';
+
+test('short headings preserve full settings in tooltips and distinguish mixed forecast average kinds',()=>{
+ const bb=createStudy('BB'),b=compactStudyLegend(bb);assert.equal(studyLegendHeading(bb,b),'BB 20·2');assert.equal(studyLegendDetails(bb),'BB 20 SMA close 2');
+ const f=createStudy('MA_FORECAST'),model=compactStudyLegend(f,[{key:'ma0',value:12}]);assert.match(studyLegendHeading(f,model),/^SMA 예상/);assert.equal(studyLegendEntryText(f,model.entries[0]),'5 12');
+ f.params.type1='EMA';const mixed=compactStudyLegend(f,[{key:'ma0',value:12}]);assert.match(studyLegendHeading(f,mixed),/^이평 예상/);assert.equal(studyLegendEntryText(f,mixed.entries[0]),'SMA 5 12');
+});
+
+test('numeric cycle cells retain the plotted value and both remaining units without explanatory prose',()=>{
+ const s=createStudy('CYCLE');Object.assign(s.params,{display:'ratio',predictionSource:'remaining'});const meta={period:40,basis:20,elapsed:8,interval:6,prediction:16,forecastRemaining:8,direction:1};
+ assert.deepEqual(compactCycleLegendValues(s,meta),{period:'20봉',interval:'0.8배 (0.4배/8봉 남음)',elapsed:'0.4배'});assert.match(cycleReadings(s,meta),/골든크로스 이후 경과 8봉/);
+ s.params.display='bars';assert.deepEqual(compactCycleLegendValues(s,meta),{period:'40봉',interval:'16봉 (8봉 남음)',elapsed:'8봉'});
+ assert.deepEqual(compactCycleLegendValues(s,null),{period:'—',interval:'—',elapsed:'—'});
+});
 
 test('inline readings keep MA periods and script output names, use price tick precision, and preserve pane units',()=>{
- const bb=createStudy('BB'),format=value=>value.toFixed(5),model=compactStudyLegend(bb,[{key:'upper',value:.12345}],format);assert.equal(studyLegendHeading(bb,model),'BB 20 SMA close 2');assert.equal(studyLegendEntryText(bb,model.entries[0]),'0.12345');
+ const bb=createStudy('BB'),format=value=>value.toFixed(5),model=compactStudyLegend(bb,[{key:'upper',value:.12345}],format);assert.equal(studyLegendHeading(bb,model),'BB 20·2');assert.equal(studyLegendEntryText(bb,model.entries[0]),'0.12345');
  const ma=createStudy('MA_SET'),m=compactStudyLegend(ma,[{key:'ma0',value:1.23456}],format);assert.equal(studyLegendEntryText(ma,m.entries[0]),'5 1.23456');
- const script=createStudy('SCRIPT'),s=compactStudyLegend(script,[{key:'line0',value:1}]);assert.match(studyLegendEntryText(script,s.entries[0]),/ 1$/);
+ const script=createStudy('SCRIPT'),s=compactStudyLegend(script,[{key:'line0',value:1}]);assert.equal(studyLegendEntryText(script,s.entries[0]),'1');assert(s.entries[0].fullLabel);
  const slope=createStudy('NW_SLOPE'),p=compactStudyLegend(slope,[{key:'main',value:0}],format);assert.equal(p.entries[0].text,'0 %/봉');assert(studyLegendHeading(slope,p));
 });
 test('moving averages share a heading and keep edited periods, colors and keyed tooltip values',()=>{

@@ -21,7 +21,7 @@ export class PriceChartLegend{
  }
  sync(){
   const visible=this.preferences.value.price!==false,label=visible?'가격 그래프 숨기기':'가격 그래프 표시';
-  this.name.textContent=(this.instrument?this.instrument+' · ':'가격 · ')+chartTypeLabel(this.type);this.icon.innerHTML=chartTypeIcon(this.type);
+  this.name.textContent=this.instrument||'가격';this.name.title=chartTypeLabel(this.type);this.icon.innerHTML=chartTypeIcon(this.type);
   this.button.innerHTML='<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">'+eye+(!visible?'<path d="M3 3l18 18"/>':'')+'</svg>';
   this.button.setAttribute('aria-label',label);this.button.setAttribute('aria-pressed',String(visible));this.button.title=label+' · 보조지표와 가격 기준선은 유지';this.button.disabled=!this.preferences.ready||this.preferences.busy;
   this.element.classList.toggle('is-muted',!visible);this.status.textContent=this.error||(this.preferences.busy?'저장 중…':visible?'':'숨김');this.status.title=this.error||'';

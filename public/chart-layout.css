@@ -58,6 +58,16 @@
 .study-pane-legend .study-legend-actions .icon{width:14px;height:14px}
 .study-legend-menu{z-index:7}
 .study-legend>.study-legend-toggle{background:#ffffffd9;min-width:25px;justify-content:center}
+.study-legend-parameter+.study-legend-reading:before{content:" ";white-space:pre}
+/* TradingView-style single rows; long legends scroll instead of growing. */
+.study-pane-legend{scrollbar-width:none}
+.study-legend>.price-chart-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:calc(100% - 65px)}
+.price-chart-legend>*{flex:none}
+.price-legend-kind{order:0}.price-legend-name{order:1}.price-legend-toggle{order:2}.price-legend-status{order:3}.price-legend-ohlc{order:4}.price-legend-change{order:5}
+.price-legend-ohlc{flex-wrap:nowrap;max-width:none}
+.study-pane-legend .study-chart-legend.is-compact{width:100%;max-width:100%;flex-wrap:nowrap;white-space:nowrap;column-gap:7px}
+.study-pane-legend .study-legend-heading,.study-pane-legend .study-legend-name,.study-pane-legend .study-legend-status{flex:none;max-width:none}
+.study-pane-legend .study-legend-name{column-gap:0;overflow:visible}
 @media(max-width:540px){.study-pane-legend .study-legend-actions .study-icon-button{width:30px;height:28px}.price-legend-toggle{opacity:1}}
 /* Keep the chart's existing studies visible while browsing the catalog. */
 .study-browser-dialog{width:min(1080px,calc(100vw - 24px))}

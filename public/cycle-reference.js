@@ -50,3 +50,15 @@ export function cycleLegendValues(study,meta){
  const interval=source&&source!=='interval'?value('prediction',source==='previous'?'예상·이전경과':prefix+(source==='remaining'?' 예상경과':' 종료'))+(['current','remaining'].includes(source)?' · 남은 '+cycleRemainingText(study,meta):''):value('interval','간격');
  return {period:tag+' '+(ratio?'1배 ':'')+cycleBars(base),interval,elapsed:value('elapsed',meta?.direction===1?'골든 경과':meta?.direction===-1?'데드 경과':'경과')};
 }
+// Numeric legend cells follow the plotted series; full names and assumptions
+// remain in cycleReadings for their tooltips and the selected-candle readout.
+export function compactCycleLegendValues(study,meta){
+ const ratio=study.params.display==='ratio',basis=meta?.basis,source=study.params.predictionSource;
+ const value=key=>{const raw=meta?.[key];return !Number.isFinite(raw)?'—':ratio&&Number.isFinite(basis)&&basis>0?number(raw/basis)+'배':cycleBars(raw);};
+ const prediction=source&&source!=='interval';let interval=value(prediction?'prediction':'interval');
+ if(['current','remaining'].includes(source)&&Number.isFinite(meta?.forecastRemaining)){
+  const left=meta.forecastRemaining,remaining=ratio&&Number.isFinite(basis)&&basis>0?number(left/basis)+'배/'+cycleBars(left):cycleBars(left);interval+=' ('+remaining+' 남음)';
+ }
+ const base=ratio?basis:meta?.period;
+ return {period:Number.isFinite(base)?cycleBars(base):'—',interval,elapsed:value('elapsed')};
+}
