@@ -24,15 +24,20 @@ export class CycleSegments{
  }
  paneViews(){return [this.view];}
  draw(target){
-  if(this.points.length<2)return;
+  if(!this.points.length)return;
   target.useMediaCoordinateSpace(({context:ctx})=>{
    ctx.save();ctx.lineWidth=this.style.width||1;ctx.lineJoin='round';ctx.lineCap='butt';ctx.setLineDash([[],[1,2],[3,3],[6,6],[1,4]][this.style.lineStyle||0]||[]);
-   let previous=null;
+   // A one-bar phase has no stroke. Keep its lone observation visible so an
+   // intervening opposite cross does not disappear between same-color phases.
+   const isolated=point=>{ctx.fillStyle=point.color||this.style.color;ctx.beginPath();ctx.arc(point.x,point.y,Math.max(2,(this.style.width||1)/2+1),0,Math.PI*2);ctx.fill();};
+   let previous=null,length=0;
    for(const point of this.points){
-    if(!point||![point.x,point.y].every(Number.isFinite)){previous=null;continue;}
-    if(previous&&!point.breakBefore){ctx.strokeStyle=previous.color;ctx.beginPath();ctx.moveTo(previous.x,previous.y);ctx.lineTo(point.x,point.y);ctx.stroke();}
-    previous=point;
+    if(!point||![point.x,point.y].every(Number.isFinite)){if(length===1)isolated(previous);previous=null;length=0;continue;}
+    if(point.breakBefore){if(length===1)isolated(previous);previous=null;length=0;}
+    if(previous){ctx.strokeStyle=previous.color;ctx.beginPath();ctx.moveTo(previous.x,previous.y);ctx.lineTo(point.x,point.y);ctx.stroke();}
+    previous=point;length++;
    }
+   if(length===1)isolated(previous);
    ctx.restore();
   });
  }

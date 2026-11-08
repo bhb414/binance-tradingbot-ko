@@ -64,7 +64,7 @@ test('both elapsed and nonzero forecasts break at actual crosses without losing 
   assert.deepEqual(data,original);assert.deepEqual(segmented.map(({breakBefore,...p})=>p),data);
   assert.deepEqual(segmented.map(p=>p.breakBefore),[false,false,false,true,false,true,true,false]);
   const primitive=new CycleSegments(),chart={timeScale:()=>({getVisibleRange:()=>({from:0,to:7}),timeToCoordinate:t=>t*30})},series={priceToCoordinate:v=>v*30};
-  let start;const ctx={save(){},restore(){},setLineDash(){},beginPath(){},moveTo(x,y){start=[x,y];},lineTo(x,y){drawn.push({from:start,to:[x,y],color:this.strokeStyle});},stroke(){}};
+  let start;const ctx={save(){},restore(){},setLineDash(){},beginPath(){},moveTo(x,y){start=[x,y];},lineTo(x,y){drawn.push({from:start,to:[x,y],color:this.strokeStyle});},stroke(){},arc(){},fill(){}};
   primitive.attached({chart,series,requestUpdate(){}});primitive.update(segmented,{color:'#ff0000',width:2,lineStyle:0});primitive.updateAllViews();primitive.paneViews()[0].renderer().draw({useMediaCoordinateSpace:f=>f({context:ctx})});
   assert.deepEqual(drawn.map(p=>p.from[0]/30),[0,1,3,6]);assert.deepEqual(drawn.map(p=>p.color),['#00ff00','#00ff00','#ff0000','#ff0000']);
   primitive.update([],{color:'#ff0000'});primitive.updateAllViews();assert.deepEqual(primitive.points,[]);primitive.detached();assert.equal(primitive.series,null);
@@ -74,6 +74,30 @@ test('both elapsed and nonzero forecasts break at actual crosses without losing 
 test('ratio changes without crosses stay connected and missing data cannot bridge a segment',()=>{
  const cycle=[{time:1,elapsed:8,direction:1},{time:2,elapsed:9,direction:1},{time:3,elapsed:10,direction:1},{time:4,elapsed:null,direction:null}],data=[{time:1,value:.4},{time:2,value:.5},{time:3,value:.45},{time:4}];
  const segmented=cycleSegmentData(data,cycle);assert.ok(segmented.every(p=>!p.breakBefore));assert.deepEqual(segmented.map(({breakBefore,...p})=>p),data);
+});
+
+function drawCyclePoints(points){
+ const dots=[],strokes=[],renderer=new CycleSegments();renderer.points=points;
+ let start;const ctx={save(){},restore(){},setLineDash(){},beginPath(){},moveTo(x,y){start=[x,y];},lineTo(x,y){strokes.push({from:start,to:[x,y]});},stroke(){},arc(x,y,radius){dots.push({x,y,radius,color:this.fillStyle});},fill(){}};
+ renderer.draw({useMediaCoordinateSpace:fn=>fn({context:ctx})});return {dots,strokes};
+}
+
+test('consecutive one-bar cross phases remain visible as separate correctly colored points',()=>{
+ const cycle=[{time:1,direction:-1,elapsed:2},{time:2,direction:1,elapsed:0},{time:3,direction:-1,elapsed:0},{time:4,direction:1,elapsed:0},{time:5,direction:1,elapsed:1}],data=cycle.map(p=>({time:p.time,value:p.elapsed,color:p.direction===1?'#399b86':'#d98e9a'}));
+ const segmented=cycleSegmentData(data,cycle),drawn=drawCyclePoints(segmented.map(p=>({x:p.time*10,y:p.value*10,color:p.color,breakBefore:p.breakBefore})));
+ assert.deepEqual(drawn.dots.map(({x,y,color})=>({x,y,color})),[{x:10,y:20,color:'#d98e9a'},{x:20,y:0,color:'#399b86'},{x:30,y:0,color:'#d98e9a'}]);
+ assert.deepEqual(drawn.strokes,[{from:[40,0],to:[50,10]}]);
+});
+
+test('a single newest observation is visible and missing values never join unrelated singletons',()=>{
+ const one=drawCyclePoints([{x:1,y:0,color:'#399b86'}]);assert.equal(one.dots.length,1);assert.equal(one.strokes.length,0);
+ const gaps=drawCyclePoints([{x:1,y:4,color:'#399b86'},null,{x:3,y:5,color:'#d98e9a'},null]);
+ assert.deepEqual(gaps.dots.map(p=>p.x),[1,3]);assert.equal(gaps.strokes.length,0);
+});
+
+test('ordinary connected phase lines get no extra dots or changed strokes',()=>{
+ const drawn=drawCyclePoints([{x:1,y:0,color:'#399b86'},{x:2,y:1,color:'#399b86'},{x:3,y:2,color:'#399b86'}]);
+ assert.equal(drawn.dots.length,0);assert.deepEqual(drawn.strokes,[{from:[1,0],to:[2,1]},{from:[2,1],to:[3,2]}]);
 });
 
 test('tooltip geometry skips disconnected cycle strokes while keeping both boundary points selectable',()=>{
